@@ -1,0 +1,54 @@
+============================
+ TASKNET - PROMPT HISTORY
+============================
+
+[2026-05-12] for my system can you fix the task manager because its not showing any tasks and also make the profile page like this [attached screenshot of profile page UI]
+
+[2026-05-12] and for all logos in the system, put this attachment. also for the task view i want the navbar to be inside at all times
+
+[2026-05-12] this is the logo for the tasknet why is it that there is a different logo
+
+[2026-05-12] "C:\Users\USER\Downloads\LOGO FOR TASKNET.png" this is the logo
+
+[2026-05-12] can you create a text file that saves all of my prompts and populate it when i do prompting
+
+[2026-05-12] Create this exact design for my create task page and put the subject optional
+and then make the same creation for the edit tasks but for the edit task remain the
+latest inputs on the textfields created, also follow the design for the task manager
+all of the colorways and the design should be followed and for the add comments and
+private comments should be functional, it shows the public comments to all tasks that
+they assigned and for the private comments it should only see the submittor and the
+assigner in it, and also i provide some of our design from figma, follow all design
+provided in the image shown [attached Figma screenshots: Create Task form, Task Manager
+list, Task Detail reviewer view, Task Detail submitter view with comments and points system]
+
+[2026-05-12] (continued) Create EditTaskScreen with same design as CreateTaskScreen but pre-filled with existing task data; wire Edit button in TaskManagerScreen to open it
+
+[2026-05-12] create it [referring to MyTasksScreen for teachers/registrars]
+
+[2026-05-12] create the task manager because that is the one that is creating the task not the my task page, that page is supposed to see all the tasks created that is assigned to a certain personnel
+
+[2026-05-12] remove the padding on top of this picture i will send also i want this buttons for the edit and disable it has the Ellipsis button and if it clicked it will show like that also put a button for this comment for edit and delete button and it also has the ellipsis button and the send button make it a little bigger just a little to see it
+
+[2026-05-12] why is there an exception when i edit the comments and also delete why it is too big [referring to ConfirmDisableDialog being full-screen wide and edit/delete comment exceptions]
+
+[2026-05-12] also can you remove this thing on my page because its bothering me and make the name in there go a little down [referring to RIGHT OVERFLOWED debug indicator and sidebar reviewer name spacing]
+
+[2026-05-12] on here too [referring to another RIGHT OVERFLOWED indicator on activity/profile screen]
+
+[2026-05-12] on this white space can you make it go down like go with the entire right side of my screen and also make the text go a little down so it is manageable and the buttons for the onBack can you go a little down so it will not hit the top level [referring to right sidebar not filling full height, content spacing, and back button top margin]
+
+[2026-05-12] make this UI for the submission of file or links on this submission make the UI like this and when i clicked the add file and add like it will show like this and if i submit a file or a link it will show like this make the color like this in the photos i share with you [referring to Figma screenshots of Files & Links card, Submit Report button, submitted state with points card, and Private Comments section]
+
+[2026-05-12] now can you add all of my prompt into the text file i sent earlier
+
+[2026-05-12] on the create task tab, can you put the navbar on the left because on the design it is supposed to be in there and if i add a template can you add a box that inside is the links and what the user is putting also add a color gradient to the cancel button because it is not seen already
+
+[2026-05-12] (Flutter build error pasted) [dart:html not available on Android platform — fix conditional import for web file picker]
+
+[2026-05-13] can you also remove this from my mobile view [referring to RIGHT OVERFLOWED indicators on the dashboard stat cards]
+
+[2026-05-13] can you make the navbar for my mobile view to be like a hamburger view its like on the desktop view but its like collapsable view for the mobile like on facebook
+
+[2026-05-13] put the prompt into the text file earlier
+

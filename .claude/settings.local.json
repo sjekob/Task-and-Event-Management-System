@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\USER\\\\Desktop\\\\Flutter Final Project\\\\frontend\\\\android\\\\app\\\\src\\\\main\\\\kotlin\\\\com\\\\example\\\\tasknet\")",
+      "PowerShell(Get-ChildItem *)"
+    ]
+  }
+}
