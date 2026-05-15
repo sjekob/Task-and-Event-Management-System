@@ -1,3 +1,4 @@
+
 # Task and Event Management System
 
 ## Project Description
@@ -33,3 +34,51 @@ The administrative operations at Naga Central School II currently face challenge
 * **Dhenz Mark Alden**
 * **Louis Neo Lok**
 *  **John Michael Mamiit**
+=======
+# TaskNet — Full Monorepo
+**School Management & Task Delegation System**
+Naga Central School II
+
+---
+
+## Structure
+
+```
+TaskNet-Workspace/
+├── backend-fastapi/       FastAPI REST API + PostgreSQL
+└── frontend-flutter/      Flutter app (Web, Android, iOS, Desktop)
+```
+
+---
+
+## Start Everything (Docker — Recommended)
+
+```bash
+# From this root folder:
+docker compose up --build
+```
+
+| Service        | URL                          |
+|----------------|------------------------------|
+| API            | http://localhost:8000        |
+| Swagger UI     | http://localhost:8000/docs   |
+| pgAdmin        | http://localhost:5050        |
+| Flutter Web    | Run separately — see below   |
+
+---
+
+## Run Flutter
+
+```bash
+cd frontend-flutter
+flutter pub get
+flutter run -d chrome          # Web
+flutter run                    # Mobile (emulator/device)
+```
+
+---
+
+## Full Setup Guide
+
+See `backend-fastapi/README.md` and `frontend-flutter/README.md` for detailed instructions.
+>>>>>>> af2ae7a (Initial setup of TaskNet Workspace: Backend FastAPI and Frontend Flutter)

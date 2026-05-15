@@ -1,0 +1,45 @@
+version: "3.9"
+
+# Run from the TaskNet-Workspace root:
+#   docker compose up --build
+#
+# PostgreSQL runs locally on this machine (port 5432).
+# The API container reaches it via host.docker.internal.
+
+services:
+
+  # ── FastAPI ────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./backend-fastapi
+      dockerfile: Dockerfile
+    container_name: tasknet_api
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST:     host.docker.internal
+      POSTGRES_PORT:     5432
+      POSTGRES_DB:       tasknet_db
+      POSTGRES_USER:     tasknet_user
+      POSTGRES_PASSWORD: tasknet_pass
+      SECRET_KEY:        REPLACE_WITH_A_STRONG_RANDOM_SECRET_KEY
+      ALGORITHM:         HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 480
+      ALLOWED_ORIGINS:   "http://localhost:8080,http://localhost:3000,http://localhost:5000"
+      DEBUG:             "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend-fastapi:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── pgAdmin ────────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tasknet_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    admin@tasknet.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(winget install PostgreSQL.PostgreSQL --accept-package-agreements --accept-source-agreements)"
+    ]
+  }
+}

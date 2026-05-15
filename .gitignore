@@ -1,3 +1,4 @@
+
 # Miscellaneous
 *.class
 *.lock
@@ -32,10 +33,27 @@ analysis_benchmark.json
 .packages.generated
 
 # Flutter/Dart/Pub related
+=======
+# ── Python / FastAPI ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+backend-fastapi/.env
+
+# ── Flutter / Dart ────────────────────────────────────────────────────────────
+>>>>>>> af2ae7a (Initial setup of TaskNet Workspace: Backend FastAPI and Frontend Flutter)
 **/doc/api/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+<<<<<<< HEAD
 **/generated_plugin_registrant.dart
 .packages
 .pub-preload-cache/
@@ -117,3 +135,20 @@ app.*.symbols
 !**/ios/**/default.perspectivev3
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 !/dev/ci/**/Gemfile.lock
+=======
+.pub-cache/
+.pub/
+/frontend-flutter/build/
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+*.log
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+>>>>>>> af2ae7a (Initial setup of TaskNet Workspace: Backend FastAPI and Frontend Flutter)
