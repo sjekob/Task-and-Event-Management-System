@@ -4,6 +4,8 @@ import '../../shared/widgets/shared_widgets.dart';
 import 'special_tasks_tab.dart';
 import 'events_tab.dart';
 import 'analytics_tab.dart';
+import 'models/appraisal_models.dart';
+import '../../core/api_service.dart';
 
 enum _AppraisalTab { specialTasks, events, analytics }
 
@@ -16,6 +18,98 @@ class AppraisalScreen extends StatefulWidget {
 
 class _AppraisalScreenState extends State<AppraisalScreen> {
   _AppraisalTab _activeTab = _AppraisalTab.specialTasks;
+
+  // Hoisted state for real-time synchronization
+  final Map<String, Map<String, dynamic>> _taskEvaluations = {};
+  final Map<String, List<AttendeeRating>> _eventRatings = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBackendData();
+  }
+
+  Future<void> _loadBackendData() async {
+    try {
+      final taskApi = SpecialTasksApi();
+      final eventApi = EventsApi();
+
+      // 1. Fetch tasks
+      final tasks = await taskApi.listTasks();
+      for (final t in tasks) {
+        final id = t['id'] as String;
+        final status = t['status'] as String;
+        if (status == 'evaluated' || status == 'flagged') {
+          // Fetch evaluation details
+          final details = await taskApi.getTaskDetails(id);
+          final eval = details['evaluation'];
+          if (eval != null) {
+            _taskEvaluations[id] = <String, dynamic>{
+              'ratings': <String, dynamic>{
+                'completion': eval['completion_quality_score'] ?? 0,
+                'quality': eval['initiative_score'] ?? 0,
+                'timeliness': eval['timeliness_score'] ?? 0,
+                'coordination': eval['coordination_score'] ?? 0,
+              },
+              'remarks': eval['remarks'] ?? '',
+              'score': eval['weighted_average'] != null ? (eval['weighted_average'] * 20).round() : 0,
+            };
+          }
+        }
+      }
+
+      // 2. Fetch events
+      final events = await eventApi.listEvents();
+      for (final e in events) {
+        final id = e['id'] as String;
+        final details = await eventApi.getEventDetails(id);
+        final evals = details['evaluations'] as List<dynamic>? ?? [];
+        if (evals.isNotEmpty) {
+          final List<AttendeeRating> ratingsList = [];
+          for (final ev in evals) {
+            ratingsList.add(AttendeeRating(
+              name: ev['evaluator_name'] ?? '',
+              role: _parseEvaluatorRole(ev['evaluator_role']),
+              scores: EventRubricScores(
+                planning: (ev['planning_score'] ?? 0).toDouble(),
+                objectives: (ev['objectives_score'] ?? 0).toDouble(),
+                personnel: (ev['personnel_score'] ?? 0).toDouble(),
+                timeMgmt: (ev['time_mgmt_score'] ?? 0).toDouble(),
+                engagement: (ev['engagement_score'] ?? 0).toDouble(),
+                resource: (ev['resource_score'] ?? 0).toDouble(),
+              ),
+              comments: ev['feedback_comments'],
+              dateSubmitted: ev['date_submitted'] ?? '',
+            ));
+          }
+          _eventRatings[id] = ratingsList;
+        }
+      }
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      debugPrint('Error loading backend data: $e');
+    }
+  }
+
+  EvaluatorRole _parseEvaluatorRole(String? role) {
+    switch (role?.toLowerCase()) {
+      case 'teacher':
+        return EvaluatorRole.teacher;
+      case 'student':
+        return EvaluatorRole.student;
+      case 'coordinator':
+        return EvaluatorRole.coordinator;
+      case 'dean':
+        return EvaluatorRole.dean;
+      case 'principal':
+        return EvaluatorRole.principal;
+      default:
+        return EvaluatorRole.student;
+    }
+  }
 
   // Build the header once and pass it into the active tab so it scrolls
   // together with the tab content. Only the sidebar stays fixed.
@@ -48,12 +142,53 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        alignment: Alignment.topCenter,
+        children: <Widget>[
+          ...previousChildren,
+          if (currentChild != null) currentChild,
+        ],
+      ),
       child: KeyedSubtree(
         key: ValueKey(_activeTab),
         child: switch (_activeTab) {
-          _AppraisalTab.specialTasks => SpecialTasksTab(pageHeader: header),
-          _AppraisalTab.events       => EventsTab(pageHeader: header),
-          _AppraisalTab.analytics    => AnalyticsTab(pageHeader: header),
+          _AppraisalTab.specialTasks => SpecialTasksTab(
+              pageHeader: header,
+              evaluations: _taskEvaluations,
+              onSubmitEvaluation: (id, result) =>
+                  setState(() => _taskEvaluations[id] = result),
+            ),
+          _AppraisalTab.events => EventsTab(
+              pageHeader: header,
+              newRatings: _eventRatings,
+              onSubmitRating: (id, rating) async {
+                try {
+                  final api = EventsApi();
+                  final payload = {
+                    'evaluator_id': null,
+                    'evaluator_name': rating.name,
+                    'evaluator_role': rating.role.name[0].toUpperCase() + rating.role.name.substring(1),
+                    'planning_score': rating.scores.planning.round(),
+                    'objectives_score': rating.scores.objectives.round(),
+                    'personnel_score': rating.scores.personnel.round(),
+                    'time_mgmt_score': rating.scores.timeMgmt.round(),
+                    'engagement_score': rating.scores.engagement.round(),
+                    'resource_score': rating.scores.resource.round(),
+                    'template_used': true,
+                    'feedback_comments': rating.comments,
+                  };
+                  await api.evaluateEvent(id, payload);
+                } catch (e) {
+                  debugPrint('Failed to persist event evaluation to backend: $e');
+                }
+                setState(() => _eventRatings.putIfAbsent(id, () => []).add(rating));
+              },
+            ),
+          _AppraisalTab.analytics => AnalyticsTab(
+              pageHeader: header,
+              evaluations: _taskEvaluations,
+              newRatings: _eventRatings,
+            ),
         },
       ),
     );

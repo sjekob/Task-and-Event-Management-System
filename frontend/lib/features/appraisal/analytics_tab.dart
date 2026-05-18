@@ -7,23 +7,84 @@ import 'models/appraisal_models.dart';
 class AnalyticsTab extends StatelessWidget {
   /// The pre-built page header passed from [AppraisalScreen].
   final Widget pageHeader;
+  final Map<String, Map<String, dynamic>> evaluations;
+  final Map<String, List<AttendeeRating>> newRatings;
 
-  const AnalyticsTab({super.key, required this.pageHeader});
+  const AnalyticsTab({
+    super.key,
+    required this.pageHeader,
+    required this.evaluations,
+    required this.newRatings,
+  });
+
+  List<FacultyPerformance> _getRealTimeFaculty() {
+    return sampleFaculty.map((f) {
+      final facultyTasks = sampleTasks.where((t) => t.personnel == f.name).toList();
+
+      final List<int> scores = [];
+      for (final t in facultyTasks) {
+        final eval = evaluations[t.id];
+        if (eval != null) {
+          final int? s = eval['score'] as int?;
+          if (s != null) scores.add(s);
+        } else if (t.score != null) {
+          scores.add(t.score!);
+        }
+      }
+
+      final int? realTimeTaskScore = scores.isEmpty
+          ? f.taskScore
+          : (scores.reduce((a, b) => a + b) / scores.length).round();
+
+      final int realTimeOverallScore = realTimeTaskScore != null
+          ? ((f.reportScore ?? 100) + realTimeTaskScore) ~/ 2
+          : (f.reportScore ?? 100);
+
+      AppraisalGrade grade = AppraisalGrade.satisfactory;
+      if (realTimeOverallScore >= 90) {
+        grade = AppraisalGrade.outstanding;
+      } else if (realTimeOverallScore >= 80) {
+        grade = AppraisalGrade.verySatisfactory;
+      } else if (realTimeOverallScore >= 70) {
+        grade = AppraisalGrade.satisfactory;
+      } else {
+        grade = AppraisalGrade.unsatisfactory;
+      }
+
+      return FacultyPerformance(
+        name: f.name,
+        department: f.department,
+        reportScore: f.reportScore,
+        taskScore: realTimeTaskScore,
+        eventScore: f.eventScore,
+        overallScore: realTimeOverallScore,
+        grade: grade,
+        trend: f.trend,
+      );
+    }).toList()..sort((a, b) => b.overallScore.compareTo(a.overallScore));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final avgPerformance = (sampleFaculty
+    final realTimeFaculty = _getRealTimeFaculty();
+
+    final avgPerformance = (realTimeFaculty
                 .map((f) => f.overallScore)
                 .reduce((a, b) => a + b) /
-            sampleFaculty.length)
+            realTimeFaculty.length)
         .toStringAsFixed(1);
-    final tasksCompleted = sampleTasks
-        .where((t) =>
-            t.status == TaskStatus.evaluated ||
-            t.status == TaskStatus.flagged)
-        .length;
-    final eventsCompleted =
-        sampleEvents.where((e) => e.status == EventStatus.rated).length;
+
+    final tasksCompleted = sampleTasks.where((t) {
+      final hasEval = evaluations.containsKey(t.id);
+      if (hasEval) return true;
+      return t.status == TaskStatus.evaluated || t.status == TaskStatus.flagged;
+    }).length;
+
+    final eventsCompleted = sampleEvents.where((e) {
+      final hasRatings = newRatings.containsKey(e.id) && newRatings[e.id]!.isNotEmpty;
+      if (hasRatings) return true;
+      return e.status == EventStatus.rated;
+    }).length;
 
     return SingleChildScrollView(
       child: Column(
@@ -88,7 +149,9 @@ class AnalyticsTab extends StatelessWidget {
                           style: AppTextStyles.sectionTitle),
                       const SizedBox(height: 16),
                       SizedBox(
-                          height: 250, child: _MonthlyTrendChart()),
+                          height: 250,
+                          child: _MonthlyTrendChart(
+                              realTimeOverallAvg: double.parse(avgPerformance))),
                     ],
                   ),
                 ),
@@ -107,7 +170,7 @@ class AnalyticsTab extends StatelessWidget {
                             const Text('Department Performance',
                                 style: AppTextStyles.sectionTitle),
                             const SizedBox(height: 16),
-                            _DepartmentPerformance(),
+                            _DepartmentPerformance(faculty: realTimeFaculty),
                           ],
                         ),
                       ),
@@ -121,7 +184,7 @@ class AnalyticsTab extends StatelessWidget {
                             const Text('Top Performers',
                                 style: AppTextStyles.sectionTitle),
                             const SizedBox(height: 16),
-                            _TopPerformers(),
+                            _TopPerformers(faculty: realTimeFaculty),
                           ],
                         ),
                       ),
@@ -138,6 +201,10 @@ class AnalyticsTab extends StatelessWidget {
 }
 
 class _MonthlyTrendChart extends StatelessWidget {
+  final double realTimeOverallAvg;
+
+  const _MonthlyTrendChart({required this.realTimeOverallAvg});
+
   @override
   Widget build(BuildContext context) {
     return BarChart(
@@ -195,7 +262,7 @@ class _MonthlyTrendChart extends StatelessWidget {
           BarChartGroupData(x: 4, barRods: [BarChartRodData(toY: 79.2, color: const Color(0xFF7B95B8))]),
           BarChartGroupData(x: 5, barRods: [BarChartRodData(toY: 80.4, color: const Color(0xFF7B95B8))]),
           BarChartGroupData(x: 6, barRods: [BarChartRodData(toY: 81.6, color: const Color(0xFF7B95B8))]),
-          BarChartGroupData(x: 7, barRods: [BarChartRodData(toY: 83.1, color: const Color(0xFF7B95B8))]),
+          BarChartGroupData(x: 7, barRods: [BarChartRodData(toY: realTimeOverallAvg, color: const Color(0xFF7B95B8))]),
         ],
       ),
     );
@@ -203,12 +270,24 @@ class _MonthlyTrendChart extends StatelessWidget {
 }
 
 class _DepartmentPerformance extends StatelessWidget {
+  final List<FacultyPerformance> faculty;
+
+  const _DepartmentPerformance({required this.faculty});
+
   @override
   Widget build(BuildContext context) {
+    final engScores = faculty.where((f) => f.department == 'Engineering').map((f) => f.overallScore);
+    final busScores = faculty.where((f) => f.department == 'Business').map((f) => f.overallScore);
+    final sciScores = faculty.where((f) => f.department == 'Sciences').map((f) => f.overallScore);
+
+    final engAvg = engScores.isEmpty ? 82.3 : (engScores.reduce((a, b) => a + b) / engScores.length).roundToDouble();
+    final busAvg = busScores.isEmpty ? 76.8 : (busScores.reduce((a, b) => a + b) / busScores.length).roundToDouble();
+    final sciAvg = sciScores.isEmpty ? 85.1 : (sciScores.reduce((a, b) => a + b) / sciScores.length).roundToDouble();
+
     final departments = [
-      ('Engineering', 82.3, AppColors.success),
-      ('Business',    76.8, AppColors.info),
-      ('Sciences',    85.1, AppColors.success),
+      ('Engineering', engAvg, AppColors.success),
+      ('Business',    busAvg, AppColors.info),
+      ('Sciences',    sciAvg, AppColors.success),
     ];
 
     return Column(
@@ -252,6 +331,8 @@ class _DepartmentPerformance extends StatelessWidget {
 }
 
 class _TopPerformers extends StatelessWidget {
+  final List<FacultyPerformance> faculty;
+
   static const _rankColors = [
     Color(0xFFFCD34D),  // 1st – gold
     Color(0xFF9CA3AF),  // 2nd – silver
@@ -260,20 +341,22 @@ class _TopPerformers extends StatelessWidget {
     AppColors.success,  // 5th
   ];
 
+  const _TopPerformers({required this.faculty});
+
   @override
   Widget build(BuildContext context) {
-    final topPerformers = sampleFaculty
+    final topPerformers = faculty
         .asMap()
         .entries
         .toList()
-        .sublist(0, sampleFaculty.length.clamp(0, 5));
+        .sublist(0, faculty.length.clamp(0, 5));
 
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: topPerformers.length,
       itemBuilder: (context, index) {
-        final faculty = topPerformers[index].value;
+        final fVal = topPerformers[index].value;
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Row(
@@ -298,19 +381,19 @@ class _TopPerformers extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(faculty.name,
+                    Text(fVal.name,
                         style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color: AppColors.textPrimary)),
-                    Text(faculty.department,
+                    Text(fVal.department,
                         style: const TextStyle(
                             fontSize: 11,
                             color: AppColors.textSecondary)),
                   ],
                 ),
               ),
-              Text('${faculty.overallScore}%',
+              Text('${fVal.overallScore}%',
                   style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,

@@ -27,7 +27,15 @@ class _Criterion {
 
 class EventsTab extends StatefulWidget {
   final Widget pageHeader;
-  const EventsTab({super.key, required this.pageHeader});
+  final Map<String, List<AttendeeRating>> newRatings;
+  final void Function(String id, AttendeeRating rating) onSubmitRating;
+
+  const EventsTab({
+    super.key,
+    required this.pageHeader,
+    required this.newRatings,
+    required this.onSubmitRating,
+  });
 
   @override
   State<EventsTab> createState() => _EventsTabState();
@@ -36,12 +44,10 @@ class EventsTab extends StatefulWidget {
 class _EventsTabState extends State<EventsTab> {
   String _filterMode = 'all';
   String? _selectedEvent;
-  // In-memory new ratings submitted this session
-  final Map<String, List<AttendeeRating>> _newRatings = {};
 
   List<SchoolEvent> _eventsWithNewRatings(List<SchoolEvent> base) {
     return base.map((e) {
-      final extra = _newRatings[e.id] ?? [];
+      final extra = widget.newRatings[e.id] ?? [];
       if (extra.isEmpty) return e;
       return SchoolEvent(
         id: e.id, name: e.name, date: e.date,
@@ -85,9 +91,7 @@ class _EventsTabState extends State<EventsTab> {
       builder: (_) => _EventRateDialog(event: event),
     ).then((rating) {
       if (rating != null) {
-        setState(() {
-          _newRatings.putIfAbsent(event.id, () => []).add(rating);
-        });
+        widget.onSubmitRating(event.id, rating);
         ScaffoldMessenger.of(ctx).showSnackBar(
           const SnackBar(
             content: Text('Rating submitted successfully'),
@@ -827,14 +831,25 @@ class _EventsTable extends StatelessWidget {
             style: TextStyle(color: AppColors.textSecondary, fontSize: 13))),
       );
     }
-    return Column(children: [
-      _TableHeader(),
-      const Divider(height: 0, thickness: 0.8, color: AppColors.divider),
-      ...events.asMap().entries.map((e) => _EventRow(
-        event: e.value, index: e.key,
-        onViewResults: onViewResults, onRateEvent: onRateEvent,
-      )),
-    ]);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double tableWidth = constraints.maxWidth > 1000 ? constraints.maxWidth : 1000;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: tableWidth,
+            child: Column(children: [
+              _TableHeader(),
+              const Divider(height: 0, thickness: 0.8, color: AppColors.divider),
+              ...events.asMap().entries.map((e) => _EventRow(
+                event: e.value, index: e.key,
+                onViewResults: onViewResults, onRateEvent: onRateEvent,
+              )),
+            ]),
+          ),
+        );
+      },
+    );
   }
 }
 

@@ -8,7 +8,15 @@ enum _FilterMode { all, byPersonnel, byTask }
 
 class SpecialTasksTab extends StatefulWidget {
   final Widget pageHeader;
-  const SpecialTasksTab({super.key, required this.pageHeader});
+  final Map<String, Map<String, dynamic>> evaluations;
+  final void Function(String id, Map<String, dynamic> result) onSubmitEvaluation;
+
+  const SpecialTasksTab({
+    super.key,
+    required this.pageHeader,
+    required this.evaluations,
+    required this.onSubmitEvaluation,
+  });
 
   @override
   State<SpecialTasksTab> createState() => _SpecialTasksTabState();
@@ -140,8 +148,8 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
                 return;
               }
               final score = _computeScore();
-              final result = {
-                'ratings': {
+              final result = <String, dynamic>{
+                'ratings': <String, dynamic>{
                   'completion': completion,
                   'quality': quality,
                   'timeliness': timeliness,
@@ -276,9 +284,6 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
   _FilterMode _filterMode = _FilterMode.all;
   String? _selectedPersonnel;
   String? _selectedTask;
-  // In-memory evaluations keyed by task id. Each value contains:
-  // { 'ratings': {'completion':int,...}, 'remarks':String, 'score':int }
-  final Map<String, Map<String, dynamic>> _evaluations = {};
 
   List<String> get _personnelList =>
       sampleTasks.map((t) => t.personnel).toSet().toList()..sort();
@@ -301,16 +306,55 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
     }
   }
 
-  int get _pendingCount =>
-      _filteredTasks.where((t) => t.status == TaskStatus.pending).length;
-  int get _evaluatedCount =>
-      _filteredTasks.where((t) => t.status == TaskStatus.evaluated).length;
-  int get _flaggedCount =>
-      _filteredTasks.where((t) => t.status == TaskStatus.flagged).length;
+  int get _pendingCount {
+    int count = 0;
+    for (final t in _filteredTasks) {
+      final hasEval = widget.evaluations.containsKey(t.id);
+      if (hasEval) continue;
+      if (t.status == TaskStatus.pending) count++;
+    }
+    return count;
+  }
+
+  int get _evaluatedCount {
+    int count = 0;
+    for (final t in _filteredTasks) {
+      final eval = widget.evaluations[t.id];
+      if (eval != null) {
+        final int score = eval['score'] as int? ?? 0;
+        if (score >= 60) count++;
+      } else if (t.status == TaskStatus.evaluated) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  int get _flaggedCount {
+    int count = 0;
+    for (final t in _filteredTasks) {
+      final eval = widget.evaluations[t.id];
+      if (eval != null) {
+        final int score = eval['score'] as int? ?? 0;
+        if (score < 60) count++;
+      } else if (t.status == TaskStatus.flagged) {
+        count++;
+      }
+    }
+    return count;
+  }
 
   String get _avgScore {
-    final scores =
-        _filteredTasks.where((t) => t.score != null).map((t) => t.score!);
+    final List<int> scores = [];
+    for (final t in _filteredTasks) {
+      final eval = widget.evaluations[t.id];
+      if (eval != null) {
+        final int? s = eval['score'] as int?;
+        if (s != null) scores.add(s);
+      } else if (t.score != null) {
+        scores.add(t.score!);
+      }
+    }
     if (scores.isEmpty) return '—';
     return '${(scores.reduce((a, b) => a + b) / scores.length).round()}/100';
   }
@@ -339,8 +383,6 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 18),
-
                 // ── Stat cards ──────────────────────────────────────────────
                 Row(children: [
                   Expanded(child: _StatCard(label: 'Pending Review', value: '$_pendingCount', valueColor: AppColors.warning, icon: Icons.assignment_outlined, iconColor: AppColors.warning)),
@@ -482,20 +524,26 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                       const SizedBox(height: 14),
                       _SpecialTaskTable(
                         tasks: _filteredTasks,
-                        evaluations: _evaluations,
+                        evaluations: widget.evaluations,
                         onSubmitEvaluation: (id, result) async {
                           // Try to persist to backend first; fallback to local store
                           try {
                             final api = SpecialTasksApi();
-                            final resp = await api.evaluateTask(id, result);
-                            setState(() {
-                              _evaluations[id] = resp['evaluation'] ?? result;
-                            });
+                            final payload = {
+                              'personnel_id': null,
+                              'coordinator_id': null,
+                              'completion_quality_score': result['ratings']['completion'],
+                              'timeliness_score': result['ratings']['timeliness'],
+                              'initiative_score': result['ratings']['quality'],
+                              'coordination_score': result['ratings']['coordination'],
+                              'remarks': result['remarks'],
+                            };
+                            await api.evaluateTask(id, payload);
                           } catch (err) {
-                            setState(() {
-                              _evaluations[id] = result;
-                            });
+                            debugPrint('Failed to persist task evaluation to backend: $err');
                           }
+                          // Always update local memory state to keep UI synchronized in real-time
+                          widget.onSubmitEvaluation(id, result);
                         },
                       ),
                       const SizedBox(height: 8),
@@ -681,14 +729,18 @@ class _WeightItem extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(emoji, style: const TextStyle(fontSize: 16)),
       const SizedBox(width: 7),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label,
-            style: const TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
-        Text(pct,
-            style: const TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-      ]),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
+          Text(pct,
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+        ]),
+      ),
     ]);
   }
 }
@@ -715,11 +767,22 @@ class _SpecialTaskTable extends StatelessWidget {
         ),
       );
     }
-    return Column(children: [
-      _TableHeader(),
-      const Divider(height: 0, thickness: 0.8, color: AppColors.divider),
-      ...tasks.asMap().entries.map((e) => _TaskRow(task: e.value, index: e.key, evaluation: evaluations[e.value.id], onSubmit: onSubmitEvaluation)),
-    ]);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double tableWidth = constraints.maxWidth > 1100 ? constraints.maxWidth : 1100;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: tableWidth,
+            child: Column(children: [
+              _TableHeader(),
+              const Divider(height: 0, thickness: 0.8, color: AppColors.divider),
+              ...tasks.asMap().entries.map((e) => _TaskRow(task: e.value, index: e.key, evaluation: evaluations[e.value.id], onSubmit: onSubmitEvaluation)),
+            ]),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -772,7 +835,7 @@ class _TaskRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
         SizedBox(
-            width: 55,
+            width: 60,
             child: Text(task.id,
                 style: const TextStyle(
                     fontSize: 12, color: AppColors.textSecondary))),
@@ -790,13 +853,12 @@ class _TaskRow extends StatelessWidget {
           ]),
         ),
         SizedBox(
-          width: 95,
+          width: 140,
           child: Text(task.department,
             style: const TextStyle(
               fontSize: 12, color: AppColors.textSecondary),
             overflow: TextOverflow.ellipsis)),
         Expanded(
-          flex: 3,
           child: Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Text(task.task,
