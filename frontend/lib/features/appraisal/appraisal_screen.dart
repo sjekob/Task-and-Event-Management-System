@@ -24,9 +24,10 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   late _AppraisalTab _activeTab;
   late List<_AppraisalTab> _availableTabs;
 
-  // Hoisted state for real-time synchronization
-  final Map<String, Map<String, dynamic>> _taskEvaluations = {};
-  final Map<String, List<AttendeeRating>> _eventRatings = {};
+  // Hoisted state — always reassigned to a NEW map so child widgets
+  // detect the reference change in didUpdateWidget and rebuild.
+  var _taskEvaluations = <String, Map<String, dynamic>>{};
+  var _eventRatings = <String, List<AttendeeRating>>{};
 
   @override
   void initState() {
@@ -55,17 +56,20 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
       final taskApi = SpecialTasksApi();
       final eventApi = EventsApi();
 
+      // Build fresh local maps — assign atomically so reference always changes
+      final newTaskEvals = <String, Map<String, dynamic>>{};
+      final newEventRatings = <String, List<AttendeeRating>>{};
+
       // 1. Fetch tasks
       final tasks = await taskApi.listTasks();
       for (final t in tasks) {
         final id = t['id'] as String;
         final status = t['status'] as String;
         if (status == 'evaluated' || status == 'flagged') {
-          // Fetch evaluation details
           final details = await taskApi.getTaskDetails(id);
           final eval = details['evaluation'];
           if (eval != null) {
-            _taskEvaluations[id] = <String, dynamic>{
+            newTaskEvals[id] = <String, dynamic>{
               'ratings': <String, dynamic>{
                 'completion': eval['completion_quality_score'] ?? 0,
                 'quality': eval['initiative_score'] ?? 0,
@@ -86,29 +90,28 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         final details = await eventApi.getEventDetails(id);
         final evals = details['evaluations'] as List<dynamic>? ?? [];
         if (evals.isNotEmpty) {
-          final List<AttendeeRating> ratingsList = [];
-          for (final ev in evals) {
-            ratingsList.add(AttendeeRating(
-              name: ev['evaluator_name'] ?? '',
-              role: _parseEvaluatorRole(ev['evaluator_role']),
-              scores: EventRubricScores(
-                planning: (ev['planning_score'] ?? 0).toDouble(),
-                objectives: (ev['objectives_score'] ?? 0).toDouble(),
-                personnel: (ev['personnel_score'] ?? 0).toDouble(),
-                timeMgmt: (ev['time_mgmt_score'] ?? 0).toDouble(),
-                engagement: (ev['engagement_score'] ?? 0).toDouble(),
-                resource: (ev['resource_score'] ?? 0).toDouble(),
-              ),
-              comments: ev['feedback_comments'],
-              dateSubmitted: ev['date_submitted'] ?? '',
-            ));
-          }
-          _eventRatings[id] = ratingsList;
+          newEventRatings[id] = evals.map((ev) => AttendeeRating(
+            name: ev['evaluator_name'] ?? '',
+            role: _parseEvaluatorRole(ev['evaluator_role']),
+            scores: EventRubricScores(
+              planning: (ev['planning_score'] ?? 0).toDouble(),
+              objectives: (ev['objectives_score'] ?? 0).toDouble(),
+              personnel: (ev['personnel_score'] ?? 0).toDouble(),
+              timeMgmt: (ev['time_mgmt_score'] ?? 0).toDouble(),
+              engagement: (ev['engagement_score'] ?? 0).toDouble(),
+              resource: (ev['resource_score'] ?? 0).toDouble(),
+            ),
+            comments: ev['feedback_comments'],
+            dateSubmitted: ev['date_submitted'] ?? '',
+          )).toList();
         }
       }
 
       if (mounted) {
-        setState(() {});
+        setState(() {
+          _taskEvaluations = newTaskEvals;
+          _eventRatings = newEventRatings;
+        });
       }
     } catch (e) {
       debugPrint('Error loading backend data: $e');
@@ -145,6 +148,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     return Scaffold(
       backgroundColor: AppColors.pageBg,
       body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // ── Sidebar — never scrolls ──────────────────────────────────────
           AppSidebar(
@@ -167,16 +171,18 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     // subtitle, breadcrumb, and tab buttons all scroll with the content.
     final header = _buildHeader();
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 180),
-      layoutBuilder: (currentChild, previousChildren) => Stack(
-        alignment: Alignment.topCenter,
-        children: <Widget>[
-          ...previousChildren,
-          if (currentChild != null) currentChild,
-        ],
-      ),
-      child: KeyedSubtree(
+    return Align(
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          alignment: Alignment.topCenter,
+          children: <Widget>[
+            ...previousChildren,
+            if (currentChild != null) currentChild,
+          ],
+        ),
+        child: KeyedSubtree(
         key: ValueKey(_activeTab),
         child: switch (_activeTab) {
           _AppraisalTab.personalDashboard => PersonalDashboardTab(
@@ -190,8 +196,10 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
               pageHeader: header,
               role: widget.role ?? 'dean',
               evaluations: _taskEvaluations,
-              onSubmitEvaluation: (id, result) =>
-                  setState(() => _taskEvaluations[id] = result),
+              onSubmitEvaluation: (id, result) => setState(() {
+                // Create a NEW map so reference changes, triggering didUpdateWidget
+                _taskEvaluations = {..._taskEvaluations, id: result};
+              }),
             ),
           _AppraisalTab.events => EventsTab(
               pageHeader: header,
@@ -218,7 +226,11 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
                 } catch (e) {
                   debugPrint('Failed to persist event evaluation to backend: $e');
                 }
-                setState(() => _eventRatings.putIfAbsent(id, () => []).add(rating));
+                // Create a NEW map so reference changes, triggering didUpdateWidget
+                setState(() {
+                  final updated = List<AttendeeRating>.from(_eventRatings[id] ?? [])..add(rating);
+                  _eventRatings = {..._eventRatings, id: updated};
+                });
               },
             ),
           _AppraisalTab.analytics => AnalyticsTab(
@@ -230,8 +242,9 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
             ),
         },
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -280,7 +293,7 @@ class _PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+      padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
       color: AppColors.pageBg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -299,10 +312,6 @@ class _PageHeader extends StatelessWidget {
                       fontSize: 12,
                       color: AppColors.textSecondary,
                       fontWeight: FontWeight.w500)),
-              const Spacer(),
-              TableActionButton(label: 'Export Report', outlined: true, onTap: () {}),
-              const SizedBox(width: 8),
-              TableActionButton(label: 'Lock Appraisal', onTap: () {}),
             ],
           ),
 

@@ -331,6 +331,15 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
     _rolePerms = RolePermissions(widget.role);
   }
 
+  @override
+  void didUpdateWidget(SpecialTasksTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Force UI rebuild whenever the evaluations map changes
+    if (oldWidget.evaluations != widget.evaluations) {
+      setState(() {});
+    }
+  }
+
   List<SpecialTask> get _baseTasks {
     // TEACHER: Cannot see special tasks at all
     if (widget.role == 'teacher') return [];
@@ -386,7 +395,8 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
     for (final t in _filteredTasks) {
       final eval = widget.evaluations[t.id];
       if (eval != null) {
-        final int score = eval['score'] as int? ?? 0;
+        final raw = eval['score'];
+        final int score = raw is num ? raw.round() : 0;
         if (score >= 60) count++;
       } else if (t.status == TaskStatus.evaluated) {
         count++;
@@ -400,7 +410,8 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
     for (final t in _filteredTasks) {
       final eval = widget.evaluations[t.id];
       if (eval != null) {
-        final int score = eval['score'] as int? ?? 0;
+        final raw = eval['score'];
+        final int score = raw is num ? raw.round() : 0;
         if (score < 60) count++;
       } else if (t.status == TaskStatus.flagged) {
         count++;
@@ -414,12 +425,13 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
     for (final t in _filteredTasks) {
       final eval = widget.evaluations[t.id];
       if (eval != null) {
-        final int? s = eval['score'] as int?;
-        if (s != null) scores.add(s);
+        final raw = eval['score'];
+        final int s = raw is num ? raw.round() : 0;
+        if (s > 0) scores.add(s);
       } else {
-          final sc = t.getScore();
-          if (sc > 0) scores.add(sc);
-        }
+        final sc = t.getScore();
+        if (sc > 0) scores.add(sc);
+      }
     }
     if (scores.isEmpty) return '—';
     return '${(scores.reduce((a, b) => a + b) / scores.length).round()}/100';
@@ -482,6 +494,12 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
     }
 
     // ── DEAN, COORDINATOR, PRINCIPAL: Can view special tasks ────────────────
+    if (widget.role == 'coordinator') {
+      return SingleChildScrollView(
+        child: _buildCoordinatorView(context),
+      );
+    }
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -553,7 +571,7 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Scores below 60/100 are automatically flagged and supervisor is alerted.',
+                              'Personnel rated below 3 stars are automatically flagged and coordinators are alerted immediately.',
                               style: TextStyle(
                                   color: AppColors.danger, fontSize: 12.5),
                             ),
@@ -669,6 +687,324 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoordinatorView(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        widget.pageHeader,
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Stat cards
+              Row(children: [
+                Expanded(child: _CoordinatorStatCard(label: 'Total Faculty Evaluated', value: '4', valueColor: const Color(0xFF10B981), icon: Icons.check_circle_outline, iconColor: const Color(0xFF10B981))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'Flagged Personnel', value: '1', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'Departments Monitored', value: '4', valueColor: const Color(0xFF8B5CF6), icon: Icons.group_outlined, iconColor: const Color(0xFF8B5CF6))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'School Avg Compliance / 100', value: '273', valueColor: const Color(0xFF475569), icon: Icons.emoji_events_outlined, iconColor: const Color(0xFF94A3B8))),
+              ]),
+              const SizedBox(height: 18),
+              
+              // Appraisal Coverage breakdown
+              _buildCoverageCard(),
+              const SizedBox(height: 18),
+
+              // ── Task Evaluation Table (For Deans) ──────────────────────
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppColors.cardBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.cardBorder, width: 0.8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Card header with improved dropdowns
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
+                      child: Row(
+                        children: [
+                          const Text('Dean Special Task Submissions', style: AppTextStyles.sectionTitle),
+                          const Spacer(),
+                          // ── Filter mode ──────────────────────────────────
+                          _StyledDropdown(
+                            value: _filterModeValue,
+                            leadingIcon: Icons.tune_rounded,
+                            items: const [
+                              _DropItem(value: 'all',       label: 'Show All'),
+                              _DropItem(value: 'personnel', label: 'By Personnel'),
+                              _DropItem(value: 'task',      label: 'By Task'),
+                            ],
+                            onChanged: (v) => setState(() {
+                              _filterMode = v == 'personnel'
+                                  ? _FilterMode.byPersonnel
+                                  : v == 'task'
+                                      ? _FilterMode.byTask
+                                      : _FilterMode.all;
+                              _selectedPersonnel = null;
+                              _selectedTask = null;
+                            }),
+                          ),
+                          // ── Personnel picker ─────────────────────────────
+                          if (_filterMode == _FilterMode.byPersonnel) ...[
+                            const SizedBox(width: 8),
+                            _StyledDropdown(
+                              value: _selectedPersonnel,
+                              hint: 'All Personnel',
+                              items: _personnelList.map((p) => _DropItem(value: p, label: p)).toList(),
+                              onChanged: (v) => setState(() => _selectedPersonnel = v),
+                            ),
+                          ],
+                          // ── Task picker ──────────────────────────────────
+                          if (_filterMode == _FilterMode.byTask) ...[
+                            const SizedBox(width: 8),
+                            _StyledDropdown(
+                              value: _selectedTask,
+                              hint: 'All Tasks',
+                              items: _taskList.map((t) => _DropItem(value: t, label: t)).toList(),
+                              onChanged: (v) => setState(() => _selectedTask = v),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _SpecialTaskTable(
+                      tasks: _filteredTasks,
+                      evaluations: widget.evaluations,
+                      onSubmitEvaluation: (id, result) async {
+                        try {
+                          final api = SpecialTasksApi();
+                          final payload = {
+                            'personnel_id': null,
+                            'coordinator_id': null,
+                            'completion_quality_score': result['ratings']['completion'],
+                            'timeliness_score': result['ratings']['timeliness'],
+                            'initiative_score': result['ratings']['quality'],
+                            'coordination_score': result['ratings']['coordination'],
+                            'remarks': result['remarks'],
+                          };
+                          await api.evaluateTask(id, payload);
+                        } catch (err) {
+                          debugPrint('Failed to persist task evaluation to backend: $err');
+                        }
+                        widget.onSubmitEvaluation(id, result);
+                      },
+                      role: widget.role,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              
+              // Faculty overview table removed as requested to avoid duplicates
+              
+              // Bottom summary banner
+              _buildBottomSummaryBanner(context),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCoverageCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Appraisal Coverage — All Evaluation Types',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(child: _buildCoverageItem(
+                icon: Icons.description_outlined,
+                iconColor: const Color(0xFF2563EB),
+                title: 'Special Task Timing',
+                subtitle: 'Task completion and timeline',
+              )),
+              Expanded(child: _buildCoverageItem(
+                icon: Icons.calendar_today_outlined,
+                iconColor: const Color(0xFF10B981),
+                title: 'Event Evaluation',
+                subtitle: 'Multi-stakeholder',
+              )),
+              Expanded(child: _buildCoverageItem(
+                icon: Icons.assignment_outlined,
+                iconColor: const Color(0xFF8B5CF6),
+                title: 'Special Task Ratings',
+                subtitle: 'Weighted rubric',
+              )),
+              Expanded(child: _buildCoverageItem(
+                icon: Icons.error_outline_outlined,
+                iconColor: const Color(0xFFEF4444),
+                title: 'Escalation Threshold',
+                subtitle: 'Below 3 stars auto-flags',
+              )),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Red warning banner
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(8),
+              border: const Border(
+                left: BorderSide(color: Color(0xFFEF4444), width: 4),
+                top: BorderSide(color: Color(0xFFFEE2E2), width: 0.8),
+                right: BorderSide(color: Color(0xFFFEE2E2), width: 0.8),
+                bottom: BorderSide(color: Color(0xFFFEE2E2), width: 0.8),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 18),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Personnel rated below 3 stars are automatically flagged and coordinators are alerted immediately.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF991B1B),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoverageItem({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+
+
+  Widget _buildBottomSummaryBanner(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBFDBFE), width: 0.8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Annual Faculty Performance Summary',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1E3A8A)),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Aggregated from all event and special task appraisals. Ready for DepEd Annual Faculty Performance Evaluation.',
+                  style: TextStyle(fontSize: 12.5, color: Color(0xFF1E40AF)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 24),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              ElevatedButton.icon(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Performance Summary exported successfully!')),
+                  );
+                },
+                icon: const Icon(Icons.download, size: 16, color: Colors.white),
+                label: const Text('Export Performance Summary', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Last exported: March 15, 2025',
+                style: TextStyle(fontSize: 11, color: Color(0xFF60A5FA)),
+              ),
+            ],
           ),
         ],
       ),
@@ -900,6 +1236,83 @@ class _SpecialTaskTable extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+
+
+class _CoordinatorStatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color valueColor;
+  final IconData icon;
+  final Color iconColor;
+  final Color? bgCircleColor;
+
+  const _CoordinatorStatCard({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+    required this.icon,
+    required this.iconColor,
+    this.bgCircleColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w700,
+                    color: valueColor,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: bgCircleColor ?? iconColor.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 24),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,0 +1,45 @@
+# ── Python Virtual Environments ───────────────────────────────────────────────
+venv/
+backend/venv/
+.venv/
+env/
+
+# ── Databases & Sensitive Local Data ──────────────────────────────────────────
+dev.db
+backend/dev.db
+*.db
+*.sqlite
+.env
+backend/.env
+*.env.local
+
+# ── Python Build & Cache Artifacts ────────────────────────────────────────────
+__pycache__/
+backend/app/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── IDEs, Editors & Local Workspace Settings ──────────────────────────────────
+.vs/
+frontend/.vs/
+.vscode/
+.idea/
+frontend/.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docuser
+*.iml
+frontend/personnel_appraisal.iml
+
+# ── Flutter, Dart, Android & Windows Build Artifacts ───────────────────────────
+.dart_tool/
+frontend/.dart_tool/
+build/
+frontend/build/
+frontend/.flutter-plugins-dependencies
+frontend/.metadata
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/windows/flutter/ephemeral/

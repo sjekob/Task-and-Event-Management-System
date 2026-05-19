@@ -57,6 +57,15 @@ class _EventsTabState extends State<EventsTab> {
     _rolePerms = RolePermissions(widget.role);
   }
 
+  @override
+  void didUpdateWidget(EventsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Force UI rebuild whenever ratings data changes
+    if (oldWidget.newRatings != widget.newRatings) {
+      setState(() {});
+    }
+  }
+
   List<SchoolEvent> _eventsWithNewRatings(List<SchoolEvent> base) {
     return base.map((e) {
       final extra = widget.newRatings[e.id] ?? [];
@@ -116,6 +125,12 @@ class _EventsTabState extends State<EventsTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.role == 'coordinator') {
+      return SingleChildScrollView(
+        child: _buildCoordinatorView(context),
+      );
+    }
+
     return SingleChildScrollView(
       child: Column(
         children: [
@@ -173,8 +188,7 @@ class _EventsTabState extends State<EventsTab> {
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Events are rated by attendees (faculty and students). All 6 criteria are '
-                              'equally weighted. Ratings below 3.0/5 are automatically flagged for review.',
+                              'Events are rated by attendees (faculty and students) through a standardized rubric form. Ratings below 3.0/5 are automatically flagged for review.',
                               style: TextStyle(color: AppColors.infoBannerFg, fontSize: 12, height: 1.5),
                             ),
                           ),
@@ -237,6 +251,455 @@ class _EventsTabState extends State<EventsTab> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoordinatorView(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        widget.pageHeader,
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Stat cards
+              Row(children: [
+                Expanded(child: _CoordinatorStatCard(label: 'Pending Review', value: '1', valueColor: const Color(0xFFF59E0B), icon: Icons.calendar_today_outlined, iconColor: const Color(0xFFF59E0B))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'Evaluated', value: '2', valueColor: const Color(0xFF10B981), icon: Icons.star_border_outlined, iconColor: const Color(0xFF10B981))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'Flagged Alerts', value: '1', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'Avg Rating', value: '3.5/5', valueColor: const Color(0xFF475569), icon: Icons.star_border_outlined, iconColor: const Color(0xFF94A3B8))),
+              ]),
+              const SizedBox(height: 18),
+              
+              // Rubric breakdown card
+              _buildEventRubricCard(),
+              const SizedBox(height: 18),
+              
+              // School-wide events table
+              _buildSchoolWideEventsTable(context),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEventRubricCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Event Evaluation Rubric (5-Point Scale)',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.calendar_today_outlined,
+                iconColor: const Color(0xFF10B981),
+                title: 'Organization',
+                weight: '20%',
+              )),
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.group_outlined,
+                iconColor: const Color(0xFFF59E0B),
+                title: 'Engagement',
+                weight: '25%',
+              )),
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.check_circle_outline,
+                iconColor: const Color(0xFF8B5CF6),
+                title: 'Content Quality',
+                weight: '30%',
+              )),
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.schedule_outlined,
+                iconColor: const Color(0xFFEC4899),
+                title: 'Time Management',
+                weight: '15%',
+              )),
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.sentiment_satisfied_alt_outlined,
+                iconColor: const Color(0xFF3B82F6),
+                title: 'Overall Experience',
+                weight: '10%',
+              )),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Blue banner below
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(8),
+              border: const Border(
+                left: BorderSide(color: Color(0xFF3B82F6), width: 4),
+                top: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
+                right: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
+                bottom: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, color: Color(0xFF3B82F6), size: 18),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Events are rated by attendees (faculty and students) through a standardized rubric form. Ratings below 3.0/5 are automatically flagged for review.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1E40AF),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRubricMetricItem({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String weight,
+  }) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: iconColor, size: 24),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          weight,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: iconColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSchoolWideEventsTable(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Text(
+              'School-Wide Events',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            ),
+          ),
+          const Divider(height: 1),
+          // Table Columns Header
+          Container(
+            color: const Color(0xFFF8FAFC),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: const Row(
+              children: [
+                Expanded(flex: 3, child: Text('EVENT NAME', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('DATE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('DEPARTMENT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('ORGANIZER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('RESPONSES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('AVG RATING', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('STATUS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('ACTION', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Rows
+          _buildEventTableRow(context, 'Science Fair 2025', '4/20/2025', 'Sciences', 'Dr. Santos', '210 / 250', '★ 4.5/5', 'Completed', const Color(0xFF16A34A), const Color(0xFFDCFCE7), true),
+          _buildEventTableRow(context, 'Faculty Development Workshop', '4/15/2025', 'Business', 'Dr. Cruz', '38 / 45', '★ 3.8/5', 'Completed', const Color(0xFF16A34A), const Color(0xFFDCFCE7), true),
+          _buildEventTableRow(context, 'Research Symposium', '4/5/2025', 'Humanities', 'Dr. Reyes', '12 / 80', '★ 2.3/5', 'Flagged', const Color(0xFFEF4444), const Color(0xFFFEE2E2), true),
+          _buildEventTableRow(context, 'Community Outreach Program', '4/25/2025', 'Arts', 'Dr. Lopez', '0 / 150', '—', 'Pending', const Color(0xFFF59E0B), const Color(0xFFFEF3C7), false),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventTableRow(
+    BuildContext context,
+    String name,
+    String date,
+    String dept,
+    String organizer,
+    String responses,
+    String rating,
+    String status,
+    Color statusColor,
+    Color statusBg,
+    bool hasData,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 0.8)),
+      ),
+      child: Row(
+        children: [
+          Expanded(flex: 3, child: Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)))),
+          Expanded(flex: 2, child: Text(date, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
+          Expanded(flex: 2, child: Text(dept, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
+          Expanded(flex: 2, child: Text(organizer, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
+          Expanded(flex: 2, child: Text(responses, style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E293B), fontWeight: FontWeight.w500))),
+          Expanded(
+            flex: 2,
+            child: Row(
+              children: [
+                if (rating != '—') const Icon(Icons.star_rounded, color: Color(0xFFF59E0B), size: 14),
+                const SizedBox(width: 2),
+                Text(
+                  rating,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: rating.contains('2.3') ? const Color(0xFFEF4444) : const Color(0xFF1E293B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: statusBg, borderRadius: BorderRadius.circular(4)),
+                child: Text(
+                  status,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: statusColor),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Center(
+              child: ElevatedButton(
+                onPressed: !hasData
+                    ? null
+                    : () {
+                        _showEventDetailDialog(context, name, date, dept, organizer, responses, rating, status);
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3B82F6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  minimumSize: const Size(60, 32),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                child: Text(
+                  hasData ? 'View Results' : 'No Data',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: hasData ? Colors.white : const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEventDetailDialog(
+    BuildContext context,
+    String name,
+    String date,
+    String dept,
+    String organizer,
+    String responses,
+    String rating,
+    String status,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            Text('Organizer: $organizer · $dept · $date', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(),
+            const SizedBox(height: 8),
+            _dialogRow('Rater Responses', responses),
+            _dialogRow('Average Rating', rating),
+            _dialogRow('Event Status', status),
+            const SizedBox(height: 12),
+            const Text(
+              'Attendee Feedback Highlights:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              status == 'Flagged'
+                  ? 'Attendance check-in had high delay rates and some segments felt disorganized. Recommended action: Follow up with coordinator on scheduling.'
+                  : 'Highly rated! Attendees praised the clear delivery, excellent time management, and interactive activities.',
+              style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dialogRow(String label, String val) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
+          Text(val, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+        ],
+      ),
+    );
+  }
+}
+
+class _CoordinatorStatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color valueColor;
+  final IconData icon;
+  final Color iconColor;
+  final Color? bgCircleColor;
+
+  const _CoordinatorStatCard({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+    required this.icon,
+    required this.iconColor,
+    this.bgCircleColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w700,
+                    color: valueColor,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: bgCircleColor ?? iconColor.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 24),
           ),
         ],
       ),
