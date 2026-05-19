@@ -9,6 +9,8 @@ from database import get_db, init_db
 from auth import (verify_password, create_token, get_current_user,
                   require_admin, require_task_creator, require_can_assign,
                   require_admin_or_principal, hash_password,
+                  require_personnel_manager, require_appraisal_access,
+                  require_event_manager,
                   TASK_CREATORS, can_assign)
 
 app = FastAPI(title="TaskNet API")
@@ -889,7 +891,7 @@ def get_submission_log(user=Depends(get_current_user)):
     role = user["role"]
 
     q = """SELECT sl.*, r.report_title, r.report_status, r.task_id, r.report_description,
-                  r.report_link_url,
+                  r.report_link_url, r.report_file_path, r.report_filename, r.report_type,
                   t.title AS task_title, t.end_date,
                   sender.full_name AS sender_name, sender.avatar_url AS sender_avatar,
                   sender.role AS sender_role,
@@ -1177,6 +1179,466 @@ async def upload_file(file: UploadFile, user=Depends(get_current_user)):
     with open(f"uploads/{fname}", "wb") as out:
         out.write(await file.read())
     return {"url": f"/uploads/{fname}", "name": file.filename}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERSONNEL MANAGEMENT  (principal + registrar only for write; all staff for read)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PersonnelCreateBody(BaseModel):
+    username: str
+    password: str
+    email: Optional[str] = None
+    first_name: str
+    middle_name: Optional[str] = None
+    last_name: str
+    suffix: Optional[str] = None
+    role: str
+    grade_level_id: Optional[int] = None
+    phone_number: Optional[str] = None
+    tin: Optional[str] = None
+    qsis: Optional[str] = None
+    hdmf: Optional[str] = None
+    phic: Optional[str] = None
+    date_of_appointment: Optional[str] = None
+    birthdate: Optional[str] = None
+    address: Optional[str] = None
+
+
+class PersonnelUpdateBody(BaseModel):
+    email: Optional[str] = None
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    suffix: Optional[str] = None
+    role: Optional[str] = None
+    grade_level_id: Optional[int] = None
+    phone_number: Optional[str] = None
+    tin: Optional[str] = None
+    qsis: Optional[str] = None
+    hdmf: Optional[str] = None
+    phic: Optional[str] = None
+    date_of_appointment: Optional[str] = None
+    birthdate: Optional[str] = None
+    address: Optional[str] = None
+    password: Optional[str] = None
+
+
+def _user_row(row, db):
+    d = dict(row)
+    gl = db.execute(
+        "SELECT grade_level FROM grade_levels WHERE id=?", (d.get("grade_level_id"),)
+    ).fetchone()
+    d["grade_level"] = gl["grade_level"] if gl else None
+    d["subjects"] = [dict(r) for r in db.execute(
+        """SELECT us.subject, gl.grade_level
+           FROM user_subjects us
+           LEFT JOIN grade_levels gl ON gl.id = us.grade_level_id
+           WHERE us.user_id=?""", (d["id"],)
+    ).fetchall()]
+    return d
+
+
+@app.get("/api/personnel")
+def list_personnel(search: str = "", db=Depends(get_db), user=Depends(get_current_user)):
+    q = f"%{search}%"
+    rows = db.execute(
+        """SELECT u.*, gl.grade_level FROM users u
+           LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
+           WHERE u.role != 'admin'
+             AND (u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ?)
+           ORDER BY u.role, u.full_name""",
+        (q, q, q)
+    ).fetchall()
+    return [_user_row(r, db) for r in rows]
+
+
+@app.get("/api/personnel/{uid}")
+def get_personnel(uid: int, db=Depends(get_db), user=Depends(get_current_user)):
+    row = db.execute(
+        "SELECT * FROM users WHERE id=?", (uid,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "User not found")
+    return _user_row(row, db)
+
+
+@app.post("/api/personnel", status_code=201)
+def create_personnel(body: PersonnelCreateBody, db=Depends(get_db),
+                     user=Depends(require_personnel_manager)):
+    valid_roles = ('principal', 'coordinator', 'dean', 'teacher', 'registrar')
+    if body.role not in valid_roles:
+        raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
+    pw = hash_password(body.password)
+    full_name = " ".join(filter(None, [body.first_name, body.middle_name,
+                                        body.last_name, body.suffix]))
+    try:
+        db.execute(
+            """INSERT INTO users (username, password_hash, full_name, first_name, middle_name,
+               last_name, suffix, role, grade_level_id, email, phone_number,
+               tin, qsis, hdmf, phic, date_of_appointment, birthdate, address)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (body.username, pw, full_name, body.first_name, body.middle_name,
+             body.last_name, body.suffix, body.role, body.grade_level_id,
+             body.email, body.phone_number, body.tin, body.qsis, body.hdmf,
+             body.phic, body.date_of_appointment, body.birthdate, body.address)
+        )
+        db.commit()
+    except Exception as e:
+        raise HTTPException(400, f"Username already exists or invalid data: {e}")
+    row = db.execute("SELECT * FROM users WHERE username=?", (body.username,)).fetchone()
+    return _user_row(row, db)
+
+
+@app.put("/api/personnel/{uid}")
+def update_personnel(uid: int, body: PersonnelUpdateBody, db=Depends(get_db),
+                     user=Depends(require_personnel_manager)):
+    row = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not row:
+        raise HTTPException(404, "User not found")
+
+    fields, vals = [], []
+    for col, val in [
+        ("email", body.email), ("first_name", body.first_name),
+        ("middle_name", body.middle_name), ("last_name", body.last_name),
+        ("suffix", body.suffix), ("role", body.role),
+        ("grade_level_id", body.grade_level_id), ("phone_number", body.phone_number),
+        ("tin", body.tin), ("qsis", body.qsis), ("hdmf", body.hdmf),
+        ("phic", body.phic), ("date_of_appointment", body.date_of_appointment),
+        ("birthdate", body.birthdate), ("address", body.address),
+    ]:
+        if val is not None:
+            fields.append(f"{col}=?")
+            vals.append(val)
+
+    if body.password:
+        fields.append("password_hash=?")
+        vals.append(hash_password(body.password))
+
+    if fields:
+        # Recompute full_name from updated parts
+        updated = dict(row)
+        for col, val in zip([f.split("=")[0] for f in fields], vals):
+            updated[col] = val
+        full_name = " ".join(filter(None, [
+            updated.get("first_name"), updated.get("middle_name"),
+            updated.get("last_name"), updated.get("suffix")
+        ]))
+        fields.append("full_name=?")
+        vals.append(full_name)
+        vals.append(uid)
+        db.execute(f"UPDATE users SET {', '.join(fields)} WHERE id=?", vals)
+        db.commit()
+
+    return _user_row(db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone(), db)
+
+
+@app.patch("/api/personnel/{uid}/status")
+def toggle_personnel_status(uid: int, db=Depends(get_db),
+                             user=Depends(require_personnel_manager)):
+    row = db.execute("SELECT is_active FROM users WHERE id=?", (uid,)).fetchone()
+    if not row:
+        raise HTTPException(404, "User not found")
+    new_status = 0 if row["is_active"] else 1
+    db.execute("UPDATE users SET is_active=? WHERE id=?", (new_status, uid))
+    db.commit()
+    return {"id": uid, "is_active": bool(new_status)}
+
+
+@app.get("/api/personnel/meta/grade-levels")
+def get_grade_levels(db=Depends(get_db), user=Depends(get_current_user)):
+    return [dict(r) for r in db.execute("SELECT * FROM grade_levels ORDER BY id").fetchall()]
+
+
+@app.get("/api/personnel/meta/subjects")
+def get_subjects(db=Depends(get_db), user=Depends(get_current_user)):
+    return [dict(r) for r in db.execute("SELECT * FROM subjects ORDER BY id").fetchall()]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# APPRAISAL MANAGEMENT  (principal, coordinator, dean)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SpecialTaskBody(BaseModel):
+    title: str
+    description: Optional[str] = None
+    assignee_id: Optional[int] = None
+    due_date: Optional[str] = None
+
+
+class SpecialTaskEvalBody(BaseModel):
+    completion_quality_score: int
+    timeliness_score: int
+    initiative_score: int
+    coordination_score: int
+    remarks: Optional[str] = None
+
+
+class SchoolEventBody(BaseModel):
+    title: str
+    description: Optional[str] = None
+    event_date: Optional[str] = None
+
+
+class EventEvalBody(BaseModel):
+    evaluator_name: str
+    evaluator_role: Optional[str] = None
+    planning_score: int
+    objectives_score: int
+    personnel_score: int
+    time_mgmt_score: int
+    engagement_score: int
+    resource_score: int
+    feedback_comments: Optional[str] = None
+
+
+def _special_task_row(row, db):
+    d = dict(row)
+    assignee = db.execute(
+        "SELECT id, full_name, role FROM users WHERE id=?", (d.get("assignee_id"),)
+    ).fetchone()
+    d["assignee"] = dict(assignee) if assignee else None
+    ev = db.execute(
+        "SELECT * FROM special_task_evaluations WHERE task_id=?", (d["id"],)
+    ).fetchone()
+    d["evaluation"] = dict(ev) if ev else None
+    return d
+
+
+def _school_event_row(row, db):
+    d = dict(row)
+    d["evaluations"] = [dict(r) for r in db.execute(
+        "SELECT * FROM event_evaluations WHERE event_id=? ORDER BY date_submitted DESC",
+        (d["id"],)
+    ).fetchall()]
+    return d
+
+
+@app.get("/api/appraisal/special-tasks")
+def list_special_tasks(db=Depends(get_db), user=Depends(require_appraisal_access)):
+    rows = db.execute(
+        "SELECT * FROM special_tasks ORDER BY created_at DESC"
+    ).fetchall()
+    return [_special_task_row(r, db) for r in rows]
+
+
+@app.post("/api/appraisal/special-tasks", status_code=201)
+def create_special_task(body: SpecialTaskBody, db=Depends(get_db),
+                        user=Depends(require_appraisal_access)):
+    uid = int(user["sub"])
+    db.execute(
+        """INSERT INTO special_tasks (title, description, assignee_id, assigned_by, due_date)
+           VALUES (?,?,?,?,?)""",
+        (body.title, body.description, body.assignee_id, uid, body.due_date)
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM special_tasks ORDER BY id DESC LIMIT 1").fetchone()
+    return _special_task_row(row, db)
+
+
+@app.post("/api/appraisal/special-tasks/{task_id}/evaluate")
+def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody,
+                          db=Depends(get_db), user=Depends(require_appraisal_access)):
+    row = db.execute("SELECT * FROM special_tasks WHERE id=?", (task_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Special task not found")
+    scores = [body.completion_quality_score, body.timeliness_score,
+              body.initiative_score, body.coordination_score]
+    weights = [0.35, 0.30, 0.20, 0.15]
+    weighted_avg = sum(s * w for s, w in zip(scores, weights))
+    uid = int(user["sub"])
+    db.execute(
+        """INSERT INTO special_task_evaluations
+           (task_id, evaluator_id, completion_quality_score, timeliness_score,
+            initiative_score, coordination_score, weighted_average, remarks)
+           VALUES (?,?,?,?,?,?,?,?)
+           ON CONFLICT(task_id) DO UPDATE SET
+             evaluator_id=excluded.evaluator_id,
+             completion_quality_score=excluded.completion_quality_score,
+             timeliness_score=excluded.timeliness_score,
+             initiative_score=excluded.initiative_score,
+             coordination_score=excluded.coordination_score,
+             weighted_average=excluded.weighted_average,
+             remarks=excluded.remarks,
+             evaluated_at=CURRENT_TIMESTAMP""",
+        (task_id, uid, body.completion_quality_score, body.timeliness_score,
+         body.initiative_score, body.coordination_score, weighted_avg, body.remarks)
+    )
+    db.execute("UPDATE special_tasks SET status='evaluated' WHERE id=?", (task_id,))
+    db.commit()
+    return _special_task_row(db.execute("SELECT * FROM special_tasks WHERE id=?", (task_id,)).fetchone(), db)
+
+
+@app.get("/api/appraisal/events")
+def list_school_events(db=Depends(get_db), user=Depends(require_appraisal_access)):
+    rows = db.execute("SELECT * FROM school_events ORDER BY event_date DESC").fetchall()
+    return [_school_event_row(r, db) for r in rows]
+
+
+@app.post("/api/appraisal/events", status_code=201)
+def create_school_event(body: SchoolEventBody, db=Depends(get_db),
+                        user=Depends(require_appraisal_access)):
+    uid = int(user["sub"])
+    db.execute(
+        "INSERT INTO school_events (title, description, event_date, created_by) VALUES (?,?,?,?)",
+        (body.title, body.description, body.event_date, uid)
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM school_events ORDER BY id DESC LIMIT 1").fetchone()
+    return _school_event_row(row, db)
+
+
+@app.post("/api/appraisal/events/{event_id}/evaluate")
+def evaluate_school_event(event_id: int, body: EventEvalBody,
+                          db=Depends(get_db), user=Depends(require_appraisal_access)):
+    row = db.execute("SELECT * FROM school_events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    uid = int(user["sub"])
+    db.execute(
+        """INSERT INTO event_evaluations
+           (event_id, evaluator_id, evaluator_name, evaluator_role,
+            planning_score, objectives_score, personnel_score,
+            time_mgmt_score, engagement_score, resource_score, feedback_comments)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (event_id, uid, body.evaluator_name, body.evaluator_role,
+         body.planning_score, body.objectives_score, body.personnel_score,
+         body.time_mgmt_score, body.engagement_score, body.resource_score,
+         body.feedback_comments)
+    )
+    db.commit()
+    return _school_event_row(db.execute("SELECT * FROM school_events WHERE id=?", (event_id,)).fetchone(), db)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EVENT MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class EventCreateBody(BaseModel):
+    title: str
+    nature: Optional[str] = 'Co-curricular'
+    target_date: Optional[str] = None
+    venue: Optional[str] = None
+    proposed_budget: Optional[str] = None
+    fund_source: Optional[str] = None
+    focal_name: Optional[str] = None
+    focal_role: Optional[str] = None
+    focal_contact: Optional[str] = None
+    expected_outputs: Optional[str] = None
+    participants: Optional[str] = None
+    rationale: Optional[str] = None
+    objectives: Optional[str] = None
+    phase1: Optional[str] = None
+    phase2: Optional[str] = None
+    phase3: Optional[str] = None
+    activity_matrix: Optional[str] = None
+    training_materials: Optional[str] = None
+    snacks: Optional[str] = None
+    exec_committee: Optional[str] = None
+    twg_groups: Optional[str] = None
+    monitoring_criteria: Optional[str] = None
+    indicators: Optional[str] = None
+    comments: Optional[str] = None
+
+
+def _event_row(row, db):
+    d = dict(row)
+    creator = db.execute(
+        "SELECT full_name, role FROM users WHERE id=?", (d.get("created_by"),)
+    ).fetchone()
+    d["creator_name"] = creator["full_name"] if creator else None
+    d["creator_role"] = creator["role"] if creator else None
+    return d
+
+
+@app.get("/api/events")
+def list_events(db=Depends(get_db), user=Depends(get_current_user)):
+    rows = db.execute(
+        "SELECT * FROM events ORDER BY created_at DESC"
+    ).fetchall()
+    return [_event_row(r, db) for r in rows]
+
+
+@app.get("/api/events/{event_id}")
+def get_event(event_id: int, db=Depends(get_db), user=Depends(get_current_user)):
+    row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    return _event_row(row, db)
+
+
+@app.post("/api/events", status_code=201)
+def create_event(body: EventCreateBody, db=Depends(get_db),
+                 user=Depends(require_event_manager)):
+    uid = int(user["sub"])
+    db.execute(
+        """INSERT INTO events
+           (title, nature, target_date, venue, proposed_budget, fund_source,
+            focal_name, focal_role, focal_contact, expected_outputs, participants,
+            rationale, objectives, phase1, phase2, phase3, activity_matrix,
+            training_materials, snacks, exec_committee, twg_groups,
+            monitoring_criteria, indicators, comments, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (body.title, body.nature, body.target_date, body.venue,
+         body.proposed_budget, body.fund_source, body.focal_name,
+         body.focal_role, body.focal_contact, body.expected_outputs,
+         body.participants, body.rationale, body.objectives,
+         body.phase1, body.phase2, body.phase3, body.activity_matrix,
+         body.training_materials, body.snacks, body.exec_committee,
+         body.twg_groups, body.monitoring_criteria, body.indicators,
+         body.comments, uid)
+    )
+    db.commit()
+    row = db.execute("SELECT * FROM events ORDER BY id DESC LIMIT 1").fetchone()
+    return _event_row(row, db)
+
+
+@app.patch("/api/events/{event_id}/approve")
+def approve_event(event_id: int, db=Depends(get_db),
+                  user=Depends(require_admin_or_principal)):
+    row = db.execute("SELECT id FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    db.execute("UPDATE events SET status='approved' WHERE id=?", (event_id,))
+    db.commit()
+    return {"message": "Event approved"}
+
+
+@app.patch("/api/events/{event_id}/disable")
+def disable_event(event_id: int, db=Depends(get_db),
+                  user=Depends(require_event_manager)):
+    row = db.execute("SELECT id FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    db.execute("UPDATE events SET status='disabled' WHERE id=?", (event_id,))
+    db.commit()
+    return {"message": "Event disabled"}
+
+
+@app.patch("/api/events/{event_id}/enable")
+def enable_event(event_id: int, db=Depends(get_db),
+                 user=Depends(require_event_manager)):
+    row = db.execute("SELECT id FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    db.execute("UPDATE events SET status='pending_approval' WHERE id=?", (event_id,))
+    db.commit()
+    return {"message": "Event re-enabled"}
+
+
+@app.delete("/api/events/{event_id}")
+def delete_event(event_id: int, db=Depends(get_db),
+                 user=Depends(require_event_manager)):
+    uid = int(user["sub"])
+    role = user["role"]
+    row = db.execute("SELECT created_by FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    if role not in ("admin", "principal") and row["created_by"] != uid:
+        raise HTTPException(403, "You can only delete events you created")
+    db.execute("DELETE FROM events WHERE id=?", (event_id,))
+    db.commit()
+    return {"message": "Event deleted"}
 
 
 if __name__ == "__main__":

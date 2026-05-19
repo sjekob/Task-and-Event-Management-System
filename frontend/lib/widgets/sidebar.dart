@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
-enum NavPage { dashboard, taskManager, myTasks, activity }
+enum NavPage { dashboard, taskManager, myTasks, activity, personnelManagement, appraisal, eventManagement }
 
 // ── Shared dark sidebar palette ───────────────────────────────────────────────
 const Color _kSidebarBg       = Color(0xFF1A1A2E);
@@ -48,6 +48,12 @@ class _AppSidebarState extends State<AppSidebar> {
       widget.userRole == 'registrar';
   bool get _isLeaf =>
       widget.userRole == 'teacher' || widget.userRole == 'registrar';
+  bool get _canManagePersonnel =>
+      widget.userRole == 'principal' || widget.userRole == 'registrar' ||
+      widget.userRole == 'admin';
+  bool get _hasAppraisalAccess =>
+      widget.userRole == 'principal' || widget.userRole == 'coordinator' ||
+      widget.userRole == 'dean' || widget.userRole == 'admin';
 
   String get _roleLabel => _roleLabelFor(widget.userRole);
 
@@ -101,6 +107,30 @@ class _AppSidebarState extends State<AppSidebar> {
                     isActive: widget.currentPage == NavPage.activity,
                     collapsed: _collapsed,
                     onTap: () => widget.onNavigate(NavPage.activity),
+                  ),
+                  if (!_collapsed) _sectionLabel('MANAGEMENT'),
+                  if (_canManagePersonnel)
+                    _NavItem(
+                      icon: Icons.people_outlined,
+                      label: 'Personnel',
+                      isActive: widget.currentPage == NavPage.personnelManagement,
+                      collapsed: _collapsed,
+                      onTap: () => widget.onNavigate(NavPage.personnelManagement),
+                    ),
+                  if (_hasAppraisalAccess)
+                    _NavItem(
+                      icon: Icons.star_border_outlined,
+                      label: 'Appraisal',
+                      isActive: widget.currentPage == NavPage.appraisal,
+                      collapsed: _collapsed,
+                      onTap: () => widget.onNavigate(NavPage.appraisal),
+                    ),
+                  _NavItem(
+                    icon: Icons.event_outlined,
+                    label: 'Events',
+                    isActive: widget.currentPage == NavPage.eventManagement,
+                    collapsed: _collapsed,
+                    onTap: () => widget.onNavigate(NavPage.eventManagement),
                   ),
                 ],
               ),
@@ -368,6 +398,11 @@ class MobileNavDrawer extends StatelessWidget {
       userRole == 'coordinator' || userRole == 'dean' ||
       userRole == 'registrar';
   bool get _isLeaf => userRole == 'teacher' || userRole == 'registrar';
+  bool get _canManagePersonnel =>
+      userRole == 'principal' || userRole == 'registrar' || userRole == 'admin';
+  bool get _hasAppraisalAccess =>
+      userRole == 'principal' || userRole == 'coordinator' ||
+      userRole == 'dean' || userRole == 'admin';
 
   void _navigate(BuildContext context, NavPage page) {
     Navigator.of(context).pop();
@@ -443,6 +478,27 @@ class MobileNavDrawer extends StatelessWidget {
                       label: 'Activity',
                       isActive: currentPage == NavPage.activity,
                       onTap: () => _navigate(context, NavPage.activity),
+                    ),
+                    _drawerSectionLabel('MANAGEMENT'),
+                    if (_canManagePersonnel)
+                      _NavItem(
+                        icon: Icons.people_outlined,
+                        label: 'Personnel',
+                        isActive: currentPage == NavPage.personnelManagement,
+                        onTap: () => _navigate(context, NavPage.personnelManagement),
+                      ),
+                    if (_hasAppraisalAccess)
+                      _NavItem(
+                        icon: Icons.star_border_outlined,
+                        label: 'Appraisal',
+                        isActive: currentPage == NavPage.appraisal,
+                        onTap: () => _navigate(context, NavPage.appraisal),
+                      ),
+                    _NavItem(
+                      icon: Icons.event_outlined,
+                      label: 'Events',
+                      isActive: currentPage == NavPage.eventManagement,
+                      onTap: () => _navigate(context, NavPage.eventManagement),
                     ),
                   ],
                 ),

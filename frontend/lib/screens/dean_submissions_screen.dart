@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
+import '../utils/web_downloader.dart';
 import '../widgets/common_widgets.dart';
 
 class DeanSubmissionsScreen extends StatefulWidget {
@@ -208,7 +209,32 @@ class _SubmissionCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(entry['report_title'] as String, style: AppTheme.bodyMd),
           ],
-          const SizedBox(height: 4),
+          if (entry['report_description'] != null &&
+              (entry['report_description'] as String).isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(entry['report_description'] as String,
+                style: AppTheme.bodySm, maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+          ],
+          // ── Submitted file or link ──
+          if (entry['report_filename'] != null &&
+              entry['report_file_path'] != null) ...[
+            const SizedBox(height: 8),
+            _SubmissionAttachment(
+              type: 'file',
+              label: entry['report_filename'] as String,
+              url: '${ApiService.baseUrl}${entry['report_file_path'] as String}',
+              filename: entry['report_filename'] as String,
+            ),
+          ] else if (entry['report_link_url'] != null) ...[
+            const SizedBox(height: 8),
+            _SubmissionAttachment(
+              type: 'link',
+              label: entry['report_link_url'] as String,
+              url: entry['report_link_url'] as String,
+            ),
+          ],
+          const SizedBox(height: 8),
           Text(
             'Submitted: ${_fmtDate(entry['date_of_submission'] as String?)}',
             style: AppTheme.bodySm,
@@ -240,6 +266,58 @@ class _SubmissionCard extends StatelessWidget {
             ),
           ]),
         ],
+      ),
+    );
+  }
+}
+
+class _SubmissionAttachment extends StatelessWidget {
+  final String type;
+  final String label;
+  final String url;
+  final String? filename;
+
+  const _SubmissionAttachment({
+    required this.type,
+    required this.label,
+    required this.url,
+    this.filename,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isFile = type == 'file';
+    final color = isFile ? const Color(0xFF16A34A) : AppTheme.accentBlue;
+    final bg = isFile ? const Color(0xFFF0FDF4) : AppTheme.blueBg;
+    final icon = isFile ? Icons.insert_drive_file_outlined : Icons.link_rounded;
+
+    return GestureDetector(
+      onTap: isFile
+          ? () => webDownload(url, filename ?? label)
+          : () => webOpenUrl(url),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(label,
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12, color: color,
+                    decoration: isFile ? null : TextDecoration.underline),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 6),
+          Icon(
+            isFile ? Icons.download_rounded : Icons.open_in_new,
+            size: 14, color: color,
+          ),
+        ]),
       ),
     );
   }

@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../widgets/common_widgets.dart';
 import 'edit_task_screen.dart';
 import '../utils/web_file_picker.dart';
+import '../utils/web_downloader.dart';
 
 class TaskDetailScreen extends StatefulWidget {
   final int taskId;
@@ -400,6 +401,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           const SizedBox(height: 6),
           Text(r.reportDescription!, style: AppTheme.bodyMd),
         ],
+        if (r.reportFilename != null && r.reportFilePath != null) ...[
+          const SizedBox(height: 8),
+          _FileItem(
+            filename: r.reportFilename!,
+            url: '${ApiService.baseUrl}${r.reportFilePath!}',
+          ),
+        ],
         if (r.reportLinkUrl != null) ...[
           const SizedBox(height: 8),
           _LinkItem(url: r.reportLinkUrl!),
@@ -461,6 +469,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   fontSize: 16, fontWeight: FontWeight.w700,
                   color: AppTheme.textPrimary)),
         ),
+        // ── Points preview (only when not yet submitted) ──
+        if (_task!.myReport == null)
+          _PointsPreviewCard(task: _task!),
+        if (_task!.myReport == null) const SizedBox(height: 14),
         _ReportForm(
           taskId: widget.taskId,
           task: _task!,
@@ -1118,18 +1130,56 @@ class _ReportFormState extends State<_ReportForm> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
+            color: AppTheme.greenBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.greenColor.withOpacity(0.3)),
+          ),
+          child: Row(children: [
+            const Icon(Icons.check_circle,
+                color: AppTheme.greenColor, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Submitted',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14, fontWeight: FontWeight.w700,
+                        color: AppTheme.greenColor)),
+                Text('Your report has been received',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11, color: AppTheme.greenColor.withOpacity(0.75))),
+              ]),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 10),
+        // ── Submitted content card ──
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
             boxShadow: AppTheme.cardShadow,
           ),
-          child: Row(children: [
-            const Icon(Icons.check_circle_outline,
-                color: AppTheme.greenColor, size: 18),
-            const SizedBox(width: 8),
-            Text('Submitted!',
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              _SubmissionTypeLabel(type: r.reportType),
+            ]),
+            const SizedBox(height: 8),
+            Text(r.reportTitle,
                 style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14, fontWeight: FontWeight.w700,
-                    color: AppTheme.greenColor)),
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary)),
+            if (r.reportFilename != null && r.reportFilePath != null) ...[
+              const SizedBox(height: 8),
+              _FileItem(
+                filename: r.reportFilename!,
+                url: '${ApiService.baseUrl}${r.reportFilePath!}',
+              ),
+            ],
+            if (r.reportLinkUrl != null) ...[
+              const SizedBox(height: 8),
+              _LinkItem(url: r.reportLinkUrl!),
+            ],
           ]),
         ),
         const SizedBox(height: 10),
@@ -1277,13 +1327,22 @@ class _ReportListItem extends StatelessWidget {
             ]),
             if (isSelected && report.reportTitle.isNotEmpty) ...[
               const SizedBox(height: 8),
+              _SubmissionTypeLabel(type: report.reportType),
+              const SizedBox(height: 6),
               Text(report.reportTitle, style: AppTheme.bodyMd),
               if (report.reportDescription != null) ...[
                 const SizedBox(height: 4),
                 Text(report.reportDescription!, style: AppTheme.bodySm),
               ],
+              if (report.reportFilename != null && report.reportFilePath != null) ...[
+                const SizedBox(height: 6),
+                _FileItem(
+                  filename: report.reportFilename!,
+                  url: '${ApiService.baseUrl}${report.reportFilePath!}',
+                ),
+              ],
               if (report.reportLinkUrl != null) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 _LinkItem(url: report.reportLinkUrl!),
               ],
               if (onStatusChange != null) ...[
@@ -1367,22 +1426,104 @@ class _LinkItem extends StatelessWidget {
   const _LinkItem({required this.url});
 
   @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: () => webOpenUrl(url),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppTheme.blueBg,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(children: [
+            const Icon(Icons.link, size: 14, color: AppTheme.accentBlue),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(url,
+                  style: AppTheme.bodySm.copyWith(
+                      color: AppTheme.accentBlue,
+                      decoration: TextDecoration.underline),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.open_in_new, size: 13, color: AppTheme.accentBlue),
+          ]),
+        ),
+      );
+}
+
+class _FileItem extends StatelessWidget {
+  final String filename;
+  final String url;
+  const _FileItem({required this.filename, required this.url});
+
+  @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: AppTheme.blueBg,
+          color: const Color(0xFFF0FDF4),
           borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: AppTheme.greenColor.withOpacity(0.25)),
         ),
         child: Row(children: [
-          const Icon(Icons.link, size: 14, color: AppTheme.accentBlue),
+          const Icon(Icons.insert_drive_file_outlined,
+              size: 14, color: AppTheme.greenColor),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(url,
-                style: AppTheme.bodySm.copyWith(color: AppTheme.accentBlue),
+            child: Text(filename,
+                style: AppTheme.bodySm.copyWith(color: AppTheme.textPrimary),
                 maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () => webDownload(url, filename),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.greenColor,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.download_rounded,
+                    size: 12, color: Colors.white),
+                const SizedBox(width: 4),
+                Text('Download',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10, fontWeight: FontWeight.w600,
+                        color: Colors.white)),
+              ]),
+            ),
           ),
         ]),
       );
+}
+
+class _SubmissionTypeLabel extends StatelessWidget {
+  final String? type;
+  const _SubmissionTypeLabel({this.type});
+
+  @override
+  Widget build(BuildContext context) {
+    final isFile = type == 'file';
+    final label = isFile ? 'File Attachment' : 'Link Submission';
+    final icon = isFile ? Icons.attach_file_rounded : Icons.link_rounded;
+    final color = isFile ? AppTheme.greenColor : AppTheme.accentBlue;
+    final bg = isFile ? const Color(0xFFF0FDF4) : AppTheme.blueBg;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 11, color: color),
+        const SizedBox(width: 4),
+        Text(label,
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+      ]),
+    );
+  }
 }
 
 class _BackButton extends StatelessWidget {
@@ -1562,4 +1703,61 @@ class _FormLabel extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 5),
         child: Text(text, style: AppTheme.labelSm),
       );
+}
+
+// ── Points preview card (shown in sidebar before submission) ─────────────────
+
+class _PointsPreviewCard extends StatelessWidget {
+  final Task task;
+  const _PointsPreviewCard({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.darkBanner,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.bolt_rounded, color: Colors.amber, size: 16),
+            const SizedBox(width: 6),
+            Text('Points You Can Earn',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13, fontWeight: FontWeight.w700,
+                    color: Colors.white)),
+          ]),
+          const SizedBox(height: 10),
+          _row('Early Submission', '+${task.pointsEarly}',
+              const Color(0xFF6EE7B7)),
+          _row('On Time', '+${task.pointsOntime}',
+              const Color(0xFF93C5FD)),
+          _row('Late (within 24h)', '+${task.pointsLate24}',
+              const Color(0xFFFCD34D)),
+          _row('Late (after 24h)', '${task.pointsAfter24}',
+              const Color(0xFFF87171)),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(String label, String value, Color valueColor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(children: [
+        Expanded(
+          child: Text(label,
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12, color: Colors.white.withOpacity(0.7))),
+        ),
+        Text(value,
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 13, fontWeight: FontWeight.w700,
+                color: valueColor)),
+      ]),
+    );
+  }
 }

@@ -24,7 +24,7 @@ list, Task Detail reviewer view, Task Detail submitter view with comments and po
 
 [2026-05-12] (continued) Create EditTaskScreen with same design as CreateTaskScreen but pre-filled with existing task data; wire Edit button in TaskManagerScreen to open it
 
-[2026-05-12] create it [referring to MyTasksScreen for teachers/registrars]
+[2026-05-12] create it [referring to MyTasksScre        en for teachers/registrars]
 
 [2026-05-12] create the task manager because that is the one that is creating the task not the my task page, that page is supposed to see all the tasks created that is assigned to a certain personnel
 
@@ -51,4 +51,17 @@ list, Task Detail reviewer view, Task Detail submitter view with comments and po
 [2026-05-13] can you make the navbar for my mobile view to be like a hamburger view its like on the desktop view but its like collapsable view for the mobile like on facebook
 
 [2026-05-13] put the prompt into the text file earlier
+
+[2026-05-20] FIX THE UI FOR THE FOLLOWING SYSTEM [attached screenshots of Alden's Personnel Management design: hexagon banner, DataTable with Academic Delegation tab, Deactivated Accounts collapsible section, Add New User dialog, Edit Role & Assignment dialog, User Details dialog]
+
+[2026-05-20] dont do that for the appraisal just do the personnel management
+
+[2026-05-20] why is the add user didnt look like this [attached screenshot of Alden's simple Add New User dialog with 3 fields: Email, Username, Password]
+
+[2026-05-20] why its error on this tab its not showing any points [attached screenshot of Your Submission sidebar in task detail — points breakdown not visible before submission]
+
+[2026-05-20] for the personnel management, i edit the information of dean3, now why in this dashboard it didnt update any of its fields [attached screenshot of Personnel table showing dean3 row with blank Name after edit]
+
+[2026-05-20] for the prompt generate it to the prompt history textfile
+
 

@@ -79,3 +79,24 @@ def require_admin_or_principal(user=Depends(get_current_user)):
     if user["role"] not in ("admin", "principal"):
         raise HTTPException(403, "Admin or Principal required")
     return user
+
+
+def require_personnel_manager(user=Depends(get_current_user)):
+    """Personnel management: principal and registrar only."""
+    if user["role"] not in ("principal", "registrar", "admin"):
+        raise HTTPException(403, "Personnel management requires Principal or Registrar role")
+    return user
+
+
+def require_appraisal_access(user=Depends(get_current_user)):
+    """Appraisal management: principal, coordinator, and dean."""
+    if user["role"] not in ("principal", "coordinator", "dean", "admin"):
+        raise HTTPException(403, "Appraisal access requires Principal, Coordinator, or Dean role")
+    return user
+
+
+def require_event_manager(user=Depends(get_current_user)):
+    """Event creation/management: principal, coordinator, and dean."""
+    if user["role"] not in ("principal", "coordinator", "dean", "admin"):
+        raise HTTPException(403, "Event management requires Principal, Coordinator, or Dean role")
+    return user

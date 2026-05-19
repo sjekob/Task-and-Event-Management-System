@@ -12,6 +12,10 @@ import 'login_screen.dart';
 import 'create_task_screen.dart';
 import 'profile_screen.dart';
 import 'task_detail_screen.dart';
+import 'personnel_management_screen.dart';
+import 'appraisal_screen.dart';
+import 'event_management_screen.dart';
+import 'add_event_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -26,6 +30,7 @@ class _MainShellState extends State<MainShell> {
   int? _activeTaskId;
   bool _showingCreateTask = false;
   bool _showingCreateTemplate = false;
+  bool _showingAddEvent = false;
 
   void _onNavigate(NavPage page) {
     setState(() {
@@ -33,6 +38,7 @@ class _MainShellState extends State<MainShell> {
       _activeTaskId = null;
       _showingCreateTask = false;
       _showingCreateTemplate = false;
+      _showingAddEvent = false;
     });
   }
 
@@ -66,6 +72,17 @@ class _MainShellState extends State<MainShell> {
 
       case NavPage.activity:
         return const ActivityScreen();
+
+      case NavPage.personnelManagement:
+        return const PersonnelManagementScreen();
+
+      case NavPage.appraisal:
+        return const AppraisalScreen();
+
+      case NavPage.eventManagement:
+        return EventManagementScreen(
+          onAddEvent: () => setState(() => _showingAddEvent = true),
+        );
     }
   }
 
@@ -97,6 +114,7 @@ class _MainShellState extends State<MainShell> {
     setState(() {
       _showingCreateTask = true;
       _showingCreateTemplate = false;
+      _showingAddEvent = false;
       _activeTaskId = null;
     });
   }
@@ -105,6 +123,7 @@ class _MainShellState extends State<MainShell> {
     setState(() {
       _showingCreateTemplate = true;
       _showingCreateTask = false;
+      _showingAddEvent = false;
       _activeTaskId = null;
     });
   }
@@ -252,13 +271,19 @@ class _MainShellState extends State<MainShell> {
                             onBack: () => setState(() => _showingCreateTemplate = false),
                             onCreated: () => setState(() => _showingCreateTemplate = false),
                           )
-                        // ── Normal view ──
-                        : Column(
-                            children: [
-                              _buildTopBar(isMobile),
-                              Expanded(child: _buildPage()),
-                            ],
-                          ),
+                        : _showingAddEvent
+                            // ── Add Event inline ──
+                            ? AddEventScreen(
+                                onBack: () => setState(() => _showingAddEvent = false),
+                                onCreated: () => setState(() => _showingAddEvent = false),
+                              )
+                            // ── Normal view ──
+                            : Column(
+                                children: [
+                                  _buildTopBar(isMobile),
+                                  Expanded(child: _buildPage()),
+                                ],
+                              ),
           ),
         ],
       ),

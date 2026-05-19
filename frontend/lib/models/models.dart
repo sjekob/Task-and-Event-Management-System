@@ -29,7 +29,9 @@ class User {
   final String? hdmf;
   final String? phic;
   final String? dateOfAppointment;
+  final String? birthdate;
   final String? address;
+  final bool isActive;
   final List<UserSubject> subjects;
 
   User({
@@ -51,7 +53,9 @@ class User {
     this.hdmf,
     this.phic,
     this.dateOfAppointment,
+    this.birthdate,
     this.address,
+    this.isActive = true,
     this.subjects = const [],
   });
 
@@ -81,7 +85,9 @@ class User {
       hdmf: json['hdmf']?.toString(),
       phic: json['phic']?.toString(),
       dateOfAppointment: json['date_of_appointment']?.toString(),
+      birthdate: json['birthdate']?.toString(),
       address: json['address']?.toString(),
+      isActive: (json['is_active'] ?? 1) == 1,
       subjects: subjects,
     );
   }
@@ -444,4 +450,153 @@ class DashboardData {
       events: List<Map<String, dynamic>>.from(json['events'] ?? []),
     );
   }
+}
+
+// ── Appraisal Models ──────────────────────────────────────────────────────────
+
+class SpecialTask {
+  final int id;
+  final String title;
+  final String? description;
+  final int? assigneeId;
+  final String? assigneeName;
+  final String? assigneeRole;
+  final String? dueDate;
+  final String status;
+  final SpecialTaskEvaluation? evaluation;
+
+  SpecialTask({
+    required this.id,
+    required this.title,
+    this.description,
+    this.assigneeId,
+    this.assigneeName,
+    this.assigneeRole,
+    this.dueDate,
+    required this.status,
+    this.evaluation,
+  });
+
+  factory SpecialTask.fromJson(Map<String, dynamic> json) {
+    final assignee = json['assignee'] as Map<String, dynamic>?;
+    final evalJson = json['evaluation'] as Map<String, dynamic>?;
+    return SpecialTask(
+      id: json['id'] ?? 0,
+      title: (json['title'] ?? '').toString(),
+      description: json['description']?.toString(),
+      assigneeId: assignee?['id'] as int?,
+      assigneeName: assignee?['full_name']?.toString(),
+      assigneeRole: assignee?['role']?.toString(),
+      dueDate: json['due_date']?.toString(),
+      status: (json['status'] ?? 'pending').toString(),
+      evaluation: evalJson != null ? SpecialTaskEvaluation.fromJson(evalJson) : null,
+    );
+  }
+}
+
+class SpecialTaskEvaluation {
+  final int completionScore;
+  final int timelinessScore;
+  final int initiativeScore;
+  final int coordinationScore;
+  final double? weightedAverage;
+  final String? remarks;
+
+  SpecialTaskEvaluation({
+    required this.completionScore,
+    required this.timelinessScore,
+    required this.initiativeScore,
+    required this.coordinationScore,
+    this.weightedAverage,
+    this.remarks,
+  });
+
+  factory SpecialTaskEvaluation.fromJson(Map<String, dynamic> json) =>
+      SpecialTaskEvaluation(
+        completionScore: json['completion_quality_score'] ?? 0,
+        timelinessScore: json['timeliness_score'] ?? 0,
+        initiativeScore: json['initiative_score'] ?? 0,
+        coordinationScore: json['coordination_score'] ?? 0,
+        weightedAverage: (json['weighted_average'] as num?)?.toDouble(),
+        remarks: json['remarks']?.toString(),
+      );
+}
+
+class SchoolEvent {
+  final int id;
+  final String title;
+  final String? description;
+  final String? eventDate;
+  final String status;
+  final List<EventEvaluation> evaluations;
+
+  SchoolEvent({
+    required this.id,
+    required this.title,
+    this.description,
+    this.eventDate,
+    required this.status,
+    this.evaluations = const [],
+  });
+
+  factory SchoolEvent.fromJson(Map<String, dynamic> json) {
+    final evals = (json['evaluations'] as List? ?? [])
+        .map((e) => EventEvaluation.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return SchoolEvent(
+      id: json['id'] ?? 0,
+      title: (json['title'] ?? '').toString(),
+      description: json['description']?.toString(),
+      eventDate: json['event_date']?.toString(),
+      status: (json['status'] ?? 'upcoming').toString(),
+      evaluations: evals,
+    );
+  }
+}
+
+class EventEvaluation {
+  final int id;
+  final String evaluatorName;
+  final String? evaluatorRole;
+  final int planningScore;
+  final int objectivesScore;
+  final int personnelScore;
+  final int timeMgmtScore;
+  final int engagementScore;
+  final int resourceScore;
+  final String? feedbackComments;
+  final String? dateSubmitted;
+
+  EventEvaluation({
+    required this.id,
+    required this.evaluatorName,
+    this.evaluatorRole,
+    required this.planningScore,
+    required this.objectivesScore,
+    required this.personnelScore,
+    required this.timeMgmtScore,
+    required this.engagementScore,
+    required this.resourceScore,
+    this.feedbackComments,
+    this.dateSubmitted,
+  });
+
+  factory EventEvaluation.fromJson(Map<String, dynamic> json) =>
+      EventEvaluation(
+        id: json['id'] ?? 0,
+        evaluatorName: (json['evaluator_name'] ?? '').toString(),
+        evaluatorRole: json['evaluator_role']?.toString(),
+        planningScore: json['planning_score'] ?? 0,
+        objectivesScore: json['objectives_score'] ?? 0,
+        personnelScore: json['personnel_score'] ?? 0,
+        timeMgmtScore: json['time_mgmt_score'] ?? 0,
+        engagementScore: json['engagement_score'] ?? 0,
+        resourceScore: json['resource_score'] ?? 0,
+        feedbackComments: json['feedback_comments']?.toString(),
+        dateSubmitted: json['date_submitted']?.toString(),
+      );
+
+  double get average =>
+      (planningScore + objectivesScore + personnelScore +
+       timeMgmtScore + engagementScore + resourceScore) / 6.0;
 }

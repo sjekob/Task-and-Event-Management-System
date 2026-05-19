@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.14:8000';
+  static const String baseUrl = 'http://192.168.1.23:8000';
   static String? _token;
 
   static Future<String?> get token async {
@@ -368,5 +368,184 @@ class ApiService {
       return List<String>.from(jsonDecode(res.body));
     }
     return [];
+  }
+
+  // ── Personnel Management ──────────────────────────────────────────────────
+
+  static Future<List<User>> getPersonnel({String search = ''}) async {
+    String url = '$baseUrl/api/personnel';
+    if (search.isNotEmpty) url += '?search=${Uri.encodeComponent(search)}';
+    final res = await http.get(Uri.parse(url), headers: await _headers);
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body);
+      return data.map((u) => User.fromJson(u as Map<String, dynamic>)).toList();
+    }
+    throw Exception('Failed to load personnel');
+  }
+
+  static Future<User> getPersonnelById(int id) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/personnel/$id'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) return User.fromJson(jsonDecode(res.body));
+    throw Exception('User not found');
+  }
+
+  static Future<User> createPersonnel(Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/personnel'),
+      headers: await _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 201) return User.fromJson(jsonDecode(res.body));
+    throw Exception(jsonDecode(res.body)['detail'] ?? 'Failed to create personnel');
+  }
+
+  static Future<User> updatePersonnel(int id, Map<String, dynamic> data) async {
+    final res = await http.put(
+      Uri.parse('$baseUrl/api/personnel/$id'),
+      headers: await _headers,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) return User.fromJson(jsonDecode(res.body));
+    throw Exception(jsonDecode(res.body)['detail'] ?? 'Failed to update personnel');
+  }
+
+  static Future<void> togglePersonnelStatus(int id) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/personnel/$id/status'),
+      headers: await _headers,
+    );
+    if (res.statusCode != 200) throw Exception('Failed to update status');
+  }
+
+  static Future<List<Map<String, dynamic>>> getGradeLevelsMeta() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/personnel/meta/grade-levels'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  static Future<List<Map<String, dynamic>>> getSubjectsMeta() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/personnel/meta/subjects'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  // ── Appraisal Management ──────────────────────────────────────────────────
+
+  static Future<List<SpecialTask>> getSpecialTasks() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/appraisal/special-tasks'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body);
+      return data.map((t) => SpecialTask.fromJson(t as Map<String, dynamic>)).toList();
+    }
+    throw Exception('Failed to load special tasks');
+  }
+
+  static Future<SpecialTask> evaluateSpecialTask(
+      int taskId, Map<String, dynamic> scores) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/appraisal/special-tasks/$taskId/evaluate'),
+      headers: await _headers,
+      body: jsonEncode(scores),
+    );
+    if (res.statusCode == 200) {
+      return SpecialTask.fromJson(jsonDecode(res.body));
+    }
+    throw Exception('Failed to evaluate task');
+  }
+
+  static Future<List<SchoolEvent>> getSchoolEvents() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/appraisal/events'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body);
+      return data.map((e) => SchoolEvent.fromJson(e as Map<String, dynamic>)).toList();
+    }
+    throw Exception('Failed to load events');
+  }
+
+  static Future<SchoolEvent> evaluateSchoolEvent(
+      int eventId, Map<String, dynamic> evalData) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/appraisal/events/$eventId/evaluate'),
+      headers: await _headers,
+      body: jsonEncode(evalData),
+    );
+    if (res.statusCode == 200) {
+      return SchoolEvent.fromJson(jsonDecode(res.body));
+    }
+    throw Exception('Failed to submit evaluation');
+  }
+
+  // ── Event Management ──────────────────────────────────────────────────────
+
+  static Future<List<Map<String, dynamic>>> getEvents() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/events'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    throw Exception('Failed to load events');
+  }
+
+  static Future<Map<String, dynamic>?> createEvent(Map<String, dynamic> payload) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/events'),
+      headers: await _headers,
+      body: jsonEncode(payload),
+    );
+    if (res.statusCode == 201) return jsonDecode(res.body) as Map<String, dynamic>;
+    return null;
+  }
+
+  static Future<void> approveEvent(int id) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/events/$id/approve'),
+      headers: await _headers,
+    );
+    if (res.statusCode != 200) throw Exception('Failed to approve event');
+  }
+
+  static Future<void> disableEvent(int id) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/events/$id/disable'),
+      headers: await _headers,
+    );
+    if (res.statusCode != 200) throw Exception('Failed to disable event');
+  }
+
+  static Future<void> enableEvent(int id) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/events/$id/enable'),
+      headers: await _headers,
+    );
+    if (res.statusCode != 200) throw Exception('Failed to enable event');
+  }
+
+  static Future<void> deleteEvent(int id) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/api/events/$id'),
+      headers: await _headers,
+    );
+    if (res.statusCode != 200) throw Exception('Failed to delete event');
   }
 }
