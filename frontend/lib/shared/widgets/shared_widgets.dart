@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
+import '../../features/auth/login_screen.dart';
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 class AppSidebar extends StatelessWidget {
   final int activeIndex;
   final ValueChanged<int> onNavTap;
+  final String role;
+  final String username;
 
   const AppSidebar({
     super.key,
     required this.activeIndex,
     required this.onNavTap,
+    this.role = 'coordinator',
+    this.username = 'Louis Lok',
   });
 
   @override
@@ -30,63 +35,73 @@ class AppSidebar extends StatelessWidget {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              children: [
-                _sectionLabel('MAIN MENU'),
-                const SizedBox(height: 4),
-                _NavItem(
-                  icon: Icons.home_outlined,
-                  label: 'Dashboard',
-                  active: activeIndex == 0,
-                  onTap: () => onNavTap(0),
-                ),
-                _NavItem(
-                  icon: Icons.assignment_outlined,
-                  label: 'Task',
-                  active: activeIndex == 1,
-                  onTap: () => onNavTap(1),
-                ),
-                _NavItem(
-                  icon: Icons.bar_chart_outlined,
-                  label: 'Appraisal',
-                  active: activeIndex == 2,
-                  onTap: () => onNavTap(2),
-                ),
-                _NavItem(
-                  icon: Icons.calendar_today_outlined,
-                  label: 'Activity Calendar',
-                  active: activeIndex == 3,
-                  onTap: () => onNavTap(3),
-                ),
-                const SizedBox(height: 12),
-                _sectionLabel('SYSTEM'),
-                const SizedBox(height: 4),
-                _NavItem(
-                  icon: Icons.people_outline,
-                  label: 'Personnel',
-                  active: activeIndex == 4,
-                  onTap: () => onNavTap(4),
-                ),
-                _NavItem(
-                  icon: Icons.notifications_outlined,
-                  label: 'Notifications',
-                  active: activeIndex == 5,
-                  onTap: () => onNavTap(5),
-                ),
-                _NavItem(
-                  icon: Icons.settings_outlined,
-                  label: 'Settings',
-                  active: activeIndex == 6,
-                  onTap: () => onNavTap(6),
-                ),
-              ],
+              children: _buildNavItems(role.toLowerCase()),
             ),
           ),
 
           // ── User footer + logout
-          _SidebarFooter(),
+          _SidebarFooter(username: username, role: role),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildNavItems(String role) {
+    List<Widget> items = [];
+
+    if (role == 'teacher') {
+      items = [
+        _sectionLabel('MAIN MENU'),
+        const SizedBox(height: 4),
+        _NavItem(icon: Icons.home_outlined, label: 'Dashboard', active: activeIndex == 0, onTap: () => onNavTap(0)),
+        _NavItem(icon: Icons.edit_outlined, label: 'Task', active: activeIndex == 1, onTap: () => onNavTap(1)),
+        _NavItem(icon: Icons.list_alt_outlined, label: 'Activity Calendar', active: activeIndex == 3, onTap: () => onNavTap(3)),
+        _NavItem(icon: Icons.bar_chart_outlined, label: 'Appraisal', active: activeIndex == 2, onTap: () => onNavTap(2)),
+      ];
+    } else if (role == 'dean') {
+      items = [
+        _sectionLabel('MAIN MENU'),
+        const SizedBox(height: 4),
+        _NavItem(icon: Icons.home_outlined, label: 'Dashboard', active: activeIndex == 0, onTap: () => onNavTap(0)),
+        _NavItem(icon: Icons.edit_outlined, label: 'Task', active: activeIndex == 1, onTap: () => onNavTap(1)),
+        _NavItem(icon: null, label: '  Task Manager', active: activeIndex == 7, onTap: () => onNavTap(7)),
+        _NavItem(icon: null, label: '  My Tasks', active: activeIndex == 8, onTap: () => onNavTap(8)),
+        _NavItem(icon: Icons.list_alt_outlined, label: 'Activity Calendar', active: activeIndex == 3, onTap: () => onNavTap(3)),
+        _NavItem(icon: Icons.bar_chart_outlined, label: 'Appraisal', active: activeIndex == 2, onTap: () => onNavTap(2)),
+      ];
+    } else if (role == 'principal') {
+      items = [
+        _sectionLabel('MAIN MENU'),
+        const SizedBox(height: 4),
+        _NavItem(icon: Icons.home_outlined, label: 'Dashboard', active: activeIndex == 0, onTap: () => onNavTap(0)),
+        _NavItem(icon: Icons.edit_outlined, label: 'Task', active: activeIndex == 1, onTap: () => onNavTap(1)),
+        _NavItem(icon: Icons.list_alt_outlined, label: 'Activity Calendar', active: activeIndex == 3, onTap: () => onNavTap(3)),
+        _NavItem(icon: Icons.people_outline, label: 'Users', active: activeIndex == 9, onTap: () => onNavTap(9)),
+        _NavItem(icon: Icons.bar_chart_outlined, label: 'Appraisal', active: activeIndex == 2, onTap: () => onNavTap(2)),
+      ];
+    } else {
+      // Default: Coordinator (Current UI)
+      items = [
+        _sectionLabel('MAIN MENU'),
+        const SizedBox(height: 4),
+        _NavItem(icon: Icons.home_outlined, label: 'Dashboard', active: activeIndex == 0, onTap: () => onNavTap(0)),
+        _NavItem(icon: Icons.assignment_outlined, label: 'Task', active: activeIndex == 1, onTap: () => onNavTap(1)),
+        _NavItem(icon: Icons.bar_chart_outlined, label: 'Appraisal', active: activeIndex == 2, onTap: () => onNavTap(2)),
+        _NavItem(icon: Icons.calendar_today_outlined, label: 'Activity Calendar', active: activeIndex == 3, onTap: () => onNavTap(3)),
+      ];
+    }
+
+    // Append SYSTEM section for all roles
+    items.addAll([
+      const SizedBox(height: 12),
+      _sectionLabel('SYSTEM'),
+      const SizedBox(height: 4),
+      _NavItem(icon: Icons.people_outline, label: 'Personnel', active: activeIndex == 4, onTap: () => onNavTap(4)),
+      _NavItem(icon: Icons.notifications_outlined, label: 'Notifications', active: activeIndex == 5, onTap: () => onNavTap(5)),
+      _NavItem(icon: Icons.settings_outlined, label: 'Settings', active: activeIndex == 6, onTap: () => onNavTap(6)),
+    ]);
+
+    return items;
   }
 
   Widget _sectionLabel(String label) {
@@ -168,7 +183,7 @@ class _SidebarLogo extends StatelessWidget {
 // ── Nav item ──────────────────────────────────────────────────────────────────
 
 class _NavItem extends StatefulWidget {
-  final IconData icon;
+  final IconData? icon;
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -221,14 +236,18 @@ class _NavItemState extends State<_NavItem> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Icon(
-                widget.icon,
-                size: 17,
-                color: highlighted
-                    ? Colors.white
-                    : AppColors.sidebarMuted,
-              ),
-              const SizedBox(width: 9),
+              if (widget.icon != null) ...[
+                Icon(
+                  widget.icon,
+                  size: 17,
+                  color: highlighted
+                      ? Colors.white
+                      : AppColors.sidebarMuted,
+                ),
+                const SizedBox(width: 9),
+              ] else ...[
+                const SizedBox(width: 26), // Match icon + padding space
+              ],
               Expanded(
                 child: Text(
                   widget.label,
@@ -256,8 +275,31 @@ class _NavItemState extends State<_NavItem> {
 // ── Sidebar footer ────────────────────────────────────────────────────────────
 
 class _SidebarFooter extends StatelessWidget {
+  final String username;
+  final String role;
+
+  const _SidebarFooter({
+    this.username = 'Louis Lok',
+    this.role = 'coordinator',
+  });
+
   @override
   Widget build(BuildContext context) {
+    // Get initials for the avatar (e.g., "Louis Lok" -> "LL", "principal.rodriguez" -> "PR")
+    String getInitials(String name) {
+      if (name.isEmpty) return '?';
+      final parts = name.split(RegExp(r'[\s.]'));
+      if (parts.length > 1) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+      return name[0].toUpperCase();
+    }
+    
+    // Capitalize role
+    String displayRole = role.isNotEmpty 
+        ? role[0].toUpperCase() + role.substring(1) 
+        : 'Coordinator';
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
@@ -277,10 +319,10 @@ class _SidebarFooter extends StatelessWidget {
                   color: Colors.white.withOpacity(0.2),
                   shape: BoxShape.circle,
                 ),
-                child: const Center(
+                child: Center(
                   child: Text(
-                    'LL',
-                    style: TextStyle(
+                    getInitials(username),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -289,13 +331,13 @@ class _SidebarFooter extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Louis Lok',
-                      style: TextStyle(
+                      username,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -303,8 +345,8 @@ class _SidebarFooter extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      'Coordinator',
-                      style: TextStyle(
+                      displayRole,
+                      style: const TextStyle(
                         color: Color(0xCCFFFFFF),
                         fontSize: 11,
                       ),
@@ -317,7 +359,12 @@ class _SidebarFooter extends StatelessWidget {
           const SizedBox(height: 10),
           // Logout button
           GestureDetector(
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+              );
+            },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 8),

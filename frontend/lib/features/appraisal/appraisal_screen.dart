@@ -4,20 +4,25 @@ import '../../shared/widgets/shared_widgets.dart';
 import 'special_tasks_tab.dart';
 import 'events_tab.dart';
 import 'analytics_tab.dart';
+import 'personal_dashboard_tab.dart';
 import 'models/appraisal_models.dart';
 import '../../core/api_service.dart';
 
-enum _AppraisalTab { specialTasks, events, analytics }
+enum _AppraisalTab { specialTasks, events, analytics, personalDashboard }
 
 class AppraisalScreen extends StatefulWidget {
-  const AppraisalScreen({super.key});
+  final String? username;
+  final String? role;
+
+  const AppraisalScreen({super.key, this.username, this.role});
 
   @override
   State<AppraisalScreen> createState() => _AppraisalScreenState();
 }
 
 class _AppraisalScreenState extends State<AppraisalScreen> {
-  _AppraisalTab _activeTab = _AppraisalTab.specialTasks;
+  late _AppraisalTab _activeTab;
+  late List<_AppraisalTab> _availableTabs;
 
   // Hoisted state for real-time synchronization
   final Map<String, Map<String, dynamic>> _taskEvaluations = {};
@@ -26,7 +31,23 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   @override
   void initState() {
     super.initState();
+    _initializeTabs();
     _loadBackendData();
+  }
+
+  void _initializeTabs() {
+    final role = widget.role ?? 'coordinator';
+    if (role == 'teacher') {
+      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.events];
+    } else if (role == 'dean') {
+      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.specialTasks, _AppraisalTab.events];
+    } else if (role == 'principal') {
+      _availableTabs = [_AppraisalTab.analytics];
+    } else {
+      // coordinator
+      _availableTabs = [_AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
+    }
+    _activeTab = _availableTabs.first;
   }
 
   Future<void> _loadBackendData() async {
@@ -115,6 +136,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   // together with the tab content. Only the sidebar stays fixed.
   Widget _buildHeader() => _PageHeader(
         activeTab: _activeTab,
+        availableTabs: _availableTabs,
         onTabChanged: (t) => setState(() => _activeTab = t),
       );
 
@@ -125,7 +147,12 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
       body: Row(
         children: [
           // ── Sidebar — never scrolls ──────────────────────────────────────
-          AppSidebar(activeIndex: 2, onNavTap: (_) {}),
+          AppSidebar(
+            activeIndex: 2, 
+            onNavTap: (_) {},
+            username: widget.username ?? 'Guest User',
+            role: widget.role ?? 'coordinator',
+          ),
 
           // ── Content area — fully scrollable ─────────────────────────────
           Expanded(child: _tabBody()),
@@ -152,6 +179,12 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
       child: KeyedSubtree(
         key: ValueKey(_activeTab),
         child: switch (_activeTab) {
+          _AppraisalTab.personalDashboard => PersonalDashboardTab(
+              pageHeader: header,
+              username: widget.username ?? '',
+              evaluations: _taskEvaluations,
+              newRatings: _eventRatings,
+            ),
           _AppraisalTab.specialTasks => SpecialTasksTab(
               pageHeader: header,
               evaluations: _taskEvaluations,
@@ -202,9 +235,40 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
 
 class _PageHeader extends StatelessWidget {
   final _AppraisalTab activeTab;
+  final List<_AppraisalTab> availableTabs;
   final ValueChanged<_AppraisalTab> onTabChanged;
 
-  const _PageHeader({required this.activeTab, required this.onTabChanged});
+  const _PageHeader({
+    required this.activeTab,
+    required this.availableTabs,
+    required this.onTabChanged,
+  });
+
+  String _getTabLabel(_AppraisalTab tab) {
+    switch (tab) {
+      case _AppraisalTab.personalDashboard:
+        return 'Personal Dashboard';
+      case _AppraisalTab.specialTasks:
+        return 'Special Tasks';
+      case _AppraisalTab.events:
+        return 'Events';
+      case _AppraisalTab.analytics:
+        return 'Analytics';
+    }
+  }
+
+  IconData _getTabIcon(_AppraisalTab tab) {
+    switch (tab) {
+      case _AppraisalTab.personalDashboard:
+        return Icons.person_outline;
+      case _AppraisalTab.specialTasks:
+        return Icons.assignment_outlined;
+      case _AppraisalTab.events:
+        return Icons.calendar_today_outlined;
+      case _AppraisalTab.analytics:
+        return Icons.bar_chart_outlined;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -250,31 +314,18 @@ class _PageHeader extends StatelessWidget {
 
           // ── Pill-style tab bar ───────────────────────────────────────────
           Row(
-            children: [
-              _PillTab(
-                icon: Icons.assignment_outlined,
-                label: 'Special Tasks',
-                badge: 1,
-                active: activeTab == _AppraisalTab.specialTasks,
-                onTap: () => onTabChanged(_AppraisalTab.specialTasks),
-              ),
-              const SizedBox(width: 10),
-              _PillTab(
-                icon: Icons.calendar_today_outlined,
-                label: 'Events',
-                badge: 1,
-                active: activeTab == _AppraisalTab.events,
-                onTap: () => onTabChanged(_AppraisalTab.events),
-              ),
-              const SizedBox(width: 10),
-              _PillTab(
-                icon: Icons.bar_chart_outlined,
-                label: 'Analytics',
-                badge: 0,
-                active: activeTab == _AppraisalTab.analytics,
-                onTap: () => onTabChanged(_AppraisalTab.analytics),
-              ),
-            ],
+            children: availableTabs.map((tab) {
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: _PillTab(
+                  icon: _getTabIcon(tab),
+                  label: _getTabLabel(tab),
+                  badge: tab == _AppraisalTab.specialTasks || tab == _AppraisalTab.events ? 1 : 0,
+                  active: activeTab == tab,
+                  onTap: () => onTabChanged(tab),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),

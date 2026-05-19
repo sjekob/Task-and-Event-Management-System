@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'core/theme.dart';
-import 'features/appraisal/appraisal_screen.dart';
+import 'features/auth/login_screen.dart';
 
 void main() {
   runApp(const TaskNetApp());
@@ -15,7 +15,7 @@ class TaskNetApp extends StatelessWidget {
       title: 'TaskNet — Personnel Appraisal',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: const AppraisalScreen(),
+      home: const LoginScreen(),
     );
   }
 }
