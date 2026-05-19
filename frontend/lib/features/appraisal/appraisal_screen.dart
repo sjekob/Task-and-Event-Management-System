@@ -38,11 +38,11 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   void _initializeTabs() {
     final role = widget.role ?? 'coordinator';
     if (role == 'teacher') {
-      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.events];
+      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.events, _AppraisalTab.analytics];
     } else if (role == 'dean') {
-      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.specialTasks, _AppraisalTab.events];
+      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
     } else if (role == 'principal') {
-      _availableTabs = [_AppraisalTab.analytics];
+      _availableTabs = [_AppraisalTab.analytics, _AppraisalTab.specialTasks, _AppraisalTab.events];
     } else {
       // coordinator
       _availableTabs = [_AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
@@ -182,17 +182,21 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
           _AppraisalTab.personalDashboard => PersonalDashboardTab(
               pageHeader: header,
               username: widget.username ?? '',
+              role: widget.role ?? 'teacher',
               evaluations: _taskEvaluations,
               newRatings: _eventRatings,
             ),
           _AppraisalTab.specialTasks => SpecialTasksTab(
               pageHeader: header,
+              role: widget.role ?? 'dean',
               evaluations: _taskEvaluations,
               onSubmitEvaluation: (id, result) =>
                   setState(() => _taskEvaluations[id] = result),
             ),
           _AppraisalTab.events => EventsTab(
               pageHeader: header,
+              username: widget.username ?? '',
+              role: widget.role ?? 'teacher',
               newRatings: _eventRatings,
               onSubmitRating: (id, rating) async {
                 try {
@@ -219,6 +223,8 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
             ),
           _AppraisalTab.analytics => AnalyticsTab(
               pageHeader: header,
+              role: widget.role ?? 'principal',
+              username: widget.username ?? '',
               evaluations: _taskEvaluations,
               newRatings: _eventRatings,
             ),

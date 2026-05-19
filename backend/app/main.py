@@ -86,7 +86,7 @@ engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def get_db() -> Session:
+def get_db():
     db = SessionLocal()
     try:
         yield db
@@ -881,3 +881,442 @@ def generate_summary(
     db.commit()
     db.refresh(summary)
     return PerformanceSummaryOut.model_validate(summary)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Routes — Role-Based Dashboards & Access Control
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/dashboard/teacher/{personnel_id}", tags=["Dashboard - Teacher"])
+def teacher_dashboard(personnel_id: int, db: Session = Depends(get_db)):
+    """
+    TEACHER CAN:
+    - View their own report evaluation scores (Content Quality, Format Compliance, Completeness)
+    - View their own compliance points (Star Rating × 20)
+    - View their own event evaluation submissions and ratings
+    - View their own performance summary breakdown
+    """
+    user = db.query(User).filter(User.id == personnel_id).first()
+    if not user or user.role != "Teacher":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get all appraisal records for this teacher
+    appraisals = db.query(AppraisalRecord).filter(
+        AppraisalRecord.personnel_id == personnel_id,
+        AppraisalRecord.is_archived == False,
+    ).all()
+
+    # Separate by type
+    report_appraisals = [a for a in appraisals if a.appraisal_type == "Report"]
+    event_appraisals = [a for a in appraisals if a.appraisal_type == "Event"]
+
+    # Get actual submissions for details
+    report_submissions = db.query(ReportSubmission).filter(
+        ReportSubmission.personnel_id == personnel_id
+    ).all()
+
+    event_evaluations = db.query(EventEvaluation).filter(
+        EventEvaluation.evaluator_id == personnel_id
+    ).all()
+
+    # Calculate compliance points
+    total_compliance_points = sum(a.star_rating * 20 for a in appraisals)
+
+    return {
+        "personnel_id": personnel_id,
+        "name": user.name,
+        "role": user.role,
+        "report_scores": [
+            {
+                "submission_id": s.submission_id,
+                "content_quality": s.content_quality_score,
+                "format_compliance": s.format_compliance_score,
+                "completeness": s.completeness_score,
+                "timing_status": s.timing_status,
+                "timing_points": s.timing_points,
+                "date_submitted": s.submitted_at,
+            }
+            for s in report_submissions
+        ],
+        "event_submissions": [
+            {
+                "evaluation_id": e.evaluation_id,
+                "event_name": db.query(Event).filter(Event.id == e.event_id).first().name,
+                "overall_score": round(e.average_score, 2),
+                "scores": {
+                    "planning": e.planning_score,
+                    "objectives": e.objectives_score,
+                    "personnel": e.personnel_score,
+                    "time_mgmt": e.time_mgmt_score,
+                    "engagement": e.engagement_score,
+                    "resource": e.resource_score,
+                },
+                "date_submitted": e.date_submitted,
+            }
+            for e in event_evaluations
+        ],
+        "compliance_points": total_compliance_points,
+        "performance_summary": {
+            "report_avg": round(
+                sum(a.total_points for a in report_appraisals) / len(report_appraisals), 2
+            ) if report_appraisals else None,
+            "event_avg": round(
+                sum(a.total_points for a in event_appraisals) / len(event_appraisals), 2
+            ) if event_appraisals else None,
+            "overall_avg": round(
+                sum(a.total_points for a in appraisals) / len(appraisals), 2
+            ) if appraisals else None,
+            "flagged_count": sum(1 for a in appraisals if a.appraisal_status == "Flagged"),
+        },
+    }
+
+
+@app.get("/dashboard/dean/{personnel_id}", tags=["Dashboard - Dean"])
+def dean_dashboard(personnel_id: int, db: Session = Depends(get_db)):
+    """
+    DEAN CAN:
+    - View their own special task ratings from coordinators
+    - View their own compliance points
+    - Receive notifications when evaluated
+    - Receive escalation alerts
+    """
+    user = db.query(User).filter(User.id == personnel_id).first()
+    if not user or user.role != "Dean":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get special tasks assigned to this dean
+    tasks = db.query(SpecialTask).filter(
+        SpecialTask.personnel == user.name
+    ).all()
+
+    task_evaluations = []
+    for task in tasks:
+        eval_record = db.query(SpecialTaskEvaluation).filter(
+            SpecialTaskEvaluation.task_id == task.id
+        ).first()
+        if eval_record:
+            task_evaluations.append({
+                "task_id": task.id,
+                "task_name": task.task,
+                "assigned_by": task.assigned_by,
+                "completion_quality": eval_record.completion_quality_score,
+                "timeliness": eval_record.timeliness_score,
+                "initiative": eval_record.initiative_score,
+                "coordination": eval_record.coordination_score,
+                "weighted_average": eval_record.weighted_average,
+                "is_flagged": eval_record.is_flagged,
+                "remarks": eval_record.remarks,
+                "date_submitted": eval_record.date_submitted,
+            })
+
+    # Get appraisal records
+    appraisals = db.query(AppraisalRecord).filter(
+        AppraisalRecord.personnel_id == personnel_id,
+        AppraisalRecord.is_archived == False,
+    ).all()
+
+    total_compliance_points = sum(a.star_rating * 20 for a in appraisals)
+    escalation_alerts = [a for a in appraisals if a.appraisal_status == "Flagged"]
+
+    return {
+        "personnel_id": personnel_id,
+        "name": user.name,
+        "role": user.role,
+        "special_task_ratings": task_evaluations,
+        "compliance_points": total_compliance_points,
+        "escalation_alerts": [
+            {
+                "appraisal_id": a.appraisal_id,
+                "type": a.appraisal_type,
+                "score": a.total_points,
+                "star_rating": a.star_rating,
+                "date_created": a.date_created,
+            }
+            for a in escalation_alerts
+        ],
+    }
+
+
+@app.get("/dashboard/coordinator/{personnel_id}", tags=["Dashboard - Coordinator"])
+def coordinator_dashboard(
+    personnel_id: int,
+    area: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    COORDINATOR CAN:
+    - Evaluate deans on special tasks
+    - View compliance dashboard of all personnel under their area
+    - Receive escalation alerts for area personnel
+    """
+    user = db.query(User).filter(User.id == personnel_id).first()
+    if not user or user.role != "Coordinator":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # If no area specified, use coordinator's department
+    area = area or user.department
+
+    # Get all personnel in this area
+    area_personnel = db.query(User).filter(
+        User.department == area
+    ).all()
+
+    personnel_compliance = []
+    total_escalations = 0
+
+    for person in area_personnel:
+        appraisals = db.query(AppraisalRecord).filter(
+            AppraisalRecord.personnel_id == person.id,
+            AppraisalRecord.is_archived == False,
+        ).all()
+
+        compliance_points = sum(a.star_rating * 20 for a in appraisals)
+        flagged = sum(1 for a in appraisals if a.appraisal_status == "Flagged")
+        total_escalations += flagged
+
+        personnel_compliance.append({
+            "personnel_id": person.id,
+            "name": person.name,
+            "role": person.role,
+            "compliance_points": compliance_points,
+            "flagged_count": flagged,
+            "avg_score": round(
+                sum(a.total_points for a in appraisals) / len(appraisals), 2
+            ) if appraisals else None,
+        })
+
+    # Get escalation alerts
+    escalation_records = db.query(AppraisalRecord).filter(
+        AppraisalRecord.appraisal_status == "Flagged",
+        AppraisalRecord.is_archived == False,
+    ).all()
+
+    escalation_alerts = []
+    for rec in escalation_records:
+        if rec.personnel and rec.personnel.department == area:
+            escalation_alerts.append({
+                "appraisal_id": rec.appraisal_id,
+                "personnel_name": rec.personnel.name,
+                "appraisal_type": rec.appraisal_type,
+                "score": rec.total_points,
+                "star_rating": rec.star_rating,
+                "date_created": rec.date_created,
+            })
+
+    return {
+        "coordinator_id": personnel_id,
+        "name": user.name,
+        "area": area,
+        "personnel_compliance": sorted(
+            personnel_compliance,
+            key=lambda x: x["compliance_points"],
+            reverse=True
+        ),
+        "total_personnel": len(area_personnel),
+        "total_escalations": total_escalations,
+        "escalation_alerts": escalation_alerts,
+    }
+
+
+@app.get("/dashboard/principal", tags=["Dashboard - Principal"])
+def principal_dashboard(
+    personnel_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    PRINCIPAL CAN:
+    - View school-wide compliance dashboard
+    - View department-level averages and distributions
+    - View all escalation alerts
+    - Export consolidated summary
+    """
+    user = db.query(User).filter(User.id == personnel_id).first()
+    if not user or user.role != "Principal":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get all departments
+    departments = db.query(User.department).distinct().filter(
+        User.department != None
+    ).all()
+
+    department_stats = []
+    for dept_tuple in departments:
+        dept = dept_tuple[0]
+        dept_personnel = db.query(User).filter(User.department == dept).all()
+
+        dept_appraisals = db.query(AppraisalRecord).filter(
+            AppraisalRecord.personnel_id.in_([p.id for p in dept_personnel]),
+            AppraisalRecord.is_archived == False,
+        ).all()
+
+        if dept_appraisals:
+            avg_score = round(
+                sum(a.total_points for a in dept_appraisals) / len(dept_appraisals), 2
+            )
+            avg_rating = round(
+                sum(a.star_rating for a in dept_appraisals) / len(dept_appraisals), 2
+            )
+            flagged = sum(1 for a in dept_appraisals if a.appraisal_status == "Flagged")
+        else:
+            avg_score = None
+            avg_rating = None
+            flagged = 0
+
+        # Rating distribution
+        rating_dist = {}
+        for a in dept_appraisals:
+            bucket = f"{int(a.star_rating)} star{'s' if int(a.star_rating) != 1 else ''}"
+            rating_dist[bucket] = rating_dist.get(bucket, 0) + 1
+
+        department_stats.append({
+            "department": dept,
+            "personnel_count": len(dept_personnel),
+            "avg_score": avg_score,
+            "avg_rating": avg_rating,
+            "flagged_count": flagged,
+            "rating_distribution": rating_dist,
+        })
+
+    # Get all escalation alerts
+    all_escalations = db.query(AppraisalRecord).filter(
+        AppraisalRecord.appraisal_status == "Flagged",
+        AppraisalRecord.is_archived == False,
+    ).all()
+
+    escalation_alerts = [
+        {
+            "appraisal_id": a.appraisal_id,
+            "personnel_name": a.personnel.name if a.personnel else "Unknown",
+            "department": a.personnel.department if a.personnel else None,
+            "appraisal_type": a.appraisal_type,
+            "score": a.total_points,
+            "star_rating": a.star_rating,
+            "date_created": a.date_created,
+        }
+        for a in all_escalations
+    ]
+
+    # Calculate school-wide stats
+    all_appraisals = db.query(AppraisalRecord).filter(
+        AppraisalRecord.is_archived == False,
+    ).all()
+
+    school_avg_score = round(
+        sum(a.total_points for a in all_appraisals) / len(all_appraisals), 2
+    ) if all_appraisals else None
+
+    school_avg_rating = round(
+        sum(a.star_rating for a in all_appraisals) / len(all_appraisals), 2
+    ) if all_appraisals else None
+
+    return {
+        "principal_id": personnel_id,
+        "name": user.name,
+        "school_overview": {
+            "total_departments": len(department_stats),
+            "total_personnel": sum(d["personnel_count"] for d in department_stats),
+            "avg_school_score": school_avg_score,
+            "avg_school_rating": school_avg_rating,
+            "total_escalations": len(escalation_alerts),
+        },
+        "department_statistics": sorted(
+            department_stats,
+            key=lambda x: x["avg_score"] if x["avg_score"] else 0,
+            reverse=True
+        ),
+        "escalation_alerts": escalation_alerts,
+    }
+
+
+@app.get("/escalation-alerts", tags=["Escalation Alerts"])
+def get_escalation_alerts(
+    role: Optional[str] = None,
+    personnel_id: Optional[int] = None,
+    area: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Get escalation alerts based on role and context.
+    - COORDINATOR: Alerts for their area
+    - PRINCIPAL: All alerts
+    - TEACHER/DEAN: Their own alerts
+    """
+    alerts = db.query(AppraisalRecord).filter(
+        AppraisalRecord.appraisal_status == "Flagged",
+        AppraisalRecord.is_archived == False,
+    ).all()
+
+    if role == "coordinator" and area:
+        alerts = [
+            a for a in alerts
+            if a.personnel and a.personnel.department == area
+        ]
+    elif role == "teacher" or role == "dean":
+        alerts = [a for a in alerts if a.personnel_id == personnel_id]
+
+    return {
+        "total_alerts": len(alerts),
+        "alerts": [
+            {
+                "appraisal_id": a.appraisal_id,
+                "personnel_name": a.personnel.name if a.personnel else "Unknown",
+                "appraisal_type": a.appraisal_type,
+                "score": a.total_points,
+                "star_rating": a.star_rating,
+                "status": a.appraisal_status,
+                "date_created": a.date_created,
+            }
+            for a in alerts
+        ],
+    }
+
+
+@app.get("/export-performance-summary", tags=["Export"])
+def export_performance_summary(
+    period: str,  # YYYY-MM
+    role: str,    # principal|coordinator
+    personnel_id: Optional[int] = None,
+    area: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Export consolidated performance summary for DepEd Annual Faculty Evaluation.
+    """
+    if role == "principal":
+        # Export all personnel summaries for the period
+        summaries = db.query(PerformanceSummary).filter(
+            PerformanceSummary.period == period,
+        ).all()
+    elif role == "coordinator" and area:
+        # Export area personnel summaries
+        area_personnel = db.query(User).filter(User.department == area).all()
+        summaries = db.query(PerformanceSummary).filter(
+            PerformanceSummary.period == period,
+            PerformanceSummary.personnel_id.in_([p.id for p in area_personnel]),
+        ).all()
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    export_data = []
+    for s in summaries:
+        user = db.query(User).filter(User.id == s.personnel_id).first()
+        if user:
+            export_data.append({
+                "personnel_name": user.name,
+                "department": user.department,
+                "role": user.role,
+                "period": s.period,
+                "total_points": s.total_appraisal_points,
+                "overall_grade": s.overall_grade,
+                "event_score": s.avg_event_score,
+                "task_score": s.avg_task_score,
+                "report_timing_points": s.report_timing_points,
+                "escalation_count": s.escalation_count,
+            })
+
+    return {
+        "period": period,
+        "export_date": _now(),
+        "total_records": len(export_data),
+        "data": export_data,
+    }

@@ -82,38 +82,34 @@ class AttendeeRating {
   double get overallScore => scores.average;
 }
 
-// ── Special Task Evaluation (coordinator rates personnel) ─────────────────────
+// ── Special Task Evaluation ──────────────────────────────────────────────────
+/// Coordinator evaluates Dean/Teacher on special tasks using weighted rubric.
+/// Weights: completion 35% | timeliness 30% | initiative 20% | coordination 15%
 class SpecialTaskEvaluation {
-  final double completionQuality; // [1–5] × weight 35%
-  final double timeliness;        // [1–5] × weight 30%
-  final double initiative;        // [1–5] × weight 20%
-  final double coordination;      // [1–5] × weight 15%
+  final int completionQualityScore;  // 35% — Task Completion Quality
+  final int timelinessScore;          // 30% — Timeliness and Reliability
+  final int initiativeScore;          // 20% — Initiative and Problem-Solving
+  final int coordinationScore;        // 15% — Coordination & Communication
+  final double weightedAverage;       // Computed [0.00–5.00]
+  final bool isFlagged;               // TRUE if weighted_average < 3.0
   final String? remarks;
-  final String coordinatorName;
+  final String evaluatorName;
   final String dateSubmitted;
 
   const SpecialTaskEvaluation({
-    required this.completionQuality,
-    required this.timeliness,
-    required this.initiative,
-    required this.coordination,
+    required this.completionQualityScore,
+    required this.timelinessScore,
+    required this.initiativeScore,
+    required this.coordinationScore,
+    required this.weightedAverage,
+    required this.isFlagged,
     this.remarks,
-    required this.coordinatorName,
+    required this.evaluatorName,
     required this.dateSubmitted,
   });
 
-  // weighted_average [0.0–5.0]
-  double get weightedAverage =>
-      (completionQuality * 0.35) +
-      (timeliness * 0.30) +
-      (initiative * 0.20) +
-      (coordination * 0.15);
-
-  // score out of 100 (weighted_average × 20)
-  int get scoreOutOf100 => (weightedAverage * 20).round();
-
-  // is_flagged: TRUE if score < 60
-  bool get isFlagged => scoreOutOf100 < 60;
+  /// Convert weighted average [0.00–5.00] to compliance points [0–100]
+  int getCompliancePoints() => (weightedAverage * 20).round();
 }
 
 // ── Special Task ──────────────────────────────────────────────────────────────
@@ -127,6 +123,7 @@ class SpecialTask {
   final String? submittedDate;
   final SpecialTaskEvaluation? evaluation;
   final TaskStatus status;
+  final int? score;  // Derived from evaluation
 
   const SpecialTask({
     required this.id,
@@ -138,9 +135,13 @@ class SpecialTask {
     this.submittedDate,
     this.evaluation,
     required this.status,
+    this.score,
   });
 
-  int? get score => evaluation?.scoreOutOf100;
+  bool get isFlagged => score != null && score! < 60;
+
+  /// Returns the score if available, otherwise 0
+  int getScore() => score ?? 0;
 }
 
 // ── School Event ──────────────────────────────────────────────────────────────
@@ -219,59 +220,63 @@ class MonthlyTrend {
 final List<SpecialTask> sampleTasks = [
   const SpecialTask(
     id: 'ST001', personnel: 'John Smith', department: 'Engineering',
-    task: 'Curriculum Review Documentation', assignedBy: 'Dr. Rivera',
+    task: 'Curriculum Review Documentation', assignedBy: 'Dean Garcia',
     dueDate: '4/15/2025', submittedDate: '4/14/2025',
-    evaluation: null, status: TaskStatus.pending,
+    evaluation: null, status: TaskStatus.pending, score: null,
   ),
   const SpecialTask(
     id: 'ST002', personnel: 'Sarah Johnson', department: 'Business',
-    task: 'Faculty Development Workshop Facilitation', assignedBy: 'Dr. Cruz',
+    task: 'Faculty Development Workshop Facilitation', assignedBy: 'Dean Garcia',
     dueDate: '4/10/2025', submittedDate: '4/11/2025',
     evaluation: SpecialTaskEvaluation(
-      completionQuality: 4, timeliness: 3, initiative: 3, coordination: 4,
+      completionQualityScore: 4, timelinessScore: 3, initiativeScore: 3, coordinationScore: 0,
+      weightedAverage: 3.45, isFlagged: false,
       remarks: 'Good performance overall. Timeliness needs slight improvement.',
-      coordinatorName: 'Dr. Cruz', dateSubmitted: '2025-04-12 09:30:00',
+      evaluatorName: 'Dean Garcia', dateSubmitted: '2025-04-12 09:30:00',
     ),
-    status: TaskStatus.evaluated,
+    status: TaskStatus.evaluated, score: 69,
   ),
   const SpecialTask(
-    id: 'ST003', personnel: 'Mike Chen', department: 'Sciences',
-    task: 'Laboratory Safety Compliance Report', assignedBy: 'Dr. Santos',
+    id: 'ST003', personnel: 'Dean Garcia', department: 'Sciences',
+    task: 'Laboratory Safety Compliance Report', assignedBy: 'Coord Santos',
     dueDate: '4/5/2025', submittedDate: '4/3/2025',
     evaluation: SpecialTaskEvaluation(
-      completionQuality: 5, timeliness: 5, initiative: 5, coordination: 5,
-      remarks: 'Exceptional output. Exceeded all expectations.',
-      coordinatorName: 'Dr. Santos', dateSubmitted: '2025-04-04 14:00:00',
+      completionQualityScore: 5, timelinessScore: 5, initiativeScore: 5, coordinationScore: 0,
+      weightedAverage: 5.0, isFlagged: false,
+      remarks: 'Outstanding. Exemplary submission.',
+      evaluatorName: 'Coord Santos', dateSubmitted: '2025-04-04 14:00:00',
     ),
-    status: TaskStatus.evaluated,
+    status: TaskStatus.evaluated, score: 100,
   ),
   const SpecialTask(
-    id: 'ST004', personnel: 'Alice Brown', department: 'Humanities',
-    task: 'Research Output Documentation', assignedBy: 'Dr. Reyes',
-    dueDate: '3/30/2025', submittedDate: null,
+    id: 'ST004', personnel: 'Dean Garcia', department: 'Sciences',
+    task: 'Teacher Development Program Planning', assignedBy: 'Coord Santos',
+    dueDate: '4/18/2025', submittedDate: '4/22/2025',
     evaluation: SpecialTaskEvaluation(
-      completionQuality: 1, timeliness: 1, initiative: 2, coordination: 2,
-      remarks: 'Task not submitted on time. Significant deficiencies noted.',
-      coordinatorName: 'Dr. Reyes', dateSubmitted: '2025-04-01 10:00:00',
+      completionQualityScore: 2, timelinessScore: 2, initiativeScore: 2, coordinationScore: 1,
+      weightedAverage: 1.85, isFlagged: true,
+      remarks: 'Below expectations. Late submission and incomplete coordination.',
+      evaluatorName: 'Coord Santos', dateSubmitted: '2025-04-23 10:00:00',
     ),
-    status: TaskStatus.flagged,
+    status: TaskStatus.flagged, score: 37,
   ),
   const SpecialTask(
-    id: 'ST005', personnel: 'John Smith', department: 'Engineering',
-    task: 'Faculty Development Workshop Facilitation', assignedBy: 'Dr. Rivera',
+    id: 'ST005', personnel: 'Dean Reyes', department: 'Engineering',
+    task: 'Faculty Development Workshop Facilitation', assignedBy: 'Coord Santos',
     dueDate: '4/20/2025', submittedDate: '4/19/2025',
     evaluation: SpecialTaskEvaluation(
-      completionQuality: 5, timeliness: 4, initiative: 4, coordination: 4,
+      completionQualityScore: 5, timelinessScore: 4, initiativeScore: 4, coordinationScore: 0,
+      weightedAverage: 4.55, isFlagged: false,
       remarks: 'Well executed. Minor areas for coordination improvement.',
-      coordinatorName: 'Dr. Rivera', dateSubmitted: '2025-04-20 16:00:00',
+      evaluatorName: 'Coord Santos', dateSubmitted: '2025-04-20 16:00:00',
     ),
-    status: TaskStatus.evaluated,
+    status: TaskStatus.evaluated, score: 91,
   ),
   const SpecialTask(
     id: 'ST006', personnel: 'Sarah Johnson', department: 'Business',
-    task: 'Laboratory Safety Compliance Report', assignedBy: 'Dr. Cruz',
+    task: 'Laboratory Safety Compliance Report', assignedBy: 'Dean Cruz',
     dueDate: '4/25/2025', submittedDate: null,
-    evaluation: null, status: TaskStatus.notSubmitted,
+    evaluation: null, status: TaskStatus.notSubmitted, score: null,
   ),
 ];
 

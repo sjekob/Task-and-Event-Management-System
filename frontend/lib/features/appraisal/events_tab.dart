@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
+import '../../core/role_service.dart';
 import 'models/appraisal_models.dart';
 
 // ── Rubric meta ───────────────────────────────────────────────────────────────
@@ -27,12 +28,16 @@ class _Criterion {
 
 class EventsTab extends StatefulWidget {
   final Widget pageHeader;
+  final String username;
+  final String role;
   final Map<String, List<AttendeeRating>> newRatings;
   final void Function(String id, AttendeeRating rating) onSubmitRating;
 
   const EventsTab({
     super.key,
     required this.pageHeader,
+    required this.username,
+    required this.role,
     required this.newRatings,
     required this.onSubmitRating,
   });
@@ -44,6 +49,13 @@ class EventsTab extends StatefulWidget {
 class _EventsTabState extends State<EventsTab> {
   String _filterMode = 'all';
   String? _selectedEvent;
+  late RolePermissions _rolePerms;
+
+  @override
+  void initState() {
+    super.initState();
+    _rolePerms = RolePermissions(widget.role);
+  }
 
   List<SchoolEvent> _eventsWithNewRatings(List<SchoolEvent> base) {
     return base.map((e) {
@@ -88,7 +100,7 @@ class _EventsTabState extends State<EventsTab> {
   void _openRateEvent(BuildContext ctx, SchoolEvent event) {
     showDialog<AttendeeRating?>(
       context: ctx,
-      builder: (_) => _EventRateDialog(event: event),
+      builder: (_) => _EventRateDialog(event: event, username: widget.username, role: widget.role),
     ).then((rating) {
       if (rating != null) {
         widget.onSubmitRating(event.id, rating);
@@ -215,6 +227,7 @@ class _EventsTabState extends State<EventsTab> {
                       const SizedBox(height: 14),
                       _EventsTable(
                         events: _filtered,
+                        role: widget.role,
                         onViewResults: (e) => _openViewResults(context, e),
                         onRateEvent:   (e) => _openRateEvent(context, e),
                       ),
@@ -435,20 +448,33 @@ class _MiniStars extends StatelessWidget {
 
 class _EventRateDialog extends StatefulWidget {
   final SchoolEvent event;
-  const _EventRateDialog({required this.event});
+  final String username;
+  final String role;
+  const _EventRateDialog({required this.event, required this.username, required this.role});
 
   @override
   State<_EventRateDialog> createState() => _EventRateDialogState();
 }
 
 class _EventRateDialogState extends State<_EventRateDialog> {
-  final _nameCtrl = TextEditingController();
-  EvaluatorRole _role = EvaluatorRole.student;
+  late final TextEditingController _nameCtrl;
+  late final EvaluatorRole _role;
   final Map<String, int> _scores = {
     'planning': 0, 'objectives': 0, 'personnel': 0,
     'timeMgmt': 0, 'engagement': 0, 'resource': 0,
   };
   final _commentsCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.username);
+    if (widget.role == 'teacher') _role = EvaluatorRole.teacher;
+    else if (widget.role == 'dean') _role = EvaluatorRole.dean;
+    else if (widget.role == 'coordinator') _role = EvaluatorRole.coordinator;
+    else if (widget.role == 'principal') _role = EvaluatorRole.principal;
+    else _role = EvaluatorRole.student;
+  }
 
   bool get _canSubmit =>
       _nameCtrl.text.trim().isNotEmpty &&
@@ -532,9 +558,12 @@ class _EventRateDialogState extends State<_EventRateDialog> {
                             const SizedBox(height: 6),
                             TextField(
                               controller: _nameCtrl,
-                              onChanged: (_) => setState(() {}),
-                              decoration: _fieldDecor('Enter your name'),
-                              style: const TextStyle(fontSize: 13),
+                              enabled: false,
+                              decoration: _fieldDecor('Enter your name').copyWith(
+                                fillColor: AppColors.pageBg,
+                                filled: true,
+                              ),
+                              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
                             ),
                           ]),
                         ),
@@ -546,9 +575,12 @@ class _EventRateDialogState extends State<_EventRateDialog> {
                             const SizedBox(height: 6),
                             DropdownButtonFormField<EvaluatorRole>(
                               value: _role,
-                              onChanged: (v) => setState(() => _role = v!),
-                              decoration: _fieldDecor(null),
-                              style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                              onChanged: null,
+                              decoration: _fieldDecor(null).copyWith(
+                                fillColor: AppColors.pageBg,
+                                filled: true,
+                              ),
+                              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
                               items: EvaluatorRole.values
                                   .map((r) => DropdownMenuItem(value: r, child: Text(r.label)))
                                   .toList(),
@@ -817,10 +849,11 @@ class _RadarPainter extends CustomPainter {
 
 class _EventsTable extends StatelessWidget {
   final List<SchoolEvent> events;
+  final String role;
   final void Function(SchoolEvent) onViewResults;
   final void Function(SchoolEvent) onRateEvent;
 
-  const _EventsTable({required this.events, required this.onViewResults, required this.onRateEvent});
+  const _EventsTable({required this.events, required this.role, required this.onViewResults, required this.onRateEvent});
 
   @override
   Widget build(BuildContext context) {
@@ -842,7 +875,7 @@ class _EventsTable extends StatelessWidget {
               _TableHeader(),
               const Divider(height: 0, thickness: 0.8, color: AppColors.divider),
               ...events.asMap().entries.map((e) => _EventRow(
-                event: e.value, index: e.key,
+                event: e.value, index: e.key, role: role,
                 onViewResults: onViewResults, onRateEvent: onRateEvent,
               )),
             ]),
@@ -885,13 +918,15 @@ class _Th extends StatelessWidget {
 class _EventRow extends StatelessWidget {
   final SchoolEvent event;
   final int index;
+  final String role;
   final void Function(SchoolEvent) onViewResults;
   final void Function(SchoolEvent) onRateEvent;
 
-  const _EventRow({required this.event, required this.index, required this.onViewResults, required this.onRateEvent});
+  const _EventRow({required this.event, required this.index, required this.role, required this.onViewResults, required this.onRateEvent});
 
   @override
   Widget build(BuildContext context) {
+    final rolePerms = RolePermissions(role);
     final avg = event.avgRating;
     final int pct = event.attendees > 0
         ? ((event.responses / event.attendees) * 100).round() : 0;
@@ -909,15 +944,27 @@ class _EventRow extends StatelessWidget {
           ])
         : const Text('—', style: TextStyle(fontSize: 14, color: AppColors.textHint));
 
-    // Status + action
+    // Status + action based on role
     Widget statusChip;
     String actionLabel;
     VoidCallback? onAction;
+    bool isDisabled = false;
+
     switch (event.status) {
       case EventStatus.awaitingRatings:
         statusChip  = _pill('Pending', AppColors.statusAmberBg, AppColors.statusAmberFg);
-        actionLabel = 'Rate Event';
-        onAction    = () => onRateEvent(event);
+        if (role == 'principal') {
+          // Principals can only view, never rate
+          actionLabel = 'View Results';
+          onAction    = () => onViewResults(event);
+        } else if (role == 'teacher' || role == 'dean' || role == 'coordinator') {
+          // Teachers, Deans, Coordinators can rate
+          actionLabel = 'Rate Event';
+          onAction    = () => onRateEvent(event);
+        } else {
+          actionLabel = 'View Results';
+          onAction    = () => onViewResults(event);
+        }
       case EventStatus.rated:
         statusChip  = _pill('Completed', AppColors.statusGreenBg, AppColors.statusGreenFg);
         actionLabel = 'View Results';
@@ -947,14 +994,14 @@ class _EventRow extends StatelessWidget {
         SizedBox(
           width: 130,
           child: ElevatedButton(
-            onPressed: onAction,
+            onPressed: isDisabled ? null : onAction,
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.tabActive,
+              backgroundColor: isDisabled ? AppColors.cardBorder : AppColors.tabActive,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
               minimumSize: const Size(1, 34),
             ),
-            child: Text(actionLabel, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+            child: Text(actionLabel, style: TextStyle(color: isDisabled ? AppColors.textSecondary : Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
           ),
         ),
       ]),

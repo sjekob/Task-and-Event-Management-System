@@ -2,18 +2,21 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../shared/widgets/shared_widgets.dart';
 import '../../core/api_service.dart';
+import '../../core/role_service.dart';
 import 'models/appraisal_models.dart';
 
 enum _FilterMode { all, byPersonnel, byTask }
 
 class SpecialTasksTab extends StatefulWidget {
   final Widget pageHeader;
+  final String role;
   final Map<String, Map<String, dynamic>> evaluations;
   final void Function(String id, Map<String, dynamic> result) onSubmitEvaluation;
 
   const SpecialTasksTab({
     super.key,
     required this.pageHeader,
+    required this.role,
     required this.evaluations,
     required this.onSubmitEvaluation,
   });
@@ -25,7 +28,9 @@ class SpecialTasksTab extends StatefulWidget {
 class EvaluationDialog extends StatefulWidget {
   final SpecialTask task;
   final Map<String, dynamic>? existing;
-  const EvaluationDialog({required this.task, this.existing});
+  final String role;
+  final bool canEdit;
+  const EvaluationDialog({required this.task, this.existing, required this.role, this.canEdit = false});
 
   @override
   State<EvaluationDialog> createState() => _EvaluationDialogState();
@@ -104,9 +109,24 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
     ]);
   }
 
+  String _getLabel(String key) {
+    final isTeacher = widget.role == 'dean'; // dean evaluates teachers
+    if (isTeacher) {
+      if (key == 'completion') return 'Content Quality';
+      if (key == 'quality') return 'Format Compliance';
+      if (key == 'timeliness') return 'Completeness';
+      return '';
+    } else {
+      if (key == 'completion') return 'Task Completion Quality';
+      if (key == 'quality') return 'Timeliness and Reliability';
+      if (key == 'timeliness') return 'Initiative and Problem-Solving';
+      return '';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool readOnly = widget.existing != null;
+    final bool readOnly = widget.existing != null || !widget.canEdit;
 
     return AlertDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
@@ -129,7 +149,7 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
       content: SizedBox(
         width: 640,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _step == 0 ? _previewContent() : _rubricContent(),
+          _step == 0 ? _previewContent() : _rubricContent(readOnly),
           const SizedBox(height: 12),
           if (readOnly) _previousEvaluationWidget(),
         ]),
@@ -185,6 +205,7 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
     final ratings = e['ratings'] as Map<String, dynamic>? ?? {};
     final int score = e['score'] as int? ?? 0;
     final String remarksText = e['remarks'] ?? '';
+    final isTeacher = widget.role == 'dean'; // dean evaluates teachers
 
     Widget line(String label, String pct, int val) {
       return Padding(
@@ -203,10 +224,9 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Previous Evaluation:', style: TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        line('Task Completion', '35%', ratings['completion'] ?? 0),
-        line('Quality of Output', '30%', ratings['quality'] ?? 0),
-        line('Timeliness', '20%', ratings['timeliness'] ?? 0),
-        line('Coordination & Communication', '15%', ratings['coordination'] ?? 0),
+        line(_getLabel('completion'), isTeacher ? '33%' : '40%', ratings['completion'] ?? 0),
+        line(_getLabel('quality'), isTeacher ? '33%' : '30%', ratings['quality'] ?? 0),
+        line(_getLabel('timeliness'), isTeacher ? '33%' : '30%', ratings['timeliness'] ?? 0),
         const Divider(),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           const Text('Total Weighted Score', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -255,17 +275,18 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
     ]);
   }
 
-  Widget _rubricContent() {
+  Widget _rubricContent(bool readOnly) {
+    final isTeacher = widget.role == 'dean'; // dean evaluates teachers
     return SingleChildScrollView(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _starRow('Task Completion (35%)', completion, 'completion'),
-        _starRow('Quality (30%)', quality, 'quality'),
-        _starRow('Timeliness (20%)', timeliness, 'timeliness'),
-        _starRow('Coordination (15%)', coordination, 'coordination'),
+        _starRowEditable('${_getLabel("completion")} (${isTeacher ? "33%" : "40%"})', completion, 'completion', readOnly),
+        _starRowEditable('${_getLabel("quality")} (${isTeacher ? "33%" : "30%"})', quality, 'quality', readOnly),
+        _starRowEditable('${_getLabel("timeliness")} (${isTeacher ? "33%" : "30%"})', timeliness, 'timeliness', readOnly),
         const SizedBox(height: 8),
         const Text('Remarks', style: TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
         TextField(
+          enabled: !readOnly,
           maxLines: 3,
           onChanged: (v) => setState(() => remarks = v),
           controller: TextEditingController(text: remarks),
@@ -278,6 +299,23 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
       ]),
     );
   }
+
+  Widget _starRowEditable(String label, int value, String key, bool readOnly) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      const SizedBox(height: 6),
+      Row(children: List.generate(5, (i) {
+        final v = i + 1;
+        return IconButton(
+          onPressed: readOnly ? null : () => _setRating(key, v),
+          icon: Icon(v <= value ? Icons.star : Icons.star_border, color: readOnly ? AppColors.textSecondary : AppColors.tabActive),
+          iconSize: 22,
+          padding: const EdgeInsets.all(0),
+        );
+      })),
+      const SizedBox(height: 8),
+    ]);
+  }
 }
 
 class _SpecialTasksTabState extends State<SpecialTasksTab> {
@@ -285,24 +323,51 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
   String? _selectedPersonnel;
   String? _selectedTask;
 
+  late RolePermissions _rolePerms;
+
+  @override
+  void initState() {
+    super.initState();
+    _rolePerms = RolePermissions(widget.role);
+  }
+
+  List<SpecialTask> get _baseTasks {
+    // TEACHER: Cannot see special tasks at all
+    if (widget.role == 'teacher') return [];
+
+    // DEAN: See only their own tasks
+    if (widget.role == 'dean') {
+      return sampleTasks
+          .where((t) => _rolePerms.canViewTask(t.personnel, null))
+          .toList();
+    }
+
+    // COORDINATOR & PRINCIPAL: See all tasks
+    if (widget.role == 'coordinator' || widget.role == 'principal') {
+      return sampleTasks;
+    }
+
+    return [];
+  }
+
   List<String> get _personnelList =>
-      sampleTasks.map((t) => t.personnel).toSet().toList()..sort();
+      _baseTasks.map((t) => t.personnel).toSet().toList()..sort();
 
   List<String> get _taskList =>
-      sampleTasks.map((t) => t.task).toSet().toList()..sort();
+      _baseTasks.map((t) => t.task).toSet().toList()..sort();
 
   List<SpecialTask> get _filteredTasks {
     switch (_filterMode) {
       case _FilterMode.byPersonnel:
-        if (_selectedPersonnel == null) return sampleTasks;
-        return sampleTasks
+        if (_selectedPersonnel == null) return _baseTasks;
+        return _baseTasks
             .where((t) => t.personnel == _selectedPersonnel)
             .toList();
       case _FilterMode.byTask:
-        if (_selectedTask == null) return sampleTasks;
-        return sampleTasks.where((t) => t.task == _selectedTask).toList();
+        if (_selectedTask == null) return _baseTasks;
+        return _baseTasks.where((t) => t.task == _selectedTask).toList();
       case _FilterMode.all:
-        return sampleTasks;
+        return _baseTasks;
     }
   }
 
@@ -351,9 +416,10 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
       if (eval != null) {
         final int? s = eval['score'] as int?;
         if (s != null) scores.add(s);
-      } else if (t.score != null) {
-        scores.add(t.score!);
-      }
+      } else {
+          final sc = t.getScore();
+          if (sc > 0) scores.add(sc);
+        }
     }
     if (scores.isEmpty) return '—';
     return '${(scores.reduce((a, b) => a + b) / scores.length).round()}/100';
@@ -373,6 +439,49 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
 
   @override
   Widget build(BuildContext context) {
+    // ── TEACHER: Cannot access special tasks ────────────────────────────────
+    if (widget.role == 'teacher') {
+      return SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            widget.pageHeader,
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F9FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFC7E9FF), width: 0.8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(children: [
+                      Icon(Icons.lock_outline, color: AppColors.tabActive, size: 20),
+                      SizedBox(width: 12),
+                      Text(
+                        'Special Tasks',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                      ),
+                    ]),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'You do not have permission to view special task evaluations. Only Deans, Coordinators, and Principals can access this section.',
+                      style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ── DEAN, COORDINATOR, PRINCIPAL: Can view special tasks ────────────────
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -415,12 +524,19 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                             color: AppColors.textPrimary),
                       ),
                       const SizedBox(height: 16),
-                      const Row(children: [
-                        Expanded(child: _WeightItem(emoji: '✅', label: 'Task Completion',             pct: '35%')),
-                        Expanded(child: _WeightItem(emoji: '🏆', label: 'Quality of Output',           pct: '30%')),
-                        Expanded(child: _WeightItem(emoji: '⏰', label: 'Timeliness',                  pct: '20%')),
-                        Expanded(child: _WeightItem(emoji: '💬', label: 'Coordination & Communication', pct: '15%')),
-                      ]),
+                      if (widget.role == 'dean') ...[
+                         const Row(children: [
+                          Expanded(child: _WeightItem(emoji: '📝', label: 'Content Quality',             pct: '33.3%')),
+                          Expanded(child: _WeightItem(emoji: '📋', label: 'Format Compliance',           pct: '33.3%')),
+                          Expanded(child: _WeightItem(emoji: '✅', label: 'Completeness',                pct: '33.3%')),
+                        ]),
+                      ] else ...[
+                         const Row(children: [
+                          Expanded(child: _WeightItem(emoji: '✅', label: 'Task Completion',             pct: '40%')),
+                          Expanded(child: _WeightItem(emoji: '⏰', label: 'Timeliness',                  pct: '30%')),
+                          Expanded(child: _WeightItem(emoji: '💡', label: 'Initiative & Problem',        pct: '30%')),
+                        ]),
+                      ],
                       const SizedBox(height: 14),
                       Container(
                         width: double.infinity,
@@ -545,6 +661,7 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                           // Always update local memory state to keep UI synchronized in real-time
                           widget.onSubmitEvaluation(id, result);
                         },
+                        role: widget.role,
                       ),
                       const SizedBox(height: 8),
                     ],
@@ -753,8 +870,9 @@ class _SpecialTaskTable extends StatelessWidget {
   final List<SpecialTask> tasks;
   final Map<String, Map<String, dynamic>> evaluations;
   final void Function(String id, Map<String, dynamic> result) onSubmitEvaluation;
+  final String role;
 
-  const _SpecialTaskTable({required this.tasks, required this.evaluations, required this.onSubmitEvaluation});
+  const _SpecialTaskTable({required this.tasks, required this.evaluations, required this.onSubmitEvaluation, required this.role});
 
   @override
   Widget build(BuildContext context) {
@@ -777,7 +895,7 @@ class _SpecialTaskTable extends StatelessWidget {
             child: Column(children: [
               _TableHeader(),
               const Divider(height: 0, thickness: 0.8, color: AppColors.divider),
-              ...tasks.asMap().entries.map((e) => _TaskRow(task: e.value, index: e.key, evaluation: evaluations[e.value.id], onSubmit: onSubmitEvaluation)),
+              ...tasks.asMap().entries.map((e) => _TaskRow(task: e.value, index: e.key, evaluation: evaluations[e.value.id], onSubmit: onSubmitEvaluation, role: role)),
             ]),
           ),
         );
@@ -821,8 +939,9 @@ class _TaskRow extends StatelessWidget {
   final int index;
   final Map<String, dynamic>? evaluation;
   final void Function(String id, Map<String, dynamic> result) onSubmit;
+  final String role;
 
-  const _TaskRow({required this.task, required this.index, this.evaluation, required this.onSubmit});
+  const _TaskRow({required this.task, required this.index, this.evaluation, required this.onSubmit, required this.role});
 
   @override
   Widget build(BuildContext context) {
@@ -915,7 +1034,8 @@ class _TaskRow extends StatelessWidget {
   }
 
   Widget _scoreCell() {
-    final int? score = evaluation != null ? evaluation!['score'] as int? : task.score;
+    final int sc = task.getScore();
+    final int? score = evaluation != null ? evaluation!['score'] as int? : (sc > 0 ? sc : null);
     if (score == null) {
       return const Text('—', style: TextStyle(fontSize: 14, color: AppColors.textHint));
     }
@@ -974,16 +1094,36 @@ class _TaskRow extends StatelessWidget {
   }
 
   Widget _actionButton(BuildContext context) {
+    final rolePerms = RolePermissions(role);
     final bool hasEval = evaluation != null || task.status == TaskStatus.evaluated || task.status == TaskStatus.flagged;
-    final String label = hasEval ? 'View' : 'Evaluate';
+    
+    // Determine if this user can evaluate
+    bool canEvaluate = false;
+    if (role == 'dean') {
+      // Deans can only evaluate when viewing teacher tasks
+      canEvaluate = true; // simplified - in real app check if task is from a teacher under this dean
+    } else if (role == 'coordinator') {
+      // Coordinators can evaluate deans
+      canEvaluate = true;
+    } else if (role == 'principal') {
+      // Principals cannot evaluate
+      canEvaluate = false;
+    }
+
+    final String label = hasEval ? 'View' : (canEvaluate ? 'Evaluate' : 'View');
+    final bool isDisabled = !canEvaluate && !hasEval;
+
     return Center(
       child: ElevatedButton(
-        onPressed: () async {
+        onPressed: isDisabled ? null : () async {
+          if (!canEvaluate && !hasEval) return;
+          
           final messenger = ScaffoldMessenger.of(context);
-          final existingArg = evaluation ?? (task.score != null ? {'score': task.score, 'ratings': <String, int>{}, 'remarks': ''} : null);
+          final score = task.score ?? 0;
+          final existingArg = evaluation ?? (score > 0 ? {'score': score, 'ratings': <String, int>{}, 'remarks': ''} : null);
           final result = await showDialog<Map<String, dynamic>>(
             context: context,
-            builder: (c) => EvaluationDialog(task: task, existing: existingArg),
+            builder: (c) => EvaluationDialog(task: task, existing: existingArg, role: role, canEdit: canEvaluate && !hasEval),
           );
           if (result != null) {
             onSubmit(task.id, result);
@@ -991,12 +1131,12 @@ class _TaskRow extends StatelessWidget {
           }
         },
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.tabActive,
+          backgroundColor: isDisabled ? AppColors.cardBorder : AppColors.tabActive,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           minimumSize: const Size(64, 34),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
-        child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+        child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDisabled ? AppColors.textSecondary : Colors.white)),
       ),
     );
   }

@@ -6,6 +6,7 @@ import 'models/appraisal_models.dart';
 class PersonalDashboardTab extends StatelessWidget {
   final Widget pageHeader;
   final String username;
+  final String role;
   final Map<String, Map<String, dynamic>> evaluations;
   final Map<String, List<AttendeeRating>> newRatings;
 
@@ -13,6 +14,7 @@ class PersonalDashboardTab extends StatelessWidget {
     super.key,
     required this.pageHeader,
     required this.username,
+    required this.role,
     required this.evaluations,
     required this.newRatings,
   });
@@ -44,8 +46,9 @@ class PersonalDashboardTab extends StatelessWidget {
       if (eval != null) {
         final int? s = eval['score'] as int?;
         if (s != null) scores.add(s);
-      } else if (t.score != null) {
-        scores.add(t.score!);
+      } else {
+        final sc = t.getScore();
+        if (sc > 0) scores.add(sc);
       }
     }
 
@@ -123,11 +126,21 @@ class PersonalDashboardTab extends StatelessWidget {
                       const SizedBox(height: 16),
                       Text('Department: ${userFaculty.department}', style: AppTextStyles.tableCell),
                       const SizedBox(height: 8),
-                      Text('Report Submission Average: ${userFaculty.reportScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
-                      const SizedBox(height: 8),
-                      Text('Special Task Average: ${realTimeTaskScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
-                      const SizedBox(height: 8),
-                      Text('Event Participation Average: ${userFaculty.eventScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
+                      
+                      if (role == 'teacher') ...[
+                        Text('Content Quality Average: ${userFaculty.reportScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
+                        const SizedBox(height: 8),
+                        Text('Format Compliance Average: ${realTimeTaskScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
+                        const SizedBox(height: 8),
+                        Text('Completeness Average: ${userFaculty.eventScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
+                      ] else ...[
+                        Text('Task Completion Quality Average: ${userFaculty.reportScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
+                        const SizedBox(height: 8),
+                        Text('Timeliness and Reliability Average: ${realTimeTaskScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
+                        const SizedBox(height: 8),
+                        Text('Initiative and Problem-Solving Average: ${userFaculty.eventScore ?? 'N/A'}%', style: AppTextStyles.tableCell),
+                      ],
+                      
                       const SizedBox(height: 16),
                       const Divider(),
                       const SizedBox(height: 16),
@@ -137,7 +150,8 @@ class PersonalDashboardTab extends StatelessWidget {
                         const Text('No recent task evaluations found.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13))
                       else
                         ...facultyTasks.map((task) {
-                          int? score = task.score;
+                          final int sc = task.score ?? 0;
+                          int? score = sc > 0 ? sc : null;
                           if (evaluations.containsKey(task.id)) {
                             score = evaluations[task.id]!['score'] as int?;
                           }

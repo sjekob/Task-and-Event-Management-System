@@ -52,4 +52,78 @@ class EventsApi {
     final res = await _dio.post('/events/$id/evaluate', data: payload);
     return res.data as Map<String, dynamic>;
   }
+
+  Future<Map<String, dynamic>> getEventResults(String id) async {
+    final res = await _dio.get('/events/$id/results');
+    return res.data as Map<String, dynamic>;
+  }
+}
+
+class DashboardApi {
+  final Dio _dio = ApiService().dio;
+
+  Future<Map<String, dynamic>> getTeacherDashboard(int personnelId) async {
+    final res = await _dio.get('/dashboard/teacher/$personnelId');
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getDeanDashboard(int personnelId) async {
+    final res = await _dio.get('/dashboard/dean/$personnelId');
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getCoordinatorDashboard(
+    int personnelId, {
+    String? area,
+  }) async {
+    final params = <String, dynamic>{};
+    if (area != null) params['area'] = area;
+    final res = await _dio.get(
+      '/dashboard/coordinator/$personnelId',
+      queryParameters: params,
+    );
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getPrincipalDashboard(int personnelId) async {
+    final res = await _dio.get('/dashboard/principal', queryParameters: {
+      'personnel_id': personnelId,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getEscalationAlerts({
+    String? role,
+    int? personnelId,
+    String? area,
+  }) async {
+    final params = <String, dynamic>{};
+    if (role != null) params['role'] = role;
+    if (personnelId != null) params['personnel_id'] = personnelId;
+    if (area != null) params['area'] = area;
+    final res = await _dio.get(
+      '/escalation-alerts',
+      queryParameters: params,
+    );
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> exportPerformanceSummary({
+    required String period,
+    required String role,
+    int? personnelId,
+    String? area,
+  }) async {
+    final params = <String, dynamic>{
+      'period': period,
+      'role': role,
+    };
+    if (personnelId != null) params['personnel_id'] = personnelId;
+    if (area != null) params['area'] = area;
+    final res = await _dio.get(
+      '/export-performance-summary',
+      queryParameters: params,
+    );
+    return res.data as Map<String, dynamic>;
+  }
 }

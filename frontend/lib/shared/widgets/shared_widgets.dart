@@ -360,9 +360,39 @@ class _SidebarFooter extends StatelessWidget {
           // Logout button
           GestureDetector(
             onTap: () {
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false,
+              showDialog<bool>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text(
+                    'Confirm Logout',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  content: const Text(
+                    'Are you sure you want to logout? Any unsaved changes will be lost.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF666666)),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop(true);
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (context) => const LoginScreen()),
+                          (route) => false,
+                        );
+                      },
+                      child: const Text(
+                        'Logout',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
               );
             },
             child: Container(
