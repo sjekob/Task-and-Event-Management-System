@@ -1,6 +1,9 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
@@ -141,6 +144,38 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   }
 
   void _openAttachmentInput(String type) async {
+    if (type == 'file') {
+      try {
+        final picked = await FilePicker.platform.pickFiles(withData: true);
+        if (picked == null || picked.files.isEmpty) return;
+        final file = picked.files.first;
+
+        List<int>? bytes = file.bytes?.toList();
+        if (bytes == null && file.path != null) {
+          final f = await _readFileAsBytes(file.path!);
+          bytes = f;
+        }
+        if (bytes == null) {
+          if (mounted) _showSnack('Could not read file', error: true);
+          return;
+        }
+
+        setState(() => _submitting = true);
+        final info = await ApiService.uploadAttachmentFile(bytes, file.name);
+        if (mounted) setState(() {
+          _attachments.add({
+            'attachment_type': 'file',
+            'name': info['name']!,
+            'url': info['url']!,
+          });
+        });
+      } catch (e) {
+        if (mounted) _showSnack('File upload failed: $e', error: true);
+      } finally {
+        if (mounted) setState(() => _submitting = false);
+      }
+      return;
+    }
     final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (_) => _AttachmentDialog(type: type),
@@ -169,6 +204,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  Future<List<int>?> _readFileAsBytes(String path) async {
+    if (kIsWeb) return null;
+    try { return await File(path).readAsBytes(); } catch (_) { return null; }
   }
 
   void _showSnack(String msg, {bool error = false}) {
@@ -354,29 +394,50 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                   const SizedBox(width: 8),
                   _AttIcon(Icons.play_circle_outline, const Color(0xFFFF0000), () => _openAttachmentInput('youtube')),
                   const Spacer(),
-                  OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.textMuted,
-                      side: const BorderSide(color: AppTheme.borderColor),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF6B7280), Color(0xFF374151)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('Cancel',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: Colors.white)),
                     ),
-                    child: Text('Cancel', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
                   ),
                   const SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: _submitting ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.darkBanner,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  GestureDetector(
+                    onTap: _submitting ? null : _submit,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: _submitting
+                            ? null
+                            : const LinearGradient(
+                                colors: [Color(0xFF6B7280), Color(0xFF374151)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                        color: _submitting ? AppTheme.borderColor : null,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: _submitting
+                          ? const SizedBox(width: 16, height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : Text('Save Changes',
+                                style: GoogleFonts.plusJakartaSans(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: Colors.white)),
                     ),
-                    child: _submitting
-                        ? const SizedBox(width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text('Save Changes', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
                   ),
                 ],
               ),
@@ -475,7 +536,7 @@ class _AttachmentDialog extends StatefulWidget {
 }
 
 class _AttachmentDialogState extends State<_AttachmentDialog> {
-  final _urlCtrl = TextEditingController();
+  final _urlCtrl = TextEditingController(text: 'https://');
   final _nameCtrl = TextEditingController();
   String? _urlError;
 
@@ -494,7 +555,7 @@ class _AttachmentDialogState extends State<_AttachmentDialog> {
 
   bool _validate() {
     final url = _urlCtrl.text.trim();
-    if (url.isEmpty) { setState(() => _urlError = 'URL is required'); return false; }
+    if (url.isEmpty || url == 'https://') { setState(() => _urlError = 'URL is required'); return false; }
     if (!url.startsWith('http')) { setState(() => _urlError = 'Must start with http://'); return false; }
     setState(() => _urlError = null);
     return true;

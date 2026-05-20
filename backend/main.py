@@ -1395,9 +1395,15 @@ class EventEvalBody(BaseModel):
 def _special_task_row(row, db):
     d = dict(row)
     assignee = db.execute(
-        "SELECT id, full_name, role FROM users WHERE id=?", (d.get("assignee_id"),)
+        """SELECT u.id, u.full_name, u.role, gl.grade_level
+           FROM users u LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
+           WHERE u.id=?""", (d.get("assignee_id"),)
     ).fetchone()
     d["assignee"] = dict(assignee) if assignee else None
+    assigner = db.execute(
+        "SELECT id, full_name FROM users WHERE id=?", (d.get("assigned_by"),)
+    ).fetchone()
+    d["assigner"] = dict(assigner) if assigner else None
     ev = db.execute(
         "SELECT * FROM special_task_evaluations WHERE task_id=?", (d["id"],)
     ).fetchone()
@@ -1407,6 +1413,10 @@ def _special_task_row(row, db):
 
 def _school_event_row(row, db):
     d = dict(row)
+    organizer = db.execute(
+        "SELECT id, full_name FROM users WHERE id=?", (d.get("created_by"),)
+    ).fetchone()
+    d["organizer"] = dict(organizer) if organizer else None
     d["evaluations"] = [dict(r) for r in db.execute(
         "SELECT * FROM event_evaluations WHERE event_id=? ORDER BY date_submitted DESC",
         (d["id"],)
@@ -1444,7 +1454,7 @@ def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody,
         raise HTTPException(404, "Special task not found")
     scores = [body.completion_quality_score, body.timeliness_score,
               body.initiative_score, body.coordination_score]
-    weights = [0.35, 0.30, 0.20, 0.15]
+    weights = [0.40, 0.30, 0.30, 0.00]
     weighted_avg = sum(s * w for s, w in zip(scores, weights))
     uid = int(user["sub"])
     db.execute(

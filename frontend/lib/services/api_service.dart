@@ -241,6 +241,25 @@ class ApiService {
     if (res.statusCode != 200) throw Exception('Failed to edit comment');
   }
 
+  static Future<Map<String, String>> uploadAttachmentFile(
+      List<int> bytes, String filename) async {
+    final t = await token;
+    final req = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/upload'),
+    );
+    if (t != null) req.headers['Authorization'] = 'Bearer $t';
+    req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+    final streamed = await req.send();
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode != 200) throw Exception('File upload failed');
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    return {
+      'url': '$baseUrl${json['url']}',
+      'name': json['name'] as String? ?? filename,
+    };
+  }
+
   static Future<void> uploadReportFile(
       int taskId, List<int> bytes, String filename) async {
     final t = await token;

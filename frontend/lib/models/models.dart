@@ -461,7 +461,10 @@ class SpecialTask {
   final int? assigneeId;
   final String? assigneeName;
   final String? assigneeRole;
+  final String? assigneeDepartment;
+  final String? assignerName;
   final String? dueDate;
+  final String? submittedDate;
   final String status;
   final SpecialTaskEvaluation? evaluation;
 
@@ -472,13 +475,17 @@ class SpecialTask {
     this.assigneeId,
     this.assigneeName,
     this.assigneeRole,
+    this.assigneeDepartment,
+    this.assignerName,
     this.dueDate,
+    this.submittedDate,
     required this.status,
     this.evaluation,
   });
 
   factory SpecialTask.fromJson(Map<String, dynamic> json) {
     final assignee = json['assignee'] as Map<String, dynamic>?;
+    final assigner = json['assigner'] as Map<String, dynamic>?;
     final evalJson = json['evaluation'] as Map<String, dynamic>?;
     return SpecialTask(
       id: json['id'] ?? 0,
@@ -487,10 +494,19 @@ class SpecialTask {
       assigneeId: assignee?['id'] as int?,
       assigneeName: assignee?['full_name']?.toString(),
       assigneeRole: assignee?['role']?.toString(),
+      assigneeDepartment: assignee?['grade_level']?.toString(),
+      assignerName: assigner?['full_name']?.toString(),
       dueDate: json['due_date']?.toString(),
+      submittedDate: json['created_at']?.toString(),
       status: (json['status'] ?? 'pending').toString(),
       evaluation: evalJson != null ? SpecialTaskEvaluation.fromJson(evalJson) : null,
     );
+  }
+
+  int get scoreOutOf100 {
+    final ev = evaluation;
+    if (ev == null || ev.weightedAverage == null) return 0;
+    return (ev.weightedAverage! * 20).round();
   }
 }
 
@@ -528,6 +544,7 @@ class SchoolEvent {
   final String? description;
   final String? eventDate;
   final String status;
+  final String? organizerName;
   final List<EventEvaluation> evaluations;
 
   SchoolEvent({
@@ -536,10 +553,12 @@ class SchoolEvent {
     this.description,
     this.eventDate,
     required this.status,
+    this.organizerName,
     this.evaluations = const [],
   });
 
   factory SchoolEvent.fromJson(Map<String, dynamic> json) {
+    final organizer = json['organizer'] as Map<String, dynamic>?;
     final evals = (json['evaluations'] as List? ?? [])
         .map((e) => EventEvaluation.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -549,8 +568,14 @@ class SchoolEvent {
       description: json['description']?.toString(),
       eventDate: json['event_date']?.toString(),
       status: (json['status'] ?? 'upcoming').toString(),
+      organizerName: organizer?['full_name']?.toString(),
       evaluations: evals,
     );
+  }
+
+  double get avgRating {
+    if (evaluations.isEmpty) return 0;
+    return evaluations.map((e) => e.average).reduce((a, b) => a + b) / evaluations.length;
   }
 }
 

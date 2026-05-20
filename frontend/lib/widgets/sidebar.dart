@@ -85,14 +85,6 @@ class _AppSidebarState extends State<AppSidebar> {
                     collapsed: _collapsed,
                     onTap: () => widget.onNavigate(NavPage.dashboard),
                   ),
-                  if (_isTopManager || _canReassign)
-                    _NavItem(
-                      icon: Icons.check_box_outlined,
-                      label: 'Task Manager',
-                      isActive: widget.currentPage == NavPage.taskManager,
-                      collapsed: _collapsed,
-                      onTap: () => widget.onNavigate(NavPage.taskManager),
-                    ),
                   if (_canReassign || _isLeaf)
                     _NavItem(
                       icon: Icons.assignment_outlined,
@@ -109,6 +101,14 @@ class _AppSidebarState extends State<AppSidebar> {
                     onTap: () => widget.onNavigate(NavPage.activity),
                   ),
                   if (!_collapsed) _sectionLabel('MANAGEMENT'),
+                  if (_isTopManager || _canReassign)
+                    _NavItem(
+                      icon: Icons.check_box_outlined,
+                      label: 'Task Manager',
+                      isActive: widget.currentPage == NavPage.taskManager,
+                      collapsed: _collapsed,
+                      onTap: () => widget.onNavigate(NavPage.taskManager),
+                    ),
                   if (_canManagePersonnel)
                     _NavItem(
                       icon: Icons.people_outlined,
@@ -459,13 +459,6 @@ class MobileNavDrawer extends StatelessWidget {
                       isActive: currentPage == NavPage.dashboard,
                       onTap: () => _navigate(context, NavPage.dashboard),
                     ),
-                    if (_isTopManager || _canReassign)
-                      _NavItem(
-                        icon: Icons.check_box_outlined,
-                        label: 'Task Manager',
-                        isActive: currentPage == NavPage.taskManager,
-                        onTap: () => _navigate(context, NavPage.taskManager),
-                      ),
                     if (_canReassign || _isLeaf)
                       _NavItem(
                         icon: Icons.assignment_outlined,
@@ -480,6 +473,13 @@ class MobileNavDrawer extends StatelessWidget {
                       onTap: () => _navigate(context, NavPage.activity),
                     ),
                     _drawerSectionLabel('MANAGEMENT'),
+                    if (_isTopManager || _canReassign)
+                      _NavItem(
+                        icon: Icons.check_box_outlined,
+                        label: 'Task Manager',
+                        isActive: currentPage == NavPage.taskManager,
+                        onTap: () => _navigate(context, NavPage.taskManager),
+                      ),
                     if (_canManagePersonnel)
                       _NavItem(
                         icon: Icons.people_outlined,
