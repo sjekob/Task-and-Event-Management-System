@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../appraisal/appraisal_screen.dart';
-import '../../core/theme.dart';
+import '../../shared/utils/platform_utils.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,6 +16,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _handleLogin() {
     final username = _usernameController.text.trim().toLowerCase();
+    final password = _passwordController.text;
+
+    // Intercept root administrator credentials
+    if (username == 'admin') {
+      if (password == 'password') {
+        redirectToAdmin();
+        return;
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Access Denied: Invalid administrator credentials.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+    }
+
     String? role;
 
     if (username.startsWith('principal.')) {

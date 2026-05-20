@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="TaskNet Personnel Appraisal Administrator Portal - Manage Naga Central School II Personnel Evaluation, Event Ratings, and Special Tasks.">
+  <title>TaskNet Admin Console — Personnel Appraisal Module</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="light-mode">
+
+  <!-- ─────────────────────────────────────────────────────────────────────────────
+       LOGIN SCREEN
+       ───────────────────────────────────────────────────────────────────────────── -->
+  <div class="login-screen" id="login-screen" style="display: none;">
+    <div class="login-brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+      </svg>
+      <span>TaskNet</span>
+    </div>
+    
+    <div class="login-card">
+      <h2>Sign in</h2>
+      <p class="login-subtitle">Administrator Console Access</p>
+      
+      <form id="form-login" onsubmit="handleLoginSubmit(event)">
+        <div class="form-group">
+          <label for="login-username">Username</label>
+          <input type="text" id="login-username" required placeholder="Enter administrator username" class="form-input">
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" required placeholder="Enter administrator password" class="form-input">
+        </div>
+        
+        <div class="login-error-msg" id="login-error-msg"></div>
+        
+        <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN ADMIN CONSOLE APP -->
+  <div class="app-container" id="app-container" style="display: none;">
+    
+    <!-- ─────────────────────────────────────────────────────────────────────────────
+         SIDEBAR
+         ───────────────────────────────────────────────────────────────────────────── -->
+    <aside class="app-sidebar" id="app-sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <svg class="glow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">TaskNet</div>
+          <span class="brand-subtitle">Admin Console</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <ul>
+          <li>
+            <a href="#" class="nav-link active" data-target="dashboard" id="nav-dashboard">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <rect x="3" y="3" width="7" height="9" rx="1" />
+                <rect x="14" y="3" width="7" height="5" rx="1" />
+                <rect x="14" y="12" width="7" height="9" rx="1" />
+                <rect x="3" y="16" width="7" height="5" rx="1" />
+              </svg>
+              <span>Dashboard</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-link" data-target="users" id="nav-users">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+              <span>Users Manager</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-link" data-target="events" id="nav-events">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>Events Scheduler</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-link" data-target="tasks" id="nav-tasks">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              <span>Special Tasks</span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="nav-link" data-target="appraisals" id="nav-appraisals">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+              </svg>
+              <span>Appraisal Console</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-footer">
+        <!-- Admin Profile Info -->
+        <div class="admin-profile-sidebar">
+          <div class="profile-avatar">AD</div>
+          <div class="profile-info">
+            <span class="profile-name">Administrator</span>
+            <span class="profile-role">ROOT ADMIN</span>
+          </div>
+        </div>
+
+        <!-- Sidebar Action Buttons -->
+        <div class="sidebar-action-buttons">
+          <button class="btn-sidebar-action" id="btn-logout" title="Sign Out">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ─────────────────────────────────────────────────────────────────────────────
+         MAIN CONTENT
+         ───────────────────────────────────────────────────────────────────────────── -->
+    <div class="main-layout">
+      
+      <!-- HEADER -->
+      <header class="app-header">
+        <div class="header-title">
+          <h1 id="view-title">Dashboard Overview</h1>
+          <p class="breadcrumbs" id="view-subtitle">Personnel Appraisal Admin System</p>
+        </div>
+        <div class="header-actions" style="display: flex; align-items: center; gap: 16px;">
+          <!-- System Status -->
+          <div class="system-status" style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-sub); background: rgba(0, 0, 0, 0.04); padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border-card);">
+            <span class="status-dot online" id="status-dot"></span>
+            <span id="status-text" style="font-weight: 500;">Real-time Sync Active</span>
+          </div>
+          <!-- Sync Database Button -->
+          <button class="btn btn-secondary" id="btn-refresh" title="Force Sync Now" style="padding: 8px 14px; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 8px;">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14" style="stroke-width: 2;">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
+            </svg>
+            <span>Sync Database</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- VIEWPORT (DYNAMIC CONTENT) -->
+      <main class="app-viewport">
+        
+        <!-- ───────────────────────────────────────────────────────────────────
+             1. DASHBOARD VIEW
+             ─────────────────────────────────────────────────────────────────── -->
+        <section id="view-dashboard" class="tab-content active">
+          <!-- KPI Stats grid -->
+          <div class="metrics-grid">
+            <div class="metric-card glassmorphic">
+              <div class="metric-icon blue">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <div class="metric-data">
+                <span class="metric-label">Total Active Users</span>
+                <h3 class="metric-value" id="stat-total-users">-</h3>
+              </div>
+            </div>
+
+            <div class="metric-card glassmorphic">
+              <div class="metric-icon purple">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <div class="metric-data">
+                <span class="metric-label">Special Tasks</span>
+                <h3 class="metric-value" id="stat-total-tasks">-</h3>
+                <span class="metric-sub" id="stat-pending-tasks">0 pending</span>
+              </div>
+            </div>
+
+            <div class="metric-card glassmorphic">
+              <div class="metric-icon mint">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div class="metric-data">
+                <span class="metric-label">Registered Events</span>
+                <h3 class="metric-value" id="stat-total-events">-</h3>
+                <span class="metric-sub" id="stat-awaiting-events">0 awaiting rating</span>
+              </div>
+            </div>
+
+            <div class="metric-card glassmorphic">
+              <div class="metric-icon coral">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <div class="metric-data">
+                <span class="metric-label">Flagged Appraisals</span>
+                <h3 class="metric-value" id="stat-flagged-appraisals">-</h3>
+                <span class="metric-sub" id="stat-locked-appraisals">0 locked</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts and logs section -->
+          <div class="dashboard-details">
+            <div class="card glassmorphic flex-2">
+              <div class="card-header">
+                <h3>Appraisal Rating Breakdown</h3>
+                <span class="card-subtitle">Aggregated database appraisals</span>
+              </div>
+              <div class="card-body centered-chart">
+                <!-- Custom SVG Chart -->
+                <div class="svg-chart-container">
+                  <svg id="dashboard-svg-chart" viewBox="0 0 400 200" width="100%" height="200">
+                    <!-- Dynamic rendering in JS -->
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="card glassmorphic flex-1">
+              <div class="card-header">
+                <h3>Database Environment</h3>
+                <span class="card-subtitle">Active SQLite parameters</span>
+              </div>
+              <div class="card-body">
+                <ul class="db-info-list">
+                  <li>
+                    <span class="info-label">Active Connection:</span>
+                    <span class="info-value text-glow green">Active</span>
+                  </li>
+                  <li>
+                    <span class="info-label">Target SQLite DB Path:</span>
+                    <span class="info-value highlight" style="font-family: monospace; font-size: 11px;">dev.db (Shared Root)</span>
+                  </li>
+                  <li>
+                    <span class="info-label">Appraisal Engine URL:</span>
+                    <span class="info-value">sqlite:///(dynamic_root)/dev.db</span>
+                  </li>
+                  <li>
+                    <span class="info-label">Admin server port:</span>
+                    <span class="info-value highlight">8001</span>
+                  </li>
+                  <li>
+                    <span class="info-label">System Time (UTC):</span>
+                    <span class="info-value" id="stat-server-time">-</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ───────────────────────────────────────────────────────────────────
+             2. USERS MANAGEMENT VIEW
+             ─────────────────────────────────────────────────────────────────── -->
+        <section id="view-users" class="tab-content">
+          <div class="card glassmorphic">
+            <div class="table-controls">
+              <div class="search-filters">
+                <input type="text" id="user-search-input" placeholder="Search by name or department..." class="form-input">
+                <select id="user-role-filter" class="form-input select-filter">
+                  <option value="">All Roles</option>
+                  <option value="Teacher">Teachers</option>
+                  <option value="Student">Students</option>
+                  <option value="Dean">Deans</option>
+                  <option value="Coordinator">Coordinators</option>
+                  <option value="Principal">Principal</option>
+                  <option value="Admin">Administrators</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="btn-add-user">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="18">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add New User</span>
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" id="users-table">
+                <thead>
+                  <tr>
+                    <th>User ID</th>
+                    <th>Full Name</th>
+                    <th>Access Role</th>
+                    <th>Department</th>
+                    <th class="actions-col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body">
+                  <tr>
+                    <td colspan="5" class="loading-state">Loading users database...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ───────────────────────────────────────────────────────────────────
+             3. EVENTS VIEW
+             ─────────────────────────────────────────────────────────────────── -->
+        <section id="view-events" class="tab-content">
+          <div class="card glassmorphic">
+            <div class="table-controls">
+              <div class="search-filters">
+                <input type="text" id="event-search-input" placeholder="Search events..." class="form-input">
+              </div>
+              <button class="btn btn-primary" id="btn-add-event">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="18">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Schedule Event</span>
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" id="events-table">
+                <thead>
+                  <tr>
+                    <th>Event ID</th>
+                    <th>Event Title</th>
+                    <th>Organizer</th>
+                    <th>Department</th>
+                    <th>Scheduled Date</th>
+                    <th>Est. Attendees</th>
+                    <th>Evaluation Status</th>
+                    <th class="actions-col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="events-table-body">
+                  <tr>
+                    <td colspan="8" class="loading-state">Loading school events...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ───────────────────────────────────────────────────────────────────
+             4. SPECIAL TASKS VIEW
+             ─────────────────────────────────────────────────────────────────── -->
+        <section id="view-tasks" class="tab-content">
+          <div class="card glassmorphic">
+            <div class="table-controls">
+              <div class="search-filters">
+                <input type="text" id="task-search-input" placeholder="Search tasks..." class="form-input">
+              </div>
+              <button class="btn btn-primary" id="btn-add-task">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="18">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Assign Special Task</span>
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" id="tasks-table">
+                <thead>
+                  <tr>
+                    <th>Task ID</th>
+                    <th>Task Description</th>
+                    <th>Assigned To</th>
+                    <th>Department</th>
+                    <th>Assigned By</th>
+                    <th>Due Date</th>
+                    <th>Evaluation Status</th>
+                    <th>Derived Score</th>
+                    <th class="actions-col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="tasks-table-body">
+                  <tr>
+                    <td colspan="9" class="loading-state">Loading assigned special tasks...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ───────────────────────────────────────────────────────────────────
+             5. APPRAISALS VIEW
+             ─────────────────────────────────────────────────────────────────── -->
+        <section id="view-appraisals" class="tab-content">
+          <!-- Appraisal Records -->
+          <div class="card glassmorphic margin-bottom">
+            <div class="card-header">
+              <h3>Individual Appraisal Records</h3>
+              <p class="card-subtitle">Generated automatically when teachers evaluate events, reports, or tasks</p>
+            </div>
+            
+            <div class="table-responsive">
+              <table class="data-table" id="appraisals-table">
+                <thead>
+                  <tr>
+                    <th>Appraisal ID</th>
+                    <th>Personnel ID</th>
+                    <th>Appraisal Type</th>
+                    <th>Reference ID</th>
+                    <th>Total Points (0-100)</th>
+                    <th>Star Rating</th>
+                    <th>Status</th>
+                    <th>Lock State</th>
+                    <th>Archive State</th>
+                    <th class="actions-col" style="width: 140px;">Lock/Archive</th>
+                  </tr>
+                </thead>
+                <tbody id="appraisals-table-body">
+                  <tr>
+                    <td colspan="10" class="loading-state">Loading individual appraisal logs...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Performance Summaries -->
+          <div class="card glassmorphic">
+            <div class="card-header">
+              <h3>Monthly Performance Summaries</h3>
+              <p class="card-subtitle">RPMS Faculty Performance evaluation aggregates feeding into the final reports</p>
+            </div>
+            
+            <div class="table-responsive">
+              <table class="data-table" id="summaries-table">
+                <thead>
+                  <tr>
+                    <th>Summary ID</th>
+                    <th>Personnel ID</th>
+                    <th>Evaluation Period</th>
+                    <th>Total Appraisal Points</th>
+                    <th>Avg Event Score</th>
+                    <th>Avg Task Score</th>
+                    <th>Report Timing Points</th>
+                    <th>Escalation Count</th>
+                    <th>RPMS Grade</th>
+                    <th>Summary Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody id="summaries-table-body">
+                  <tr>
+                    <td colspan="10" class="loading-state">Loading monthly summaries database...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────────────────
+       MODALS
+       ───────────────────────────────────────────────────────────────────────────── -->
+  
+  <!-- MODAL: ADD/EDIT USER -->
+  <div class="modal-overlay" id="modal-user">
+    <div class="modal-box glassmorphic">
+      <div class="modal-header">
+        <h3 id="modal-user-title">Add New User</h3>
+        <button class="modal-close" onclick="closeModal('modal-user')">&times;</button>
+      </div>
+      <form id="form-user" onsubmit="handleUserSubmit(event)">
+        <input type="hidden" id="form-user-id">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="form-user-name">Full Name</label>
+            <input type="text" id="form-user-name" required placeholder="e.g. Dr. Jane Smith" class="form-input">
+          </div>
+          <div class="form-group">
+            <label for="form-user-role">Role Hierarchy</label>
+            <select id="form-user-role" required class="form-input">
+              <option value="Teacher">Teacher</option>
+              <option value="Student">Student</option>
+              <option value="Dean">Dean</option>
+              <option value="Coordinator">Coordinator</option>
+              <option value="Principal">Principal</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="form-user-dept">Department / Division</label>
+            <input type="text" id="form-user-dept" placeholder="e.g. Sciences, Humanities, or null" class="form-input">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-user')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save User Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD EVENT -->
+  <div class="modal-overlay" id="modal-event">
+    <div class="modal-box glassmorphic">
+      <div class="modal-header">
+        <h3>Schedule School Event</h3>
+        <button class="modal-close" onclick="closeModal('modal-event')">&times;</button>
+      </div>
+      <form id="form-event" onsubmit="handleEventSubmit(event)">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="form-event-id">Event ID</label>
+              <input type="text" id="form-event-id" required placeholder="e.g. EV005" class="form-input">
+            </div>
+            <div class="form-group flex-2">
+              <label for="form-event-name">Event Title</label>
+              <input type="text" id="form-event-name" required placeholder="e.g. Annual Sciences Expo 2025" class="form-input">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="form-event-date">Scheduled Date</label>
+            <input type="date" id="form-event-date" required class="form-input">
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="form-event-organizer">Organizer (Personnel Name)</label>
+              <input type="text" id="form-event-organizer" required placeholder="e.g. Prof. Garcia" class="form-input">
+            </div>
+            <div class="form-group flex-1">
+              <label for="form-event-dept">Department</label>
+              <input type="text" id="form-event-dept" required placeholder="e.g. Sciences" class="form-input">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="form-event-attendees">Estimated Attendees</label>
+            <input type="number" id="form-event-attendees" min="1" value="100" class="form-input">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-event')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Schedule Event</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CREATE SPECIAL TASK -->
+  <div class="modal-overlay" id="modal-task">
+    <div class="modal-box glassmorphic">
+      <div class="modal-header">
+        <h3>Assign Special Task</h3>
+        <button class="modal-close" onclick="closeModal('modal-task')">&times;</button>
+      </div>
+      <form id="form-task" onsubmit="handleTaskSubmit(event)">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="form-task-id">Task ID (Optional)</label>
+              <input type="text" id="form-task-id" placeholder="e.g. ST007 (Auto if empty)" class="form-input">
+            </div>
+            <div class="form-group flex-2">
+              <label for="form-task-name">Task Description / Title</label>
+              <input type="text" id="form-task-name" required placeholder="e.g. Accreditation Reports Compilation" class="form-input">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="form-task-personnel">Assigned Personnel (typically Dean)</label>
+              <input type="text" id="form-task-personnel" required placeholder="e.g. Sarah Johnson" class="form-input">
+            </div>
+            <div class="form-group flex-1">
+              <label for="form-task-dept">Department</label>
+              <input type="text" id="form-task-dept" required placeholder="e.g. Business" class="form-input">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="form-task-assigned-by">Assigned Coordinator</label>
+              <input type="text" id="form-task-assigned-by" required placeholder="e.g. Dr. Cruz" class="form-input">
+            </div>
+            <div class="form-group flex-1">
+              <label for="form-task-due">Due Date</label>
+              <input type="date" id="form-task-due" required class="form-input">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-task')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Assign Task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIRM LOGOUT -->
+  <div class="modal-overlay" id="modal-logout-confirm">
+    <div class="modal-box glassmorphic" style="max-width: 400px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-card); background: #ffffff;">
+      <div class="modal-header" style="border-bottom: none; padding: 24px 24px 8px 24px;">
+        <h3 style="font-family: var(--font-heading); font-size: 16px; font-weight: 700; color: var(--text-main);">Confirm Logout</h3>
+      </div>
+      <div class="modal-body" style="padding: 0px 24px 20px 24px; font-size: 13.5px; color: #666666; line-height: 1.5; font-family: var(--font-sans);">
+        Are you sure you want to logout? Any unsaved changes will be lost.
+      </div>
+      <div class="modal-footer" style="padding: 8px 24px 20px 24px; display: flex; justify-content: flex-end; gap: 8px; background: transparent; border-top: none;">
+        <button type="button" onclick="closeModal('modal-logout-confirm')" style="background: transparent; border: none; color: #3B82F6; font-family: var(--font-sans); font-size: 13px; font-weight: 600; padding: 8px 16px; cursor: pointer; border-radius: 6px; transition: background-color 0.2s;">Cancel</button>
+        <button type="button" onclick="executeLogout()" style="background-color: #DC2626; color: #ffffff; font-family: var(--font-sans); font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; transition: filter 0.2s;">Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: NOTIFICATIONS / ALERTS -->
+  <div class="toast" id="toast-notification">
+    <div class="toast-content">
+      <span class="toast-icon" id="toast-icon">✓</span>
+      <span class="toast-message" id="toast-message">User updated successfully</span>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script src="/static/app.js"></script>
+</body>
+</html>
