@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Alembic
+alembic/versions/*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
