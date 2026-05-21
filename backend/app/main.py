@@ -28,6 +28,7 @@ Endpoints:
 from __future__ import annotations
 
 import os
+import json
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -56,7 +57,17 @@ from .models import (
     SpecialTaskEvaluationOut,
     SpecialTaskOut,
     User,
+    AuditLog,
+    AuditLogOut,
 )
+from .security import (
+    create_access_token,
+    verify_access_token,
+    get_current_user_claims,
+    RoleChecker,
+    PUBLIC_KEY_PEM,
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # App & CORS
@@ -71,7 +82,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -408,6 +419,136 @@ def _seed_events(db: Session):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Authentication & Audit Utility
+# ─────────────────────────────────────────────────────────────────────────────
+
+from pydantic import BaseModel
+
+class LoginRequest(BaseModel):
+    username: str
+    password: Optional[str] = None
+
+
+def _log_audit(
+    db: Session,
+    username: Optional[str],
+    action_type: str,
+    before_state: Optional[dict] = None,
+    after_state: Optional[dict] = None,
+):
+    audit = AuditLog(
+        username=username,
+        action_type=action_type,
+        before_state=json.dumps(before_state) if before_state is not None else None,
+        after_state=json.dumps(after_state) if after_state is not None else None,
+        timestamp=_now(),
+    )
+    db.add(audit)
+    db.flush()
+
+
+@app.post("/api/auth/login", tags=["Auth"])
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    username = payload.username.strip().lower()
+    password = payload.password
+    
+    # Intercept root administrator credentials
+    if username == "admin":
+        if not password or password != "password":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Access Denied: Invalid administrator credentials."
+            )
+        claims = {"sub": "admin", "role": "admin"}
+        token = create_access_token(claims)
+        _log_audit(db, "admin", "LOGIN", None, {"role": "admin"})
+        db.commit()
+        return {"access_token": token, "token_type": "bearer", "role": "admin", "username": "admin"}
+        
+    role = None
+    prefix = None
+    
+    if username.startswith("principal."):
+        role = "principal"
+        prefix = "principal."
+    elif username.startswith("coord."):
+        role = "coordinator"
+        prefix = "coord."
+    elif username.startswith("dean."):
+        role = "dean"
+        prefix = "dean."
+    elif username.startswith("teacher."):
+        role = "teacher"
+        prefix = "teacher."
+        
+    if not role or not prefix:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid username format. Must start with role prefix (e.g. coord.username)."
+        )
+        
+    name_to_match = username[len(prefix):].strip()
+    if not name_to_match:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid username: name part cannot be empty."
+        )
+        
+    # Check if user exists in the database
+    all_users = db.query(User).all()
+    user = None
+    
+    def _matches_name(db_name: str, login_part: str) -> bool:
+        db_clean = db_name.lower().replace("dr.", "").replace("prof.", "").strip()
+        login_clean = login_part.lower().strip()
+        if db_clean == login_clean:
+            return True
+        db_parts = db_clean.split()
+        if db_parts and db_parts[-1] == login_clean:
+            return True
+        return False
+
+    for u in all_users:
+        if _matches_name(u.name, name_to_match) and u.role.lower() == role.lower():
+            user = u
+            break
+            
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{name_to_match}' with role '{role}' not found in database."
+        )
+        
+    if not password or password != "password":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access Denied: Invalid credentials."
+        )
+        
+    claims = {"sub": username, "role": role, "user_id": user.id}
+    token = create_access_token(claims)
+    
+    _log_audit(db, username, "LOGIN", None, {"role": role, "user_id": user.id})
+    db.commit()
+    
+    return {"access_token": token, "token_type": "bearer", "role": role, "username": username, "user_id": user.id}
+
+
+@app.get("/api/auth/public-key", tags=["Auth"])
+def get_public_key():
+    return {"public_key": PUBLIC_KEY_PEM}
+
+
+@app.get("/api/admin/audit-logs", tags=["Admin System"])
+def get_audit_logs(
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["admin", "principal"])),
+):
+    """Retrieve all append-only audit log records for administrative forensic compliance."""
+    return db.query(AuditLog).order_by(AuditLog.id.desc()).all()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Routes — Health
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -441,6 +582,7 @@ def evaluate_special_task(
     task_id: str,
     payload: SpecialTaskEvaluationIn,
     db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["coordinator", "admin"])),
 ):
     """
     UC003 — Coordinator evaluates a special task assigned to Dean.
@@ -466,7 +608,28 @@ def evaluate_special_task(
         SpecialTaskEvaluation.task_id == task_id
     ).first()
 
+    before_state = None
     if existing:
+        # Check immutability constraint: reject if corresponding appraisal transitions to Completed/Locked
+        rec = db.query(AppraisalRecord).filter(
+            AppraisalRecord.reference_id == existing.special_task_eval_id,
+            AppraisalRecord.appraisal_type == "Special Task"
+        ).first()
+        if rec and (rec.is_locked or rec.appraisal_status == "Completed"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Categorically rejected: This special task appraisal has already transitioned to Completed/Locked status and is immutable."
+            )
+
+        before_state = {
+            "completion_quality_score": existing.completion_quality_score,
+            "timeliness_score": existing.timeliness_score,
+            "initiative_score": existing.initiative_score,
+            "coordination_score": existing.coordination_score,
+            "weighted_average": existing.weighted_average,
+            "remarks": existing.remarks,
+        }
+
         existing.personnel_id             = payload.personnel_id
         existing.coordinator_id           = payload.coordinator_id
         existing.completion_quality_score = payload.completion_quality_score
@@ -510,6 +673,23 @@ def evaluate_special_task(
         total_points   = float(score),
     )
 
+    after_state = {
+        "completion_quality_score": payload.completion_quality_score,
+        "timeliness_score": payload.timeliness_score,
+        "initiative_score": payload.initiative_score,
+        "coordination_score": payload.coordination_score,
+        "weighted_average": wa,
+        "remarks": payload.remarks,
+    }
+
+    _log_audit(
+        db=db,
+        username=claims.get("sub"),
+        action_type="EVALUATE_SPECIAL_TASK",
+        before_state=before_state,
+        after_state=after_state,
+    )
+
     db.commit()
     db.refresh(task)
 
@@ -519,6 +699,7 @@ def evaluate_special_task(
         "score":      score,
         "is_flagged": is_flagged,
     }
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -599,6 +780,7 @@ def evaluate_event(
     event_id: str,
     payload: EventEvaluationIn,
     db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["teacher", "student", "coordinator", "dean", "principal", "admin"])),
 ):
     """
     UC002 — Attendee submits event evaluation form.
@@ -648,6 +830,26 @@ def evaluate_event(
         total_points   = total_points,
     )
 
+    # Log to audit trail
+    after_state = {
+        "event_id": event_id,
+        "evaluator_name": payload.evaluator_name,
+        "planning_score": payload.planning_score,
+        "objectives_score": payload.objectives_score,
+        "personnel_score": payload.personnel_score,
+        "time_mgmt_score": payload.time_mgmt_score,
+        "engagement_score": payload.engagement_score,
+        "resource_score": payload.resource_score,
+        "average_score": round(eval_obj.average_score, 2),
+    }
+    _log_audit(
+        db=db,
+        username=claims.get("sub"),
+        action_type="EVALUATE_EVENT",
+        before_state=None,
+        after_state=after_state,
+    )
+
     db.commit()
     db.refresh(eval_obj)
 
@@ -665,7 +867,11 @@ def evaluate_event(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.post("/report-submissions", response_model=ReportSubmissionOut, tags=["Reports"])
-def submit_report(payload: ReportSubmissionIn, db: Session = Depends(get_db)):
+def submit_report(
+    payload: ReportSubmissionIn,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["teacher", "dean", "admin"])),
+):
     """
     UC001 — System computes timing points using server time vs deadline.
     Timing point values (paper SRS): Early=150, On Time=100, Late≤24h=50, Late>24h=0
@@ -701,6 +907,22 @@ def submit_report(payload: ReportSubmissionIn, db: Session = Depends(get_db)):
         appraisal_type = "Report",
         reference_id   = sub.submission_id,
         total_points   = total_points,
+    )
+
+    # Log to audit trail
+    after_state = {
+        "report_id": payload.report_id,
+        "personnel_id": payload.personnel_id,
+        "timing_status": timing_status,
+        "timing_points": timing_pts,
+        "total_points": total_points,
+    }
+    _log_audit(
+        db=db,
+        username=claims.get("sub"),
+        action_type="SUBMIT_REPORT",
+        before_state=None,
+        after_state=after_state,
     )
 
     db.commit()
@@ -749,27 +971,69 @@ def get_appraisal_record(appraisal_id: int, db: Session = Depends(get_db)):
 
 
 @app.patch("/appraisal-records/{appraisal_id}/lock", tags=["Appraisal Records"])
-def lock_appraisal(appraisal_id: int, db: Session = Depends(get_db)):
+def lock_appraisal(
+    appraisal_id: int,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["coordinator", "principal", "admin"])),
+):
     """Lock an appraisal record — locked records cannot be modified."""
     rec = db.query(AppraisalRecord).filter(
         AppraisalRecord.appraisal_id == appraisal_id
     ).first()
     if not rec:
         raise HTTPException(status_code=404, detail="Not found")
+        
+    # Strictly reject modifications to Completed records per security spec
+    if rec.appraisal_status == "Completed":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Categorically rejected: Completed appraisal records are immutable."
+        )
+
     rec.is_locked = True
+    db.commit()
+
+    _log_audit(
+        db=db,
+        username=claims.get("sub"),
+        action_type="LOCK_APPRAISAL",
+        before_state={"appraisal_id": appraisal_id, "is_locked": False},
+        after_state={"appraisal_id": appraisal_id, "is_locked": True},
+    )
     db.commit()
     return {"appraisal_id": appraisal_id, "is_locked": True}
 
 
 @app.patch("/appraisal-records/{appraisal_id}/archive", tags=["Appraisal Records"])
-def archive_appraisal(appraisal_id: int, db: Session = Depends(get_db)):
+def archive_appraisal(
+    appraisal_id: int,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["coordinator", "principal", "admin"])),
+):
     """Archive an appraisal record — moves it to historical records."""
     rec = db.query(AppraisalRecord).filter(
         AppraisalRecord.appraisal_id == appraisal_id
     ).first()
     if not rec:
         raise HTTPException(status_code=404, detail="Not found")
+        
+    # Strictly reject modifications to Completed records per security spec
+    if rec.appraisal_status == "Completed":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Categorically rejected: Completed appraisal records are immutable."
+        )
+
     rec.is_archived = True
+    db.commit()
+
+    _log_audit(
+        db=db,
+        username=claims.get("sub"),
+        action_type="ARCHIVE_APPRAISAL",
+        before_state={"appraisal_id": appraisal_id, "is_archived": False},
+        after_state={"appraisal_id": appraisal_id, "is_archived": True},
+    )
     db.commit()
     return {"appraisal_id": appraisal_id, "is_archived": True}
 

@@ -5,3 +5,7 @@ pydantic==2.5.0
 sqlalchemy==2.0.23
 # psycopg-binary==3.2.0  # optional: PostgreSQL adapter (uncomment to install on systems that support it)
 alembic==1.11.1
+pyjwt==2.8.0
+cryptography==42.0.5
+passlib[bcrypt]==1.7.4
+

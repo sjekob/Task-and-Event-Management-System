@@ -497,7 +497,34 @@ class PerformanceSummaryOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AuditLog(Base):
+    """
+    audit_log — keeps track of all actions, evaluations, and modifications.
+    """
+    __tablename__ = "audit_log"
+
+    id           = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username     = Column(String(120), nullable=True)
+    action_type  = Column(String(50),  nullable=False)   # EVALUATE_EVENT|EVALUATE_TASK|LOCK_RECORD|ARCHIVE_RECORD|LOGIN
+    before_state = Column(Text,         nullable=True)   # JSON string
+    after_state  = Column(Text,         nullable=True)   # JSON string
+    timestamp    = Column(String(30),  nullable=False,
+                          default=lambda: datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+class AuditLogOut(BaseModel):
+    id: int
+    username: Optional[str]
+    action_type: str
+    before_state: Optional[str]
+    after_state: Optional[str]
+    timestamp: str
+
+    model_config = {"from_attributes": True}
+
+
 # ── Legacy alias (keeps EvaluationIn working if any code still imports it) ────
 class EvaluationIn(BaseModel):
     ratings: dict
     remarks: Optional[str] = ""
+

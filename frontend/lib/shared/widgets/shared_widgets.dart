@@ -288,11 +288,14 @@ class _SidebarFooter extends StatelessWidget {
     // Get initials for the avatar (e.g., "Louis Lok" -> "LL", "principal.rodriguez" -> "PR")
     String getInitials(String name) {
       if (name.isEmpty) return '?';
-      final parts = name.split(RegExp(r'[\s.]'));
+      final parts = name.split(RegExp(r'[\s.]')).where((p) => p.isNotEmpty).toList();
       if (parts.length > 1) {
         return (parts[0][0] + parts[1][0]).toUpperCase();
       }
-      return name[0].toUpperCase();
+      if (parts.isNotEmpty) {
+        return parts[0][0].toUpperCase();
+      }
+      return '?';
     }
     
     // Capitalize role

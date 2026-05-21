@@ -5,16 +5,37 @@ class ApiService {
   factory ApiService() => _instance;
 
   late final Dio dio;
+  static String? jwtToken;
 
   ApiService._internal() {
     const baseUrl = String.fromEnvironment('API_BASE', defaultValue: 'http://127.0.0.1:8000');
     dio = Dio(BaseOptions(
       baseUrl: baseUrl,
-      connectTimeout: Duration(milliseconds: 5000),
-      receiveTimeout: Duration(milliseconds: 5000),
+    ));
+
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        if (jwtToken != null) {
+          options.headers['Authorization'] = 'Bearer $jwtToken';
+        }
+        return handler.next(options);
+      },
     ));
   }
 }
+
+class AuthApi {
+  final Dio _dio = ApiService().dio;
+
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    final res = await _dio.post('/api/auth/login', data: {
+      'username': username,
+      'password': password,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+}
+
 
 class SpecialTasksApi {
   final Dio _dio = ApiService().dio;

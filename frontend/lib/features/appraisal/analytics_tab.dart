@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../core/theme.dart';
-import '../../core/role_service.dart';
 import '../../shared/widgets/shared_widgets.dart';
 import 'models/appraisal_models.dart';
 
@@ -70,7 +69,6 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     }
   }
 
-  RolePermissions get _perms => RolePermissions(widget.role);
 
   List<FacultyPerformance> _getRealTimeFaculty() {
     // Show all faculty for coordinators in demo mode (real app would scope by dept)
@@ -1138,53 +1136,6 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 }
 
 
-// ── Personnel Compliance table for Coordinators ────────────────────────────
-class _PersonnelCompliance extends StatelessWidget {
-  final List<FacultyPerformance> faculty;
-  const _PersonnelCompliance({required this.faculty});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: faculty.map((f) {
-        final stars = (f.overallScore / 20).clamp(1, 5).round();
-        final compliancePts = stars * 20;
-        final isFlagged = stars < 3;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isFlagged ? const Color(0xFFFFF1F1) : AppColors.pageBg,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isFlagged ? const Color(0xFFFECACA) : AppColors.cardBorder,
-              width: 0.8,
-            ),
-          ),
-          child: Row(children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(f.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-              const SizedBox(height: 2),
-              Row(children: List.generate(5, (i) => Icon(
-                i < stars ? Icons.star_rounded : Icons.star_outline_rounded,
-                color: AppColors.amber, size: 14,
-              ))),
-            ])),
-            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text('$compliancePts pts', style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w700,
-                color: isFlagged ? AppColors.danger : AppColors.success,
-              )),
-              if (isFlagged)
-                const Text('⚠ Below threshold', style: TextStyle(fontSize: 11, color: AppColors.danger)),
-            ]),
-          ]),
-        );
-      }).toList(),
-    );
-  }
-}
-
 class _MonthlyTrendChart extends StatelessWidget {
   final double realTimeOverallAvg;
 
@@ -1418,81 +1369,6 @@ class MiniStat extends StatelessWidget {
   }
 }
 
-class _PersonalComplianceOverview extends StatelessWidget {
-  final String username;
-  final Map<String, Map<String, dynamic>> evaluations;
-  final Map<String, List<AttendeeRating>> newRatings;
-
-  const _PersonalComplianceOverview({required this.username, required this.evaluations, required this.newRatings});
-
-  @override
-  Widget build(BuildContext context) {
-    final myTasks = sampleTasks.where((t) => _matchesName(t.personnel, username)).toList();
-    final List<int> taskScores = [];
-    for (final t in myTasks) {
-      final eval = evaluations[t.id];
-      if (eval != null) {
-        final raw = eval['score'];
-        final int s = raw is num ? raw.round() : 0;
-        if (s > 0) taskScores.add(s);
-      } else {
-        final s = t.getScore();
-        if (s > 0) taskScores.add(s);
-      }
-    }
-
-    // Flatten event ratings and filter by evaluator name
-    final allRatings = newRatings.values.expand((l) => l).where((r) => _matchesName(r.name, username)).toList();
-
-    final avgTask = taskScores.isEmpty ? 0 : (taskScores.reduce((a, b) => a + b) / taskScores.length).round();
-    final avgEvent = allRatings.isEmpty ? 0 : (allRatings.map((r) => r.overallScore).reduce((a, b) => a + b) / allRatings.length).round();
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Expanded(child: MiniStat(label: 'Avg Task Score', value: '$avgTask')),
-        const SizedBox(width: 12),
-        Expanded(child: MiniStat(label: 'Avg Event Rating', value: '$avgEvent')),
-      ]),
-      const SizedBox(height: 12),
-      const Text('Performance Standing', style: AppTextStyles.statLabel),
-      const SizedBox(height: 8),
-      LinearProgressIndicator(value: ((avgTask + avgEvent) / 2) / 100, minHeight: 8, backgroundColor: const Color(0xFFE5E7EB), color: AppColors.success),
-    ]);
-  }
-}
-
-class _DeanTaskOverview extends StatelessWidget {
-  final String username;
-  final List<FacultyPerformance> faculty;
-  final Map<String, Map<String, dynamic>> evaluations;
-
-  const _DeanTaskOverview({required this.username, required this.faculty, required this.evaluations});
-
-  @override
-  Widget build(BuildContext context) {
-    final myEvaluatedTasks = evaluations.entries.where((e) {
-      final meta = e.value;
-      // backend stores evaluator name under 'evaluator' or not; we tolerate both
-      final evName = meta['evaluator'] ?? meta['evaluatorName'] ?? '';
-      return _matchesName(evName, username);
-    }).map((e) => e.value).toList();
-
-    final myFaculty = faculty.firstWhere((f) => _matchesName(f.name, username), orElse: () => faculty.first);
-    final departmentTeachers = faculty.where((f) => f.department == myFaculty.department).toList();
-
-    final barValues = myEvaluatedTasks.map((m) => (m['score'] as int?)?.toDouble() ?? 0.0).toList();
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Your Evaluated Tasks (${barValues.length})', style: AppTextStyles.statLabel),
-      const SizedBox(height: 10),
-      SizedBox(height: 140, child: _SimpleBarChart(values: barValues)),
-      const SizedBox(height: 12),
-      Text('Teachers Under Your Supervision (${departmentTeachers.length})', style: AppTextStyles.statLabel),
-      const SizedBox(height: 8),
-      SizedBox(height: 120, child: _TeacherList(teachers: departmentTeachers)),
-    ]);
-  }
-}
 
 class _AnalyticsStatCard extends StatelessWidget {
   final String label;
@@ -1566,41 +1442,6 @@ class _AnalyticsStatCard extends StatelessWidget {
             child: Icon(icon, color: iconColor, size: 22),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SimpleBarChart extends StatelessWidget {
-  final List<double> values;
-  const _SimpleBarChart({required this.values});
-
-  @override
-  Widget build(BuildContext context) {
-    if (values.isEmpty) return const Center(child: Text('No data'));
-    return BarChart(BarChartData(
-      alignment: BarChartAlignment.spaceBetween,
-      barGroups: List.generate(values.length, (i) => BarChartGroupData(x: i, barRods: [BarChartRodData(toY: values[i], color: AppColors.info, width: 12)])),
-      borderData: FlBorderData(show: false),
-      titlesData: FlTitlesData(show: false),
-      gridData: FlGridData(show: false),
-    ));
-  }
-}
-
-class _TeacherList extends StatelessWidget {
-  final List<FacultyPerformance> teachers;
-  const _TeacherList({required this.teachers});
-
-  @override
-  Widget build(BuildContext context) {
-    if (teachers.isEmpty) return const Center(child: Text('No teachers'));
-    return ListView.builder(
-      itemCount: teachers.length,
-      itemBuilder: (c, i) => ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text(teachers[i].name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-        subtitle: Text('${teachers[i].overallScore}% • ${teachers[i].department}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
       ),
     );
   }

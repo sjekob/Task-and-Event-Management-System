@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../appraisal/appraisal_screen.dart';
 import '../../shared/utils/platform_utils.dart';
+import '../../core/api_service.dart';
+import 'package:dio/dio.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,17 +15,27 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isLoading = false;
 
-  void _handleLogin() {
+  Future<void> _handleLogin() async {
+    if (_isLoading) return;
+
     final username = _usernameController.text.trim().toLowerCase();
     final password = _passwordController.text;
 
+    if (password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Access Denied: Please enter a password.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     // Intercept root administrator credentials
     if (username == 'admin') {
-      if (password == 'password') {
-        redirectToAdmin();
-        return;
-      } else {
+      if (password != 'password') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Access Denied: Invalid administrator credentials.'),
@@ -32,38 +44,105 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         return;
       }
+    } else {
+      String? role;
+      String? prefix;
+
+      if (username.startsWith('principal.')) {
+        role = 'principal';
+        prefix = 'principal.';
+      } else if (username.startsWith('coord.')) {
+        role = 'coordinator';
+        prefix = 'coord.';
+      } else if (username.startsWith('dean.')) {
+        role = 'dean';
+        prefix = 'dean.';
+      } else if (username.startsWith('teacher.')) {
+        role = 'teacher';
+        prefix = 'teacher.';
+      }
+
+      if (role == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Access Denied: Only Principal, Coordinator, Dean, and Teacher accounts are allowed.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+
+      // Validate that a non-empty name follows the role prefix
+      if (prefix != null) {
+        final namePart = username.substring(prefix.length).trim();
+        if (namePart.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Access Denied: Please provide a name after the prefix (e.g., coord.username).'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          return;
+        }
+      }
     }
 
-    String? role;
+    setState(() {
+      _isLoading = true;
+    });
 
-    if (username.startsWith('principal.')) {
-      role = 'principal';
-    } else if (username.startsWith('coord.')) {
-      role = 'coordinator';
-    } else if (username.startsWith('dean.')) {
-      role = 'dean';
-    } else if (username.startsWith('teacher.')) {
-      role = 'teacher';
-    }
+    try {
+      final response = await AuthApi().login(username, password);
+      final token = response['access_token'] as String?;
+      if (token == null) {
+        throw Exception('Token not found in login response');
+      }
+      ApiService.jwtToken = token;
 
-    if (role == null) {
+      if (username == 'admin') {
+        redirectToAdmin();
+      } else {
+        final backendRole = response['role'] as String?;
+        final backendUsername = response['username'] as String?;
+        
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => AppraisalScreen(
+              username: backendUsername ?? _usernameController.text.trim(),
+              role: backendRole,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      String errorMessage = 'Failed to connect to authentication server.';
+      if (e is DioException) {
+        if (e.response != null && e.response!.data != null) {
+          final detail = e.response!.data['detail'];
+          if (detail != null) {
+            errorMessage = detail.toString();
+          }
+        } else if (e.message != null) {
+          errorMessage = e.message!;
+        }
+      } else {
+        errorMessage = e.toString();
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Access Denied: Only Principal, Coordinator, Dean, and Teacher accounts are allowed.'),
+        SnackBar(
+          content: Text('Login Failed: $errorMessage'),
           backgroundColor: Colors.redAccent,
         ),
       );
-      return;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => AppraisalScreen(
-          username: _usernameController.text.trim(),
-          role: role,
-        ),
-      ),
-    );
   }
 
   @override
@@ -222,7 +301,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _handleLogin,
+                        onPressed: _isLoading ? null : _handleLogin,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF2C2C2C),
                           foregroundColor: Colors.white,
@@ -232,13 +311,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           elevation: 0,
                         ),
-                        child: const Text(
-                          'Log In',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : const Text(
+                                'Log In',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
                     const SizedBox(height: 24),

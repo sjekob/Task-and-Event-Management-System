@@ -3,6 +3,29 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import 'models/appraisal_models.dart';
 
+bool _matchesName(String nameA, String nameB) {
+  String clean(String s) {
+    return s.toLowerCase()
+        .replaceAll(RegExp(r'\b(dr|prof|dean|coord|principal|teacher|mr|ms|mrs)\b\.?'), '')
+        .replaceAll(RegExp(r'[^\w\s]'), ' ')
+        .trim();
+  }
+  
+  final a = clean(nameA);
+  final b = clean(nameB);
+  
+  if (a.isEmpty || b.isEmpty) return false;
+  if (a == b) return true;
+  
+  final partsA = a.split(RegExp(r'\s+'));
+  final partsB = b.split(RegExp(r'\s+'));
+  
+  for (final pA in partsA) {
+    if (pA.length > 2 && partsB.contains(pA)) return true;
+  }
+  return false;
+}
+
 class PersonalDashboardTab extends StatelessWidget {
   final Widget pageHeader;
   final String username;
@@ -125,9 +148,9 @@ class PersonalDashboardTab extends StatelessWidget {
     // Choose which tasks to evaluate/check based on role
     final List<SpecialTask> roleTasks;
     if (activeRole == 'teacher') {
-      roleTasks = sampleTasks.where((t) => t.personnel == username).toList();
+      roleTasks = sampleTasks.where((t) => _matchesName(t.personnel, username)).toList();
     } else if (activeRole == 'dean') {
-      roleTasks = sampleTasks.where((t) => t.personnel == username).toList();
+      roleTasks = sampleTasks.where((t) => _matchesName(t.personnel, username)).toList();
     } else {
       // coordinator & principal see all tasks
       roleTasks = sampleTasks;

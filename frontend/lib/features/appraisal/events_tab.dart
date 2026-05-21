@@ -118,7 +118,8 @@ class _EventsTabState extends State<EventsTab> {
     ).then((rating) {
       if (rating != null) {
         widget.onSubmitRating(event.id, rating);
-        ScaffoldMessenger.of(ctx).showSnackBar(
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Rating submitted successfully'),
             backgroundColor: Color(0xFF10B981),
