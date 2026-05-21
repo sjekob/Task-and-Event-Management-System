@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
-import '../../core/role_service.dart';
+
 import 'models/appraisal_models.dart';
 
 // ── Rubric meta ───────────────────────────────────────────────────────────────
@@ -49,12 +49,10 @@ class EventsTab extends StatefulWidget {
 class _EventsTabState extends State<EventsTab> {
   String _filterMode = 'all';
   String? _selectedEvent;
-  late RolePermissions _rolePerms;
 
   @override
   void initState() {
     super.initState();
-    _rolePerms = RolePermissions(widget.role);
   }
 
   @override
@@ -70,12 +68,18 @@ class _EventsTabState extends State<EventsTab> {
     return base.map((e) {
       final extra = widget.newRatings[e.id] ?? [];
       if (extra.isEmpty) return e;
+      final newRatings = [...e.ratings, ...extra];
+      double? avg;
+      if (newRatings.isNotEmpty) {
+        avg = newRatings.map((r) => r.overallScore).reduce((a, b) => a + b) / newRatings.length;
+      }
+      final newStatus = (avg != null && avg < 3.0) ? EventStatus.flagged : EventStatus.rated;
       return SchoolEvent(
         id: e.id, name: e.name, date: e.date,
         organizer: e.organizer, department: e.department,
         attendees: e.attendees,
-        ratings: [...e.ratings, ...extra],
-        status: extra.isNotEmpty ? EventStatus.rated : e.status,
+        ratings: newRatings,
+        status: newStatus,
       );
     }).toList();
   }
@@ -91,6 +95,7 @@ class _EventsTabState extends State<EventsTab> {
   int get _pendingCount  => _filtered.where((e) => e.status == EventStatus.awaitingRatings).length;
   int get _ratedCount    => _filtered.where((e) => e.status == EventStatus.rated).length;
   int get _lowCount      => _filtered.where((e) => e.avgRating != null && e.avgRating! < 3.0).length;
+  int get _flaggedAlertsCount => _filtered.where((e) => e.status == EventStatus.flagged).length;
   String get _avgRating {
     final s = _filtered.where((e) => e.avgRating != null).map((e) => e.avgRating!);
     if (s.isEmpty) return '—';
@@ -269,13 +274,13 @@ class _EventsTabState extends State<EventsTab> {
             children: [
               // Stat cards
               Row(children: [
-                Expanded(child: _CoordinatorStatCard(label: 'Pending Review', value: '1', valueColor: const Color(0xFFF59E0B), icon: Icons.calendar_today_outlined, iconColor: const Color(0xFFF59E0B))),
+                Expanded(child: _CoordinatorStatCard(label: 'Pending Review', value: '$_pendingCount', valueColor: const Color(0xFFF59E0B), icon: Icons.calendar_today_outlined, iconColor: const Color(0xFFF59E0B))),
                 const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Evaluated', value: '2', valueColor: const Color(0xFF10B981), icon: Icons.star_border_outlined, iconColor: const Color(0xFF10B981))),
+                Expanded(child: _CoordinatorStatCard(label: 'Evaluated', value: '$_ratedCount', valueColor: const Color(0xFF10B981), icon: Icons.star_border_outlined, iconColor: const Color(0xFF10B981))),
                 const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Flagged Alerts', value: '1', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                Expanded(child: _CoordinatorStatCard(label: 'Flagged Alerts', value: '$_flaggedAlertsCount', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
                 const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Avg Rating', value: '3.5/5', valueColor: const Color(0xFF475569), icon: Icons.star_border_outlined, iconColor: const Color(0xFF94A3B8))),
+                Expanded(child: _CoordinatorStatCard(label: 'Avg Rating', value: _avgRating, valueColor: const Color(0xFF475569), icon: Icons.star_border_outlined, iconColor: const Color(0xFF94A3B8))),
               ]),
               const SizedBox(height: 18),
               
@@ -467,12 +472,41 @@ class _EventsTabState extends State<EventsTab> {
               ],
             ),
           ),
-          const Divider(height: 1),
           // Rows
-          _buildEventTableRow(context, 'Science Fair 2025', '4/20/2025', 'Sciences', 'Dr. Santos', '210 / 250', '★ 4.5/5', 'Completed', const Color(0xFF16A34A), const Color(0xFFDCFCE7), true),
-          _buildEventTableRow(context, 'Faculty Development Workshop', '4/15/2025', 'Business', 'Dr. Cruz', '38 / 45', '★ 3.8/5', 'Completed', const Color(0xFF16A34A), const Color(0xFFDCFCE7), true),
-          _buildEventTableRow(context, 'Research Symposium', '4/5/2025', 'Humanities', 'Dr. Reyes', '12 / 80', '★ 2.3/5', 'Flagged', const Color(0xFFEF4444), const Color(0xFFFEE2E2), true),
-          _buildEventTableRow(context, 'Community Outreach Program', '4/25/2025', 'Arts', 'Dr. Lopez', '0 / 150', '—', 'Pending', const Color(0xFFF59E0B), const Color(0xFFFEF3C7), false),
+          ..._filtered.map((e) {
+            final avg = e.avgRating;
+            final String ratingStr = avg != null ? '★ ${avg.toStringAsFixed(1)}/5' : '—';
+            final String responsesStr = '${e.responses} / ${e.attendees}';
+            
+            String statusStr = 'Pending';
+            Color statusColor = const Color(0xFFF59E0B);
+            Color statusBg = const Color(0xFFFEF3C7);
+            
+            if (e.status == EventStatus.rated) {
+              statusStr = 'Completed';
+              statusColor = const Color(0xFF16A34A);
+              statusBg = const Color(0xFFDCFCE7);
+            } else if (e.status == EventStatus.flagged) {
+              statusStr = 'Flagged';
+              statusColor = const Color(0xFFEF4444);
+              statusBg = const Color(0xFFFEE2E2);
+            }
+            
+            final bool hasData = e.responses > 0;
+            return _buildEventTableRow(
+              context,
+              e.name,
+              e.date,
+              e.department,
+              e.organizer,
+              responsesStr,
+              ratingStr,
+              statusStr,
+              statusColor,
+              statusBg,
+              hasData,
+            );
+          }),
         ],
       ),
     );
@@ -509,13 +543,23 @@ class _EventsTabState extends State<EventsTab> {
               children: [
                 if (rating != '—') const Icon(Icons.star_rounded, color: Color(0xFFF59E0B), size: 14),
                 const SizedBox(width: 2),
-                Text(
-                  rating,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: rating.contains('2.3') ? const Color(0xFFEF4444) : const Color(0xFF1E293B),
-                  ),
+                Builder(
+                  builder: (context) {
+                    double? ratingVal;
+                    if (rating != '—') {
+                      final clean = rating.replaceAll('★', '').replaceAll('/5', '').trim();
+                      ratingVal = double.tryParse(clean);
+                    }
+                    final bool isLow = ratingVal != null && ratingVal < 3.0;
+                    return Text(
+                      rating,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: isLow ? const Color(0xFFEF4444) : const Color(0xFF1E293B),
+                      ),
+                    );
+                  }
                 ),
               ],
             ),
@@ -638,7 +682,6 @@ class _CoordinatorStatCard extends StatelessWidget {
   final Color valueColor;
   final IconData icon;
   final Color iconColor;
-  final Color? bgCircleColor;
 
   const _CoordinatorStatCard({
     required this.label,
@@ -646,7 +689,6 @@ class _CoordinatorStatCard extends StatelessWidget {
     required this.valueColor,
     required this.icon,
     required this.iconColor,
-    this.bgCircleColor,
   });
 
   @override
@@ -696,7 +738,7 @@ class _CoordinatorStatCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: bgCircleColor ?? iconColor.withOpacity(0.1),
+              color: iconColor.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: iconColor, size: 24),
@@ -1389,7 +1431,6 @@ class _EventRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rolePerms = RolePermissions(role);
     final avg = event.avgRating;
     final int pct = event.attendees > 0
         ? ((event.responses / event.attendees) * 100).round() : 0;
@@ -1411,7 +1452,6 @@ class _EventRow extends StatelessWidget {
     Widget statusChip;
     String actionLabel;
     VoidCallback? onAction;
-    bool isDisabled = false;
 
     switch (event.status) {
       case EventStatus.awaitingRatings:
@@ -1457,14 +1497,14 @@ class _EventRow extends StatelessWidget {
         SizedBox(
           width: 130,
           child: ElevatedButton(
-            onPressed: isDisabled ? null : onAction,
+            onPressed: onAction,
             style: ElevatedButton.styleFrom(
-              backgroundColor: isDisabled ? AppColors.cardBorder : AppColors.tabActive,
+              backgroundColor: AppColors.tabActive,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
               minimumSize: const Size(1, 34),
             ),
-            child: Text(actionLabel, style: TextStyle(color: isDisabled ? AppColors.textSecondary : Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+            child: Text(actionLabel, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
           ),
         ),
       ]),

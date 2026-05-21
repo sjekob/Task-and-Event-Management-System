@@ -92,22 +92,7 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
     return total.round();
   }
 
-  Widget _starRow(String label, int value, String key) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      const SizedBox(height: 6),
-      Row(children: List.generate(5, (i) {
-        final v = i + 1;
-            return IconButton(
-              onPressed: () => _setRating(key, v),
-              icon: Icon(v <= value ? Icons.star : Icons.star_border, color: AppColors.tabActive),
-          iconSize: 22,
-          padding: const EdgeInsets.all(0),
-        );
-      })),
-      const SizedBox(height: 8),
-    ]);
-  }
+
 
   String _getLabel(String key) {
     final isTeacher = widget.role == 'dean'; // dean evaluates teachers
@@ -437,6 +422,79 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
     return '${(scores.reduce((a, b) => a + b) / scores.length).round()}/100';
   }
 
+  int get _coordinatorTotalFacultyEvaluated {
+    final evaluated = <String>{};
+    for (final t in sampleTasks) {
+      final eval = widget.evaluations[t.id];
+      if (eval != null) {
+        evaluated.add(t.personnel);
+      } else if (t.status == TaskStatus.evaluated || t.status == TaskStatus.flagged) {
+        evaluated.add(t.personnel);
+      }
+    }
+    return evaluated.length;
+  }
+
+  int get _coordinatorFlaggedPersonnel {
+    final flagged = <String>{};
+    for (final t in sampleTasks) {
+      final eval = widget.evaluations[t.id];
+      if (eval != null) {
+        final raw = eval['score'];
+        final int score = raw is num ? raw.round() : 0;
+        if (score < 60) {
+          flagged.add(t.personnel);
+        }
+      } else if (t.status == TaskStatus.flagged) {
+        flagged.add(t.personnel);
+      }
+    }
+    return flagged.length;
+  }
+
+  int get _coordinatorDepartmentsMonitored {
+    final depts = <String>{};
+    for (final f in sampleFaculty) {
+      if (f.department.isNotEmpty) depts.add(f.department);
+    }
+    for (final t in sampleTasks) {
+      if (t.department.isNotEmpty) depts.add(t.department);
+    }
+    return depts.length;
+  }
+
+  String get _coordinatorSchoolAvgCompliance {
+    final source = sampleFaculty;
+    double total = 0;
+    int count = 0;
+    for (final f in source) {
+      final facultyTasks = sampleTasks.where((t) => t.personnel == f.name).toList();
+      final List<int> scores = [];
+      for (final t in facultyTasks) {
+        final eval = widget.evaluations[t.id];
+        if (eval != null) {
+          final raw = eval['score'];
+          final int s = raw is num ? raw.round() : 0;
+          if (s > 0) scores.add(s);
+        } else {
+          final sc = t.getScore();
+          if (sc > 0) scores.add(sc);
+        }
+      }
+      final int? realTimeTaskScore = scores.isEmpty
+          ? f.taskScore
+          : (scores.reduce((a, b) => a + b) / scores.length).round();
+
+      final int realTimeOverallScore = realTimeTaskScore != null
+          ? ((f.reportScore ?? 100) + realTimeTaskScore) ~/ 2
+          : (f.reportScore ?? 100);
+      total += realTimeOverallScore;
+      count++;
+    }
+    if (count == 0) return '0';
+    return '${(total / count).round()}';
+  }
+
   String get _filterModeValue {
     switch (_filterMode) {
       case _FilterMode.all:         return 'all';
@@ -705,13 +763,13 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
             children: [
               // Stat cards
               Row(children: [
-                Expanded(child: _CoordinatorStatCard(label: 'Total Faculty Evaluated', value: '4', valueColor: const Color(0xFF10B981), icon: Icons.check_circle_outline, iconColor: const Color(0xFF10B981))),
+                Expanded(child: _CoordinatorStatCard(label: 'Total Faculty Evaluated', value: '$_coordinatorTotalFacultyEvaluated', valueColor: const Color(0xFF10B981), icon: Icons.check_circle_outline, iconColor: const Color(0xFF10B981))),
                 const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Flagged Personnel', value: '1', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                Expanded(child: _CoordinatorStatCard(label: 'Flagged Personnel', value: '$_coordinatorFlaggedPersonnel', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
                 const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Departments Monitored', value: '4', valueColor: const Color(0xFF8B5CF6), icon: Icons.group_outlined, iconColor: const Color(0xFF8B5CF6))),
+                Expanded(child: _CoordinatorStatCard(label: 'Departments Monitored', value: '$_coordinatorDepartmentsMonitored', valueColor: const Color(0xFF8B5CF6), icon: Icons.group_outlined, iconColor: const Color(0xFF8B5CF6))),
                 const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'School Avg Compliance / 100', value: '273', valueColor: const Color(0xFF475569), icon: Icons.emoji_events_outlined, iconColor: const Color(0xFF94A3B8))),
+                Expanded(child: _CoordinatorStatCard(label: 'School Avg Compliance / 100', value: _coordinatorSchoolAvgCompliance, valueColor: const Color(0xFF475569), icon: Icons.emoji_events_outlined, iconColor: const Color(0xFF94A3B8))),
               ]),
               const SizedBox(height: 18),
               
@@ -1248,7 +1306,6 @@ class _CoordinatorStatCard extends StatelessWidget {
   final Color valueColor;
   final IconData icon;
   final Color iconColor;
-  final Color? bgCircleColor;
 
   const _CoordinatorStatCard({
     required this.label,
@@ -1256,7 +1313,6 @@ class _CoordinatorStatCard extends StatelessWidget {
     required this.valueColor,
     required this.icon,
     required this.iconColor,
-    this.bgCircleColor,
   });
 
   @override
@@ -1306,7 +1362,7 @@ class _CoordinatorStatCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: bgCircleColor ?? iconColor.withOpacity(0.1),
+              color: iconColor.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: iconColor, size: 24),
@@ -1507,7 +1563,6 @@ class _TaskRow extends StatelessWidget {
   }
 
   Widget _actionButton(BuildContext context) {
-    final rolePerms = RolePermissions(role);
     final bool hasEval = evaluation != null || task.status == TaskStatus.evaluated || task.status == TaskStatus.flagged;
     
     // Determine if this user can evaluate

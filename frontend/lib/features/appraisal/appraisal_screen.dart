@@ -21,6 +21,7 @@ class AppraisalScreen extends StatefulWidget {
 }
 
 class _AppraisalScreenState extends State<AppraisalScreen> {
+  int _activeSidebarIndex = 0; // Default to Dashboard navbar item (index 0)
   late _AppraisalTab _activeTab;
   late List<_AppraisalTab> _availableTabs;
 
@@ -39,9 +40,9 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   void _initializeTabs() {
     final role = widget.role ?? 'coordinator';
     if (role == 'teacher') {
-      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.events, _AppraisalTab.analytics];
+      _availableTabs = [_AppraisalTab.events, _AppraisalTab.analytics];
     } else if (role == 'dean') {
-      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
+      _availableTabs = [_AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
     } else if (role == 'principal') {
       _availableTabs = [_AppraisalTab.analytics, _AppraisalTab.specialTasks, _AppraisalTab.events];
     } else {
@@ -152,14 +153,90 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         children: [
           // ── Sidebar — never scrolls ──────────────────────────────────────
           AppSidebar(
-            activeIndex: 2, 
-            onNavTap: (_) {},
+            activeIndex: _activeSidebarIndex, 
+            onNavTap: (index) {
+              setState(() {
+                _activeSidebarIndex = index;
+              });
+            },
             username: widget.username ?? 'Guest User',
             role: widget.role ?? 'coordinator',
           ),
 
           // ── Content area — fully scrollable ─────────────────────────────
-          Expanded(child: _tabBody()),
+          Expanded(child: _mainBodyContent()),
+        ],
+      ),
+    );
+  }
+
+  Widget _mainBodyContent() {
+    switch (_activeSidebarIndex) {
+      case 0:
+        return PersonalDashboardTab(
+          pageHeader: const SizedBox.shrink(),
+          username: widget.username ?? '',
+          role: widget.role ?? 'teacher',
+          evaluations: _taskEvaluations,
+          newRatings: _eventRatings,
+        );
+      case 2:
+        return _tabBody();
+      case 1:
+        return _buildPlaceholderScreen('Task');
+      case 3:
+        return _buildPlaceholderScreen('Activity Calendar');
+      case 4:
+        return _buildPlaceholderScreen('Personnel');
+      case 5:
+        return _buildPlaceholderScreen('Notifications');
+      case 6:
+        return _buildPlaceholderScreen('Settings');
+      default:
+        return _buildPlaceholderScreen('Main Menu');
+    }
+  }
+
+  Widget _buildPlaceholderScreen(String title) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 12,
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.construction_outlined,
+              color: Color(0xFF8B5CF6),
+              size: 48,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            '$title Module',
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'We are actively preparing this space. Check back soon!',
+            style: TextStyle(
+              fontSize: 13,
+              color: Color(0xFF64748B),
+            ),
+          ),
         ],
       ),
     );
@@ -266,7 +343,7 @@ class _PageHeader extends StatelessWidget {
   String _getTabLabel(_AppraisalTab tab) {
     switch (tab) {
       case _AppraisalTab.personalDashboard:
-        return 'Personal Dashboard';
+        return 'Dashboard';
       case _AppraisalTab.specialTasks:
         return 'Special Tasks';
       case _AppraisalTab.events:

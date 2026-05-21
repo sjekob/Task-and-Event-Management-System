@@ -5,6 +5,29 @@ import '../../core/role_service.dart';
 import '../../shared/widgets/shared_widgets.dart';
 import 'models/appraisal_models.dart';
 
+bool _matchesName(String nameA, String nameB) {
+  String clean(String s) {
+    return s.toLowerCase()
+        .replaceAll(RegExp(r'\b(dr|prof|dean|coord|principal|teacher|mr|ms|mrs)\b\.?'), '')
+        .replaceAll(RegExp(r'[^\w\s]'), ' ')
+        .trim();
+  }
+  
+  final a = clean(nameA);
+  final b = clean(nameB);
+  
+  if (a.isEmpty || b.isEmpty) return false;
+  if (a == b) return true;
+  
+  final partsA = a.split(RegExp(r'\s+'));
+  final partsB = b.split(RegExp(r'\s+'));
+  
+  for (final pA in partsA) {
+    if (pA.length > 2 && partsB.contains(pA)) return true;
+  }
+  return false;
+}
+
 class AnalyticsTab extends StatefulWidget {
   final Widget pageHeader;
   final String role;
@@ -53,8 +76,26 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     // Show all faculty for coordinators in demo mode (real app would scope by dept)
     final source = sampleFaculty;
 
+    final allEvents = sampleEvents.map((e) {
+      final extra = widget.newRatings[e.id] ?? [];
+      if (extra.isEmpty) return e;
+      final newRatings = [...e.ratings, ...extra];
+      double? avg;
+      if (newRatings.isNotEmpty) {
+        avg = newRatings.map((r) => r.overallScore).reduce((a, b) => a + b) / newRatings.length;
+      }
+      final newStatus = (avg != null && avg < 3.0) ? EventStatus.flagged : EventStatus.rated;
+      return SchoolEvent(
+        id: e.id, name: e.name, date: e.date,
+        organizer: e.organizer, department: e.department,
+        attendees: e.attendees,
+        ratings: newRatings,
+        status: newStatus,
+      );
+    }).toList();
+
     return source.map((f) {
-      final facultyTasks = sampleTasks.where((t) => t.personnel == f.name).toList();
+      final facultyTasks = sampleTasks.where((t) => _matchesName(t.personnel, f.name)).toList();
 
       final List<int> scores = [];
       for (final t in facultyTasks) {
@@ -74,9 +115,30 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
           ? f.taskScore
           : (scores.reduce((a, b) => a + b) / scores.length).round();
 
-      final int realTimeOverallScore = realTimeTaskScore != null
-          ? ((f.reportScore ?? 100) + realTimeTaskScore) ~/ 2
-          : (f.reportScore ?? 100);
+      // Compute realTimeEventScore (avgRating * 20.0) dynamically by filtering organized events.
+      final organizedEvents = allEvents.where((e) => _matchesName(f.name, e.organizer)).toList();
+      double? eventScoresSum = 0;
+      int eventScoresCount = 0;
+      for (final e in organizedEvents) {
+        final avg = e.avgRating;
+        if (avg != null) {
+          eventScoresSum = eventScoresSum! + (avg * 20.0);
+          eventScoresCount++;
+        }
+      }
+      final int? realTimeEventScore = eventScoresCount > 0
+          ? (eventScoresSum! / eventScoresCount).round()
+          : f.eventScore;
+
+      // Calculate realTimeOverallScore by averaging reportScore, realTimeTaskScore, and realTimeEventScore dynamically
+      final List<int> activeScores = [];
+      if (f.reportScore != null) activeScores.add(f.reportScore!);
+      if (realTimeTaskScore != null) activeScores.add(realTimeTaskScore);
+      if (realTimeEventScore != null) activeScores.add(realTimeEventScore);
+
+      final int realTimeOverallScore = activeScores.isEmpty
+          ? 100
+          : (activeScores.reduce((a, b) => a + b) / activeScores.length).round();
 
       AppraisalGrade grade = AppraisalGrade.satisfactory;
       if (realTimeOverallScore >= 90) {
@@ -94,7 +156,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
         department: f.department,
         reportScore: f.reportScore,
         taskScore: realTimeTaskScore,
-        eventScore: f.eventScore,
+        eventScore: realTimeEventScore,
         overallScore: realTimeOverallScore,
         grade: grade,
         trend: f.trend,
@@ -121,8 +183,13 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   Widget _buildTeacherView(BuildContext context) {
-    final myFaculty = sampleFaculty.firstWhere((f) => f.name == widget.username, orElse: () => sampleFaculty.first);
-    final myTasks = sampleTasks.where((t) => t.personnel == widget.username).toList();
+    final myFaculty = _faculty.firstWhere((f) => _matchesName(f.name, widget.username), orElse: () => _faculty.first);
+    final myTasks = sampleTasks.where((t) => _matchesName(t.personnel, widget.username)).toList();
+    final completedTasksCount = myTasks.where((t) {
+      final hasEval = widget.evaluations.containsKey(t.id);
+      if (hasEval) return true;
+      return t.status == TaskStatus.evaluated || t.status == TaskStatus.flagged;
+    }).length;
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,7 +206,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 children: [
                   Expanded(child: StatCard(label: 'Compliance Points', value: '${myFaculty.overallScore}%', valueColor: AppColors.success, icon: const Icon(Icons.star_rounded, color: AppColors.success, size: 20))),
                   const SizedBox(width: 12),
-                  Expanded(child: StatCard(label: 'Tasks Completed', value: '${myTasks.length}', valueColor: AppColors.textPrimary, icon: const Icon(Icons.assignment_turned_in, color: AppColors.info, size: 20))),
+                  Expanded(child: StatCard(label: 'Tasks Completed', value: '$completedTasksCount', valueColor: AppColors.textPrimary, icon: const Icon(Icons.assignment_turned_in, color: AppColors.info, size: 20))),
                   const SizedBox(width: 12),
                   Expanded(child: StatCard(label: 'Performance Standing', value: myFaculty.overallScore >= 60 ? 'Good' : 'Flagged', valueColor: myFaculty.overallScore >= 60 ? AppColors.success : AppColors.danger, icon: const Icon(Icons.verified_user, color: AppColors.success, size: 20))),
                 ],
@@ -167,8 +234,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 
   Widget _buildDeanView(BuildContext context) {
     final realTimeFaculty = _faculty;
-    final myDeptFaculty = realTimeFaculty.where((f) => f.department == (sampleFaculty.firstWhere((x) => x.name == widget.username, orElse: () => sampleFaculty.first).department)).toList();
-    final myFaculty = sampleFaculty.firstWhere((f) => f.name == widget.username, orElse: () => sampleFaculty.first);
+    final myFaculty = _faculty.firstWhere((f) => _matchesName(f.name, widget.username), orElse: () => _faculty.first);
+    final myDeptFaculty = realTimeFaculty.where((f) => f.department == myFaculty.department).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -454,12 +521,6 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 24),
-                _FacultyAppraisalOverviewTable(
-                  faculty: realTimeFaculty,
-                  evaluations: widget.evaluations,
-                  newRatings: widget.newRatings,
-                ),
               ],
             ),
           ),
@@ -477,7 +538,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
       if (hasEval) return true;
       return t.status == TaskStatus.evaluated || t.status == TaskStatus.flagged;
     }).length;
-    final eventsCount = widget.newRatings.isEmpty ? 24 : widget.newRatings.values.expand((x) => x).length;
+    final newRatingsCount = widget.newRatings.values.expand((x) => x).length;
+    final eventsCount = 24 + newRatingsCount;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -543,7 +605,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
               const SizedBox(height: 18),
 
               // Monthly Trend Bar Chart
-              _buildMonthlyTrendCard(),
+              _buildMonthlyTrendCard(double.parse(avgPerformance)),
               const SizedBox(height: 18),
 
               // Dual Columns: Left (Department Performance) & Right (Top Performers & Requires Attention)
@@ -569,12 +631,6 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 
               // Performance Distribution Bottom Card
               _buildPerformanceDistributionCard(),
-              const SizedBox(height: 24),
-              _FacultyAppraisalOverviewTable(
-                faculty: realTimeFaculty,
-                evaluations: widget.evaluations,
-                newRatings: widget.newRatings,
-              ),
             ],
           ),
         ),
@@ -582,7 +638,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     );
   }
 
-  Widget _buildMonthlyTrendCard() {
+  Widget _buildMonthlyTrendCard(double realTimeOverallAvg) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -665,7 +721,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                   _makeBarGroup(4, 79.2),
                   _makeBarGroup(5, 80.4),
                   _makeBarGroup(6, 81.6),
-                  _makeBarGroup(7, 83.1),
+                  _makeBarGroup(7, realTimeOverallAvg),
                 ],
               ),
             ),
@@ -698,6 +754,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   Widget _buildDepartmentPerformanceCard() {
+    final depts = ['Engineering', 'Business', 'Sciences', 'Humanities', 'Arts'];
+    
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -713,11 +771,44 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
           ),
           const SizedBox(height: 20),
-          _buildDeptPerfRow('Engineering', '12 personnel · 45 tasks completed', 0.823, const Color(0xFF10B981), true),
-          _buildDeptPerfRow('Business', '10 personnel · 38 tasks completed', 0.768, const Color(0xFF3B82F6), null),
-          _buildDeptPerfRow('Sciences', '8 personnel · 32 tasks completed', 0.851, const Color(0xFF10B981), true),
-          _buildDeptPerfRow('Humanities', '9 personnel · 28 tasks completed', 0.724, const Color(0xFFEF4444), false),
-          _buildDeptPerfRow('Arts', '6 personnel · 13 tasks completed', 0.796, const Color(0xFF10B981), true),
+          ...depts.map((deptName) {
+            final deptFaculty = _faculty.where((f) => f.department == deptName).toList();
+            final personnelCount = deptFaculty.length;
+            
+            // Count completed tasks for this department
+            final deptTasksCompleted = sampleTasks.where((t) {
+              if (t.department != deptName) return false;
+              final hasEval = widget.evaluations.containsKey(t.id);
+              if (hasEval) return true;
+              return t.status == TaskStatus.evaluated || t.status == TaskStatus.flagged;
+            }).length;
+            
+            // Calculate average overallScore
+            double avgScorePct = 0.0;
+            if (personnelCount > 0) {
+              avgScorePct = deptFaculty.map((f) => f.overallScore).reduce((a, b) => a + b) / personnelCount / 100.0;
+            } else {
+              // Fallback based on design values
+              if (deptName == 'Humanities') avgScorePct = 0.724;
+              else if (deptName == 'Arts') avgScorePct = 0.796;
+              else avgScorePct = 0.80;
+            }
+            
+            // Fallback personnel and task count based on design values if none in mock data
+            final displayPersonnel = personnelCount > 0 ? personnelCount : (deptName == 'Humanities' ? 9 : 6);
+            final displayTasks = deptTasksCompleted > 0 ? deptTasksCompleted : (deptName == 'Humanities' ? 28 : 13);
+            
+            final color = avgScorePct >= 0.80 ? const Color(0xFF10B981) : (avgScorePct >= 0.75 ? const Color(0xFF3B82F6) : const Color(0xFFEF4444));
+            final bool? trendUp = avgScorePct >= 0.75 ? true : (deptName == 'Business' ? null : false);
+            
+            return _buildDeptPerfRow(
+              deptName,
+              '$displayPersonnel personnel · $displayTasks tasks completed',
+              avgScorePct,
+              color,
+              trendUp,
+            );
+          }),
         ],
       ),
     );
@@ -778,6 +869,15 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   Widget _buildTopPerformersCard() {
+    final topPerformers = _faculty;
+    const rankColors = [
+      Color(0xFFF59E0B), // gold
+      Color(0xFF94A3B8), // silver
+      Color(0xFFD97706), // bronze
+      Color(0xFF64748B),
+      Color(0xFF64748B),
+    ];
+    
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -793,11 +893,27 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
           ),
           const SizedBox(height: 20),
-          _buildPerformerRow(1, 'Dr. Maria Santos', 'Sciences · 8 tasks', '95.2%', const Color(0xFFF59E0B)),
-          _buildPerformerRow(2, 'Prof. John Chen', 'Engineering · 10 tasks', '92.8%', const Color(0xFF94A3B8)),
-          _buildPerformerRow(3, 'Dr. Sarah Cruz', 'Business · 7 tasks', '89.5%', const Color(0xFFD97706)),
-          _buildPerformerRow(4, 'Prof. Michael Rivera', 'Engineering · 9 tasks', '87.3%', const Color(0xFF64748B)),
-          _buildPerformerRow(5, 'Dr. Lisa Martinez', 'Arts · 5 tasks', '86.9%', const Color(0xFF64748B)),
+          if (topPerformers.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: Text('No performance data available', style: TextStyle(fontSize: 13, color: Color(0xFF64748B)))),
+            )
+          else
+            ...List.generate(topPerformers.length.clamp(0, 5), (index) {
+              final f = topPerformers[index];
+              final rankColor = index < rankColors.length ? rankColors[index] : const Color(0xFF64748B);
+              
+              // Count tasks for this personnel
+              final tasksCount = sampleTasks.where((t) => t.personnel == f.name).length;
+              
+              return _buildPerformerRow(
+                index + 1,
+                f.name,
+                '${f.department} · $tasksCount tasks',
+                '${f.overallScore}%',
+                rankColor,
+              );
+            }),
         ],
       ),
     );
@@ -955,6 +1071,12 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   Widget _buildPerformanceDistributionCard() {
+    final dispExcellent = _faculty.where((f) => f.overallScore >= 90).length;
+    final dispVeryGood = _faculty.where((f) => f.overallScore >= 80 && f.overallScore < 90).length;
+    final dispGood = _faculty.where((f) => f.overallScore >= 70 && f.overallScore < 80).length;
+    final dispFair = _faculty.where((f) => f.overallScore >= 60 && f.overallScore < 70).length;
+    final dispNeedsImp = _faculty.where((f) => f.overallScore < 60).length;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -974,11 +1096,11 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildDistributionPill('12', 'Excellent', '90-100%', const Color(0xFF16A34A), const Color(0xFFDCFCE7)),
-              _buildDistributionPill('18', 'Very Good', '80-89%', const Color(0xFF2563EB), const Color(0xFFDBEAFE)),
-              _buildDistributionPill('10', 'Good', '70-79%', const Color(0xFFD97706), const Color(0xFFFEF3C7)),
-              _buildDistributionPill('3', 'Fair', '60-69%', const Color(0xFFEA580C), const Color(0xFFFFEDD5)),
-              _buildDistributionPill('2', 'Needs Imp.', '<60%', const Color(0xFFEF4444), const Color(0xFFFEE2E2)),
+              _buildDistributionPill('$dispExcellent', 'Excellent', '90-100%', const Color(0xFF16A34A), const Color(0xFFDCFCE7)),
+              _buildDistributionPill('$dispVeryGood', 'Very Good', '80-89%', const Color(0xFF2563EB), const Color(0xFFDBEAFE)),
+              _buildDistributionPill('$dispGood', 'Good', '70-79%', const Color(0xFFD97706), const Color(0xFFFEF3C7)),
+              _buildDistributionPill('$dispFair', 'Fair', '60-69%', const Color(0xFFEA580C), const Color(0xFFFFEDD5)),
+              _buildDistributionPill('$dispNeedsImp', 'Needs Imp.', '<60%', const Color(0xFFEF4444), const Color(0xFFFEE2E2)),
             ],
           ),
         ],
@@ -1305,12 +1427,14 @@ class _PersonalComplianceOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final myTasks = sampleTasks.where((t) => t.personnel == username).toList();
+    final myTasks = sampleTasks.where((t) => _matchesName(t.personnel, username)).toList();
     final List<int> taskScores = [];
     for (final t in myTasks) {
       final eval = evaluations[t.id];
-      if (eval != null && eval['score'] is int) {
-        taskScores.add(eval['score'] as int);
+      if (eval != null) {
+        final raw = eval['score'];
+        final int s = raw is num ? raw.round() : 0;
+        if (s > 0) taskScores.add(s);
       } else {
         final s = t.getScore();
         if (s > 0) taskScores.add(s);
@@ -1318,7 +1442,7 @@ class _PersonalComplianceOverview extends StatelessWidget {
     }
 
     // Flatten event ratings and filter by evaluator name
-    final allRatings = newRatings.values.expand((l) => l).where((r) => r.name == username).toList();
+    final allRatings = newRatings.values.expand((l) => l).where((r) => _matchesName(r.name, username)).toList();
 
     final avgTask = taskScores.isEmpty ? 0 : (taskScores.reduce((a, b) => a + b) / taskScores.length).round();
     final avgEvent = allRatings.isEmpty ? 0 : (allRatings.map((r) => r.overallScore).reduce((a, b) => a + b) / allRatings.length).round();
@@ -1350,10 +1474,11 @@ class _DeanTaskOverview extends StatelessWidget {
       final meta = e.value;
       // backend stores evaluator name under 'evaluator' or not; we tolerate both
       final evName = meta['evaluator'] ?? meta['evaluatorName'] ?? '';
-      return evName == username;
+      return _matchesName(evName, username);
     }).map((e) => e.value).toList();
 
-    final departmentTeachers = faculty.where((f) => f.department == faculty.first.department).toList();
+    final myFaculty = faculty.firstWhere((f) => _matchesName(f.name, username), orElse: () => faculty.first);
+    final departmentTeachers = faculty.where((f) => f.department == myFaculty.department).toList();
 
     final barValues = myEvaluatedTasks.map((m) => (m['score'] as int?)?.toDouble() ?? 0.0).toList();
 
@@ -1480,285 +1605,4 @@ class _TeacherList extends StatelessWidget {
     );
   }
 }
-
-class _FacultyAppraisalOverviewTable extends StatefulWidget {
-  final List<FacultyPerformance> faculty;
-  final Map<String, Map<String, dynamic>> evaluations;
-  final Map<String, List<AttendeeRating>> newRatings;
-
-  const _FacultyAppraisalOverviewTable({
-    required this.faculty,
-    required this.evaluations,
-    required this.newRatings,
-  });
-
-  @override
-  State<_FacultyAppraisalOverviewTable> createState() => _FacultyAppraisalOverviewTableState();
-}
-
-class _FacultyAppraisalOverviewTableState extends State<_FacultyAppraisalOverviewTable> {
-  String? _selectedDept;
-  String? _selectedRole;
-  String? _selectedPersonnel;
-
-  @override
-  Widget build(BuildContext context) {
-    // 1. Compute dynamic data for all faculty based on evaluations and newRatings
-    final allRows = widget.faculty.map((f) {
-      final tasks = sampleTasks.where((t) => t.personnel == f.name).toList();
-      final evaluatedTasksCount = tasks.where((t) {
-        final eval = widget.evaluations[t.id];
-        if (eval != null) return true;
-        return t.status == TaskStatus.evaluated || t.status == TaskStatus.flagged;
-      }).length;
-      
-      final eventRatingsList = widget.newRatings.values.expand((x) => x).where((r) => r.name == f.name).toList();
-      final double eventAvg = eventRatingsList.isEmpty 
-          ? (f.eventScore ?? 80.0).toDouble() 
-          : eventRatingsList.map((r) => r.overallScore).reduce((a, b) => a + b) / eventRatingsList.length;
-
-      final double taskAvg = f.taskScore?.toDouble() ?? 80.0;
-      final bool isFlagged = f.overallScore < 60;
-      
-      // Determine a pseudo-role for the mock data based on dept or hardcoded
-      String mockRole = 'Teacher';
-      if (f.name.contains('Santos') || f.name.contains('Lim')) mockRole = 'Dean';
-
-      return {
-        'id': 'FA${f.name.hashCode.toString().substring(0, 3)}',
-        'personnel': f.name,
-        'role': mockRole,
-        'department': f.department,
-        'totalEvals': '${evaluatedTasksCount + eventRatingsList.length}',
-        'eventAvg': '${(eventAvg / 20).toStringAsFixed(1)}★',
-        'taskAvg': '${(taskAvg / 20).toStringAsFixed(1)}★',
-        'compliance': '${f.overallScore} pts', // mock calculation for UI
-        'flagged': isFlagged ? 'Yes' : 'No',
-        'status': isFlagged ? 'Flagged' : 'Good Standing',
-        'isFlagged': isFlagged,
-      };
-    }).toList();
-
-    // 2. Filter
-    var filtered = allRows.where((row) {
-      if (_selectedDept != null && _selectedDept != 'All' && row['department'] != _selectedDept) return false;
-      if (_selectedRole != null && _selectedRole != 'All' && row['role'] != _selectedRole) return false;
-      if (_selectedPersonnel != null && _selectedPersonnel != 'All' && row['personnel'] != _selectedPersonnel) return false;
-      return true;
-    }).toList();
-
-    // Collect distinct values for dropdowns
-    final depts = ['All', ...widget.faculty.map((e) => e.department).toSet()];
-    final roles = ['All', 'Teacher', 'Dean', 'Coordinator'];
-    final personnel = ['All', ...widget.faculty.map((e) => e.name).toSet()];
-
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Table Header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Row(
-              children: [
-                const Text(
-                  'Faculty Appraisal Overview',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-                ),
-                const Spacer(),
-                _buildFilterDropdown(
-                  hint: 'By Department',
-                  value: _selectedDept,
-                  items: depts,
-                  onChanged: (v) => setState(() => _selectedDept = v),
-                ),
-                const SizedBox(width: 8),
-                _buildFilterDropdown(
-                  hint: 'By Role',
-                  value: _selectedRole,
-                  items: roles,
-                  onChanged: (v) => setState(() => _selectedRole = v),
-                ),
-                const SizedBox(width: 8),
-                _buildFilterDropdown(
-                  hint: 'Select personnel...',
-                  value: _selectedPersonnel,
-                  items: personnel,
-                  onChanged: (v) => setState(() => _selectedPersonnel = v),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          // Columns Header
-          Container(
-            color: const Color(0xFFF8FAFC),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: const Row(
-              children: [
-                SizedBox(width: 60, child: Text('ID', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 150, child: Text('PERSONNEL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 90, child: Text('ROLE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 100, child: Text('DEPARTMENT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 120, child: Text('TOTAL EVALUATIONS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 90, child: Text('EVENT AVG', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 110, child: Text('TASK RATING AVG', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 160, child: Text('OVERALL COMPLIANCE POINTS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 80, child: Text('FLAGGED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                SizedBox(width: 120, child: Text('STATUS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                Expanded(child: Text('ACTION', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          // Rows
-          ...filtered.map((r) => _buildTableRow(
-            context,
-            r['id'] as String,
-            r['personnel'] as String,
-            r['role'] as String,
-            r['department'] as String,
-            r['totalEvals'] as String,
-            r['eventAvg'] as String,
-            r['taskAvg'] as String,
-            r['compliance'] as String,
-            r['flagged'] as String,
-            r['status'] as String,
-            r['isFlagged'] as bool,
-          )),
-          if (filtered.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(child: Text('No personnel matches the filters.', style: TextStyle(color: AppColors.textSecondary))),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterDropdown({
-    required String hint,
-    required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFCBD5E1), width: 0.8),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          hint: Row(
-            children: [
-              if (hint.contains('By ')) ...[
-                const Icon(Icons.filter_alt_outlined, size: 14, color: Color(0xFF64748B)),
-                const SizedBox(width: 6),
-              ],
-              Text(hint, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-            ],
-          ),
-          icon: const Padding(
-            padding: EdgeInsets.only(left: 8),
-            child: Icon(Icons.keyboard_arrow_down, size: 16, color: Color(0xFF64748B)),
-          ),
-          isDense: true,
-          style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B), fontWeight: FontWeight.w500),
-          items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-          onChanged: onChanged,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTableRow(BuildContext context, String id, String personnel, String role, String department, String totalEvals, String eventAvg, String taskAvg, String compliance, String flagged, String status, bool isFlagged) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 0.8)),
-      ),
-      child: Row(
-        children: [
-          SizedBox(width: 60, child: Text(id, style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)))),
-          SizedBox(
-            width: 150,
-            child: Row(
-              children: [
-                const Icon(Icons.person, size: 16, color: Color(0xFF94A3B8)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    personnel,
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: 90, child: Text(role, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
-          SizedBox(width: 100, child: Text(department, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
-          SizedBox(width: 120, child: Text(totalEvals, style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E293B), fontWeight: FontWeight.w500))),
-          SizedBox(width: 90, child: Text(eventAvg, style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E293B), fontWeight: FontWeight.w500))),
-          SizedBox(width: 110, child: Text(taskAvg, style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E293B), fontWeight: FontWeight.w500))),
-          SizedBox(width: 160, child: Text(compliance, style: const TextStyle(fontSize: 12.5, color: Color(0xFF0F172A), fontWeight: FontWeight.w700))),
-          SizedBox(
-            width: 80,
-            child: Text(
-              flagged,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: isFlagged ? const Color(0xFFEF4444) : const Color(0xFF64748B),
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 120,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: isFlagged ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                status,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: isFlagged ? const Color(0xFFEF4444) : const Color(0xFF16A34A),
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: Center(
-              child: OutlinedButton(
-                onPressed: () {},
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  minimumSize: const Size(60, 32),
-                  side: const BorderSide(color: Color(0xFFE2E8F0)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                ),
-                child: const Text('View', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+
