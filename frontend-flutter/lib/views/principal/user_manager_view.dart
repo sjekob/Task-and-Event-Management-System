@@ -129,12 +129,6 @@ class _UserManagerViewState extends State<UserManagerView> {
       widget.currentUser.role == UserRole.principal ||
       widget.currentUser.role == UserRole.registrar;
 
-  // Coordinator and Dean can view the list but not edit or deactivate
-  bool get _canViewUsers =>
-      _canManageUsers ||
-      widget.currentUser.role == UserRole.coordinator ||
-      widget.currentUser.role == UserRole.dean;
-
   void _openAddUser() {
     if (!_canManageUsers) return;
     _showAddUserDialog();
@@ -610,7 +604,7 @@ class _HexPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.05)
+      ..color = Colors.white.withValues(alpha: 0.05)
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
 
@@ -640,7 +634,6 @@ class _HexPainter extends CustomPainter {
   double _cos(double x) {
     // Simple Taylor-series approximation (avoids dart:math import at top)
     // In production: use dart:math cos/sin directly.
-    import_dart_math_note: {}
     return _mathCos(x);
   }
 

@@ -30,7 +30,7 @@ class EvaluationDialog extends StatefulWidget {
   final Map<String, dynamic>? existing;
   final String role;
   final bool canEdit;
-  const EvaluationDialog({required this.task, this.existing, required this.role, this.canEdit = false});
+  const EvaluationDialog({super.key, required this.task, this.existing, required this.role, this.canEdit = false});
 
   @override
   State<EvaluationDialog> createState() => _EvaluationDialogState();
@@ -92,34 +92,18 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
     return total.round();
   }
 
-  Widget _starRow(String label, int value, String key) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-      const SizedBox(height: 6),
-      Row(children: List.generate(5, (i) {
-        final v = i + 1;
-            return IconButton(
-              onPressed: () => _setRating(key, v),
-              icon: Icon(v <= value ? Icons.star : Icons.star_border, color: AppColors.tabActive),
-          iconSize: 22,
-          padding: const EdgeInsets.all(0),
-        );
-      })),
-      const SizedBox(height: 8),
-    ]);
-  }
 
   String _getLabel(String key) {
     final isTeacher = widget.role == 'dean'; // dean evaluates teachers
     if (isTeacher) {
-      if (key == 'completion') return 'Content Quality';
-      if (key == 'quality') return 'Format Compliance';
-      if (key == 'timeliness') return 'Completeness';
+      if (key == 'completion') { return 'Content Quality'; }
+      if (key == 'quality') { return 'Format Compliance'; }
+      if (key == 'timeliness') { return 'Completeness'; }
       return '';
     } else {
-      if (key == 'completion') return 'Task Completion Quality';
-      if (key == 'quality') return 'Timeliness and Reliability';
-      if (key == 'timeliness') return 'Initiative and Problem-Solving';
+      if (key == 'completion') { return 'Task Completion Quality'; }
+      if (key == 'quality') { return 'Timeliness and Reliability'; }
+      if (key == 'timeliness') { return 'Initiative and Problem-Solving'; }
       return '';
     }
   }
@@ -211,7 +195,7 @@ class _EvaluationDialogState extends State<EvaluationDialog> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(children: [
-          Expanded(child: Text(label + ' ($pct)', style: const TextStyle(fontSize: 13))),
+          Expanded(child: Text('$label ($pct)', style: const TextStyle(fontSize: 13))),
           _starsRow(val),
         ]),
       );
@@ -342,7 +326,7 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
 
   List<SpecialTask> get _baseTasks {
     // TEACHER: Cannot see special tasks at all
-    if (widget.role == 'teacher') return [];
+    if (widget.role == 'teacher') { return []; }
 
     // DEAN: See only their own tasks
     if (widget.role == 'dean') {
@@ -368,12 +352,12 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
   List<SpecialTask> get _filteredTasks {
     switch (_filterMode) {
       case _FilterMode.byPersonnel:
-        if (_selectedPersonnel == null) return _baseTasks;
+        if (_selectedPersonnel == null) { return _baseTasks; }
         return _baseTasks
             .where((t) => t.personnel == _selectedPersonnel)
             .toList();
       case _FilterMode.byTask:
-        if (_selectedTask == null) return _baseTasks;
+        if (_selectedTask == null) { return _baseTasks; }
         return _baseTasks.where((t) => t.task == _selectedTask).toList();
       case _FilterMode.all:
         return _baseTasks;
@@ -384,8 +368,8 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
     int count = 0;
     for (final t in _filteredTasks) {
       final hasEval = widget.evaluations.containsKey(t.id);
-      if (hasEval) continue;
-      if (t.status == TaskStatus.pending) count++;
+      if (hasEval) { continue; }
+      if (t.status == TaskStatus.pending) { count++; }
     }
     return count;
   }
@@ -397,7 +381,7 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
       if (eval != null) {
         final raw = eval['score'];
         final int score = raw is num ? raw.round() : 0;
-        if (score >= 60) count++;
+        if (score >= 60) { count++; }
       } else if (t.status == TaskStatus.evaluated) {
         count++;
       }
@@ -412,7 +396,7 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
       if (eval != null) {
         final raw = eval['score'];
         final int score = raw is num ? raw.round() : 0;
-        if (score < 60) count++;
+        if (score < 60) { count++; }
       } else if (t.status == TaskStatus.flagged) {
         count++;
       }
@@ -427,13 +411,13 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
       if (eval != null) {
         final raw = eval['score'];
         final int s = raw is num ? raw.round() : 0;
-        if (s > 0) scores.add(s);
+        if (s > 0) { scores.add(s); }
       } else {
         final sc = t.getScore();
-        if (sc > 0) scores.add(sc);
+        if (sc > 0) { scores.add(sc); }
       }
     }
-    if (scores.isEmpty) return '—';
+    if (scores.isEmpty) { return '—'; }
     return '${(scores.reduce((a, b) => a + b) / scores.length).round()}/100';
   }
 
@@ -830,7 +814,7 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
         border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -919,7 +903,7 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
+            color: iconColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, color: iconColor, size: 20),
@@ -1045,14 +1029,14 @@ class _StyledDropdown extends StatelessWidget {
     final Color fg          = isDark ? Colors.white : AppColors.textPrimary;
     final Color borderColor = isDark ? AppColors.tabActive : AppColors.cardBorder;
     final Color iconColor   = isDark
-        ? Colors.white.withOpacity(0.8)
+        ? Colors.white.withValues(alpha: 0.8)
         : AppColors.textSecondary;
 
     // Resolve display label
     String displayLabel = hint ?? 'Select…';
     if (value != null) {
       final match = items.where((i) => i.value == value);
-      if (match.isNotEmpty) displayLabel = match.first.label;
+      if (match.isNotEmpty) { displayLabel = match.first.label; }
     }
 
     return PopupMenuButton<String?>(
@@ -1060,11 +1044,11 @@ class _StyledDropdown extends StatelessWidget {
       offset: const Offset(0, 42),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: AppColors.cardBorder.withOpacity(0.8), width: 0.8),
+        side: BorderSide(color: AppColors.cardBorder.withValues(alpha: 0.8), width: 0.8),
       ),
       color: Colors.white,
       elevation: 8,
-      shadowColor: Colors.black.withOpacity(0.08),
+      shadowColor: Colors.black.withValues(alpha: 0.08),
       constraints: const BoxConstraints(minWidth: 180, maxWidth: 280),
       itemBuilder: (_) => items
           .map((item) => PopupMenuItem<String?>(
@@ -1099,10 +1083,10 @@ class _StyledDropdown extends StatelessWidget {
           border: Border.all(color: borderColor, width: 1),
           boxShadow: isDark
               ? [BoxShadow(
-                  color: AppColors.tabActive.withOpacity(0.15),
+                  color: AppColors.tabActive.withValues(alpha: 0.15),
                   blurRadius: 6, offset: const Offset(0, 2))]
               : [BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 4, offset: const Offset(0, 1))],
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1248,7 +1232,6 @@ class _CoordinatorStatCard extends StatelessWidget {
   final Color valueColor;
   final IconData icon;
   final Color iconColor;
-  final Color? bgCircleColor;
 
   const _CoordinatorStatCard({
     required this.label,
@@ -1256,7 +1239,6 @@ class _CoordinatorStatCard extends StatelessWidget {
     required this.valueColor,
     required this.icon,
     required this.iconColor,
-    this.bgCircleColor,
   });
 
   @override
@@ -1268,7 +1250,7 @@ class _CoordinatorStatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -1306,7 +1288,7 @@ class _CoordinatorStatCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: bgCircleColor ?? iconColor.withOpacity(0.1),
+              color: iconColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: iconColor, size: 24),
@@ -1507,19 +1489,15 @@ class _TaskRow extends StatelessWidget {
   }
 
   Widget _actionButton(BuildContext context) {
-    final rolePerms = RolePermissions(role);
     final bool hasEval = evaluation != null || task.status == TaskStatus.evaluated || task.status == TaskStatus.flagged;
     
     // Determine if this user can evaluate
     bool canEvaluate = false;
     if (role == 'dean') {
-      // Deans can only evaluate when viewing teacher tasks
       canEvaluate = true; // simplified - in real app check if task is from a teacher under this dean
     } else if (role == 'coordinator') {
-      // Coordinators can evaluate deans
       canEvaluate = true;
     } else if (role == 'principal') {
-      // Principals cannot evaluate
       canEvaluate = false;
     }
 
@@ -1529,7 +1507,7 @@ class _TaskRow extends StatelessWidget {
     return Center(
       child: ElevatedButton(
         onPressed: isDisabled ? null : () async {
-          if (!canEvaluate && !hasEval) return;
+          if (!canEvaluate && !hasEval) { return; }
           
           final messenger = ScaffoldMessenger.of(context);
           final score = task.score ?? 0;

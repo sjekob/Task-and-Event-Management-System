@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
-import '../../core/role_service.dart';
 import 'models/appraisal_models.dart';
 
 // ── Rubric meta ───────────────────────────────────────────────────────────────
@@ -49,12 +48,9 @@ class EventsTab extends StatefulWidget {
 class _EventsTabState extends State<EventsTab> {
   String _filterMode = 'all';
   String? _selectedEvent;
-  late RolePermissions _rolePerms;
-
   @override
   void initState() {
     super.initState();
-    _rolePerms = RolePermissions(widget.role);
   }
 
   @override
@@ -69,7 +65,7 @@ class _EventsTabState extends State<EventsTab> {
   List<SchoolEvent> _eventsWithNewRatings(List<SchoolEvent> base) {
     return base.map((e) {
       final extra = widget.newRatings[e.id] ?? [];
-      if (extra.isEmpty) return e;
+      if (extra.isEmpty) { return e; }
       return SchoolEvent(
         id: e.id, name: e.name, date: e.date,
         organizer: e.organizer, department: e.department,
@@ -113,6 +109,7 @@ class _EventsTabState extends State<EventsTab> {
     ).then((rating) {
       if (rating != null) {
         widget.onSubmitRating(event.id, rating);
+        if (!mounted) return;
         ScaffoldMessenger.of(ctx).showSnackBar(
           const SnackBar(
             content: Text('Rating submitted successfully'),
@@ -302,7 +299,7 @@ class _EventsTabState extends State<EventsTab> {
         border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -397,7 +394,7 @@ class _EventsTabState extends State<EventsTab> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
+            color: iconColor.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
           child: Icon(icon, color: iconColor, size: 24),
@@ -433,7 +430,7 @@ class _EventsTabState extends State<EventsTab> {
         border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -638,7 +635,6 @@ class _CoordinatorStatCard extends StatelessWidget {
   final Color valueColor;
   final IconData icon;
   final Color iconColor;
-  final Color? bgCircleColor;
 
   const _CoordinatorStatCard({
     required this.label,
@@ -646,7 +642,6 @@ class _CoordinatorStatCard extends StatelessWidget {
     required this.valueColor,
     required this.icon,
     required this.iconColor,
-    this.bgCircleColor,
   });
 
   @override
@@ -658,7 +653,7 @@ class _CoordinatorStatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -696,7 +691,7 @@ class _CoordinatorStatCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: bgCircleColor ?? iconColor.withOpacity(0.1),
+              color: iconColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: iconColor, size: 24),
@@ -827,7 +822,7 @@ class _EventViewResultsDialog extends StatelessWidget {
         return Row(children: [
           Container(
             width: 28, height: 28,
-            decoration: BoxDecoration(color: c.color.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+            decoration: BoxDecoration(color: c.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
             child: Icon(c.icon, color: c.color, size: 14),
           ),
           const SizedBox(width: 8),
@@ -932,11 +927,11 @@ class _EventRateDialogState extends State<_EventRateDialog> {
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.username);
-    if (widget.role == 'teacher') _role = EvaluatorRole.teacher;
-    else if (widget.role == 'dean') _role = EvaluatorRole.dean;
-    else if (widget.role == 'coordinator') _role = EvaluatorRole.coordinator;
-    else if (widget.role == 'principal') _role = EvaluatorRole.principal;
-    else _role = EvaluatorRole.student;
+    if (widget.role == 'teacher') { _role = EvaluatorRole.teacher; }
+    else if (widget.role == 'dean') { _role = EvaluatorRole.dean; }
+    else if (widget.role == 'coordinator') { _role = EvaluatorRole.coordinator; }
+    else if (widget.role == 'principal') { _role = EvaluatorRole.principal; }
+    else { _role = EvaluatorRole.student; }
   }
 
   bool get _canSubmit =>
@@ -1159,7 +1154,7 @@ class _CriterionRatingRow extends StatelessWidget {
       child: Row(children: [
         Container(
           width: 30, height: 30,
-          decoration: BoxDecoration(color: criterion.color.withOpacity(0.12), borderRadius: BorderRadius.circular(7)),
+          decoration: BoxDecoration(color: criterion.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(7)),
           child: Icon(criterion.icon, color: criterion.color, size: 15),
         ),
         const SizedBox(width: 10),
@@ -1261,7 +1256,7 @@ class _RadarPainter extends CustomPainter {
 
     // Filled data polygon
     final fillPaint = Paint()
-      ..color = color.withOpacity(0.18)
+      ..color = color.withValues(alpha: 0.18)
       ..style = PaintingStyle.fill;
     final strokePaint = Paint()
       ..color = color
@@ -1389,7 +1384,6 @@ class _EventRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rolePerms = RolePermissions(role);
     final avg = event.avgRating;
     final int pct = event.attendees > 0
         ? ((event.responses / event.attendees) * 100).round() : 0;
@@ -1411,7 +1405,6 @@ class _EventRow extends StatelessWidget {
     Widget statusChip;
     String actionLabel;
     VoidCallback? onAction;
-    bool isDisabled = false;
 
     switch (event.status) {
       case EventStatus.awaitingRatings:
@@ -1457,14 +1450,14 @@ class _EventRow extends StatelessWidget {
         SizedBox(
           width: 130,
           child: ElevatedButton(
-            onPressed: isDisabled ? null : onAction,
+            onPressed: onAction,
             style: ElevatedButton.styleFrom(
-              backgroundColor: isDisabled ? AppColors.cardBorder : AppColors.tabActive,
+              backgroundColor: AppColors.tabActive,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
               minimumSize: const Size(1, 34),
             ),
-            child: Text(actionLabel, style: TextStyle(color: isDisabled ? AppColors.textSecondary : Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+            child: Text(actionLabel, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
           ),
         ),
       ]),
@@ -1511,7 +1504,7 @@ class _RubricItem extends StatelessWidget {
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
     Container(
       width: 30, height: 30,
-      decoration: BoxDecoration(color: criterion.color.withOpacity(0.12), borderRadius: BorderRadius.circular(7)),
+      decoration: BoxDecoration(color: criterion.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(7)),
       child: Icon(criterion.icon, color: criterion.color, size: 15),
     ),
     const SizedBox(width: 8),
@@ -1540,16 +1533,16 @@ class _StyledDropdown extends StatelessWidget {
     final Color bg = isDark ? AppColors.tabActive : Colors.white;
     final Color fg = isDark ? Colors.white : AppColors.textPrimary;
     final Color border = isDark ? AppColors.tabActive : AppColors.cardBorder;
-    final Color ic = isDark ? Colors.white.withOpacity(0.8) : AppColors.textSecondary;
+    final Color ic = isDark ? Colors.white.withValues(alpha: 0.8) : AppColors.textSecondary;
     String display = hint ?? 'Select…';
     if (value != null) {
       final m = items.where((i) => i.value == value);
-      if (m.isNotEmpty) display = m.first.label;
+      if (m.isNotEmpty) { display = m.first.label; }
     }
     return PopupMenuButton<String?>(
       onSelected: onChanged,
       offset: const Offset(0, 42),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.cardBorder.withOpacity(0.8), width: 0.8)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.cardBorder.withValues(alpha: 0.8), width: 0.8)),
       color: Colors.white, elevation: 8,
       constraints: const BoxConstraints(minWidth: 180, maxWidth: 280),
       itemBuilder: (_) => items.map((item) => PopupMenuItem<String?>(
