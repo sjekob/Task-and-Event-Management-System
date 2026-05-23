@@ -363,12 +363,7 @@ class _EventsTabState extends State<EventsTab> {
             decoration: BoxDecoration(
               color: const Color(0xFFEFF6FF),
               borderRadius: BorderRadius.circular(8),
-              border: const Border(
-                left: BorderSide(color: Color(0xFF3B82F6), width: 4),
-                top: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
-                right: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
-                bottom: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
-              ),
+              border: Border.all(color: const Color(0xFF93C5FD), width: 1),
             ),
             child: const Row(
               children: [

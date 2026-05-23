@@ -30,6 +30,77 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   var _taskEvaluations = <String, Map<String, dynamic>>{};
   var _eventRatings = <String, List<AttendeeRating>>{};
 
+  bool _matchesName(String nameA, String nameB) {
+    String clean(String s) {
+      return s.toLowerCase()
+          .replaceAll(RegExp(r'\b(dr|prof|dean|coord|principal|teacher|mr|ms|mrs)\b\.?'), '')
+          .replaceAll(RegExp(r'[^\w\s]'), ' ')
+          .trim();
+    }
+    
+    final a = clean(nameA);
+    final b = clean(nameB);
+    
+    if (a.isEmpty || b.isEmpty) return false;
+    if (a == b) return true;
+    
+    final partsA = a.split(RegExp(r'\s+'));
+    final partsB = b.split(RegExp(r'\s+'));
+    
+    for (final pA in partsA) {
+      if (pA.length > 2 && partsB.contains(pA)) return true;
+    }
+    return false;
+  }
+
+  int get _pendingTasksCount {
+    final activeRole = (widget.role ?? 'coordinator').toLowerCase();
+    
+    // Choose which tasks to evaluate/check based on role
+    final List<SpecialTask> roleTasks;
+    if (activeRole == 'teacher') {
+      roleTasks = sampleTasks.where((t) => _matchesName(t.personnel, widget.username ?? '')).toList();
+    } else if (activeRole == 'dean') {
+      roleTasks = sampleTasks.where((t) => _matchesName(t.personnel, widget.username ?? '')).toList();
+    } else {
+      // coordinator & principal see all tasks
+      roleTasks = sampleTasks;
+    }
+
+    int pendingCount = 0;
+    for (final t in roleTasks) {
+      final hasEval = _taskEvaluations.containsKey(t.id);
+      if (hasEval) continue;
+      if (t.status == TaskStatus.pending) {
+        pendingCount++;
+      }
+    }
+    return pendingCount;
+  }
+
+  int get _pendingEventsCount {
+    final List<SchoolEvent> base = sampleEvents;
+    final events = base.map((e) {
+      final extra = _eventRatings[e.id] ?? [];
+      if (extra.isEmpty) return e;
+      final newRatings = [...e.ratings, ...extra];
+      double? avg;
+      if (newRatings.isNotEmpty) {
+        avg = newRatings.map((r) => r.overallScore).reduce((a, b) => a + b) / newRatings.length;
+      }
+      final newStatus = (avg != null && avg < 3.0) ? EventStatus.flagged : EventStatus.rated;
+      return SchoolEvent(
+        id: e.id, name: e.name, date: e.date,
+        organizer: e.organizer, department: e.department,
+        attendees: e.attendees,
+        ratings: newRatings,
+        status: newStatus,
+      );
+    }).toList();
+
+    return events.where((e) => e.status == EventStatus.awaitingRatings).length;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -142,6 +213,8 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         activeTab: _activeTab,
         availableTabs: _availableTabs,
         onTabChanged: (t) => setState(() => _activeTab = t),
+        pendingTasksCount: _pendingTasksCount,
+        pendingEventsCount: _pendingEventsCount,
       );
 
   @override
@@ -333,11 +406,15 @@ class _PageHeader extends StatelessWidget {
   final _AppraisalTab activeTab;
   final List<_AppraisalTab> availableTabs;
   final ValueChanged<_AppraisalTab> onTabChanged;
+  final int pendingTasksCount;
+  final int pendingEventsCount;
 
   const _PageHeader({
     required this.activeTab,
     required this.availableTabs,
     required this.onTabChanged,
+    required this.pendingTasksCount,
+    required this.pendingEventsCount,
   });
 
   String _getTabLabel(_AppraisalTab tab) {
@@ -412,7 +489,9 @@ class _PageHeader extends StatelessWidget {
                 child: _PillTab(
                   icon: _getTabIcon(tab),
                   label: _getTabLabel(tab),
-                  badge: tab == _AppraisalTab.specialTasks || tab == _AppraisalTab.events ? 1 : 0,
+                  badge: tab == _AppraisalTab.specialTasks
+                      ? pendingTasksCount
+                      : (tab == _AppraisalTab.events ? pendingEventsCount : 0),
                   active: activeTab == tab,
                   onTap: () => onTabChanged(tab),
                 ),

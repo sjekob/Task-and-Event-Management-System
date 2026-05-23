@@ -145,6 +145,198 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _showForgotPasswordDialog() {
+    final TextEditingController usernameResetController = TextEditingController();
+    bool isResetSent = false;
+    String resetMessage = '';
+
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFFE2EAF4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF2C2C2C),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.key, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Reset Password',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 360,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!isResetSent) ...[
+                      const Text(
+                        'Enter your username below to receive a password reset link at your registered email address.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.black54,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Username',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: usernameResetController,
+                        decoration: InputDecoration(
+                          hintText: 'e.g., coord.rivera',
+                          hintStyle: const TextStyle(color: Colors.black38, fontSize: 13),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                          suffixIcon: const Icon(Icons.account_circle, color: Colors.black54, size: 20),
+                        ),
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1E7DD),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFA3CFBB)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.check_circle, color: Color(0xFF0F5132), size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                resetMessage,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF0F5132),
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.black.withOpacity(0.05)),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.black87, size: 16),
+                              SizedBox(width: 6),
+                              Text(
+                                'Demo Evaluation Note',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            'For evaluation and testing, the default password for all pre-configured accounts (e.g., coord.rivera, teacher.smith) is "password".',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.black54,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(
+                    isResetSent ? 'Done' : 'Cancel',
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (!isResetSent)
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2C2C2C),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
+                    onPressed: () {
+                      final input = usernameResetController.text.trim().toLowerCase();
+                      if (input.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please enter a username to reset password.'),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                        return;
+                      }
+                      setDialogState(() {
+                        isResetSent = true;
+                        resetMessage = 'A password reset link has been successfully sent to the email associated with "$input".';
+                      });
+                    },
+                    child: const Text(
+                      'Send Reset Link',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -333,7 +525,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     
                     // Forgot password link
                     TextButton(
-                      onPressed: () {},
+                      onPressed: _showForgotPasswordDialog,
                       child: const Text(
                         'Forgot password?',
                         style: TextStyle(

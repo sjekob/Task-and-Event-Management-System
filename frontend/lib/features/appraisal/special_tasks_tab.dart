@@ -937,12 +937,7 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
             decoration: BoxDecoration(
               color: const Color(0xFFFEF2F2),
               borderRadius: BorderRadius.circular(8),
-              border: const Border(
-                left: BorderSide(color: Color(0xFFEF4444), width: 4),
-                top: BorderSide(color: Color(0xFFFEE2E2), width: 0.8),
-                right: BorderSide(color: Color(0xFFFEE2E2), width: 0.8),
-                bottom: BorderSide(color: Color(0xFFFEE2E2), width: 0.8),
-              ),
+              border: Border.all(color: const Color(0xFFFECACA), width: 1),
             ),
             child: const Row(
               children: [
