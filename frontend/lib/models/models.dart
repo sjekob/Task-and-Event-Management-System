@@ -33,6 +33,9 @@ class User {
   final String? address;
   final bool isActive;
   final List<UserSubject> subjects;
+  final String? coordinatorType;
+  final int? deanGradeLevelId;
+  final String? deanGradeLevel;
 
   User({
     required this.id,
@@ -57,6 +60,9 @@ class User {
     this.address,
     this.isActive = true,
     this.subjects = const [],
+    this.coordinatorType,
+    this.deanGradeLevelId,
+    this.deanGradeLevel,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -89,6 +95,9 @@ class User {
       address: json['address']?.toString(),
       isActive: (json['is_active'] ?? 1) == 1,
       subjects: subjects,
+      coordinatorType: json['coordinator_type']?.toString(),
+      deanGradeLevelId: json['dean_grade_level_id'] as int?,
+      deanGradeLevel: json['dean_grade_level']?.toString(),
     );
   }
 

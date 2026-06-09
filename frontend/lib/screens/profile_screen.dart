@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
+import '../widgets/skeleton_widgets.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -73,7 +74,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.accentBlue))
+          ? const ProfileSkeleton()
           : _error != null
               ? Center(child: Column(
                   mainAxisSize: MainAxisSize.min,

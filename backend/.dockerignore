@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.env
+*.db
+*.db-shm
+*.db-wal
+.schema_version
+uploads/
+alembic/versions/

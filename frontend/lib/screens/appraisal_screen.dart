@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/skeleton_widgets.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
@@ -198,7 +199,7 @@ class _SpecialTasksTabState extends State<_SpecialTasksTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.loading) return const Center(child: CircularProgressIndicator());
+    if (widget.loading) return const AppraisalTabSkeleton();
     if (widget.error != null) return _ErrorPanel(message: widget.error!, onRetry: widget.onRefresh);
     return SingleChildScrollView(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -852,7 +853,7 @@ class _EventsTabState extends State<_EventsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.loading) return const Center(child: CircularProgressIndicator());
+    if (widget.loading) return const AppraisalTabSkeleton();
     if (widget.error != null) return _ErrorPanel(message: widget.error!, onRetry: widget.onRefresh);
     return SingleChildScrollView(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

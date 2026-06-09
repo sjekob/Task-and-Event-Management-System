@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/skeleton_widgets.dart';
 import 'edit_task_screen.dart';
 import '../utils/web_file_picker.dart';
 import '../utils/web_downloader.dart';
@@ -147,9 +148,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final isReviewOnly = canReview && !canSubmit; // principal/admin/coordinator
 
     if (_loading) {
-      final loader = const Center(child: CircularProgressIndicator(color: AppTheme.accentBlue));
-      if (widget.onBack != null) return loader;
-      return Scaffold(backgroundColor: AppTheme.bgColor, body: loader);
+      return TaskDetailSkeleton(hasBack: widget.onBack != null);
     }
 
     if (_task == null) {

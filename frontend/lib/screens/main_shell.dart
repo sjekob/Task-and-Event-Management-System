@@ -1,24 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
 import '../widgets/sidebar.dart';
-import 'dashboard_screen.dart';
-import 'task_manager_screen.dart';
-import 'my_tasks_screen.dart';
-import 'activity_screen.dart';
-import 'login_screen.dart';
-import 'create_task_screen.dart';
-import 'profile_screen.dart';
-import 'task_detail_screen.dart';
-import 'personnel_management_screen.dart';
-import 'appraisal_screen.dart';
-import 'event_management_screen.dart';
-import 'add_event_screen.dart';
 
 class MainShell extends StatefulWidget {
-  const MainShell({super.key});
+  final Widget child;
+  const MainShell({super.key, required this.child});
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -26,118 +16,90 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  NavPage _currentPage = NavPage.dashboard;
-  int? _activeTaskId;
-  bool _showingCreateTask = false;
-  bool _showingCreateTemplate = false;
-  bool _showingAddEvent = false;
+
+  NavPage _locationToPage(String loc) {
+    if (loc.startsWith('/tasks')) return NavPage.taskManager;
+    if (loc.startsWith('/my-tasks')) return NavPage.myTasks;
+    if (loc.startsWith('/activity')) return NavPage.activity;
+    if (loc.startsWith('/personnel')) return NavPage.personnelManagement;
+    if (loc.startsWith('/appraisal')) return NavPage.appraisal;
+    if (loc.startsWith('/events')) return NavPage.eventManagement;
+    return NavPage.dashboard;
+  }
 
   void _onNavigate(NavPage page) {
-    setState(() {
-      _currentPage = page;
-      _activeTaskId = null;
-      _showingCreateTask = false;
-      _showingCreateTemplate = false;
-      _showingAddEvent = false;
-    });
-  }
-
-  void _selectTask(int id) => setState(() {
-    _activeTaskId = id;
-    _showingCreateTask = false;
-    _showingCreateTemplate = false;
-  });
-
-  void _clearTask() => setState(() => _activeTaskId = null);
-
-  Widget _buildPage() {
-    final role = context.read<AppState>().userRole;
-    final canReassign = role == 'coordinator' || role == 'dean';
-
-    switch (_currentPage) {
-      case NavPage.dashboard:
-        return const DashboardScreen();
-
-      case NavPage.taskManager:
-        return TaskManagerScreen(
-          onCreateTask: () => _showCreateTask(context),
-          onCreateTemplate: _showCreateTemplateFn,
-          onSelectTask: _selectTask,
-        );
-
-      case NavPage.myTasks:
-        // Tasks ASSIGNED to the current user (coordinator/dean/teacher/registrar)
-        return MyTasksScreen(onSelectTask: _selectTask);
-
-
-      case NavPage.activity:
-        return const ActivityScreen();
-
-      case NavPage.personnelManagement:
-        return const PersonnelManagementScreen();
-
-      case NavPage.appraisal:
-        return const AppraisalScreen();
-
-      case NavPage.eventManagement:
-        return EventManagementScreen(
-          onAddEvent: () => setState(() => _showingAddEvent = true),
-        );
+    switch (page) {
+      case NavPage.dashboard:         context.go('/dashboard'); break;
+      case NavPage.taskManager:       context.go('/tasks'); break;
+      case NavPage.myTasks:           context.go('/my-tasks'); break;
+      case NavPage.activity:          context.go('/activity'); break;
+      case NavPage.personnelManagement: context.go('/personnel'); break;
+      case NavPage.appraisal:         context.go('/appraisal'); break;
+      case NavPage.eventManagement:   context.go('/events'); break;
     }
-  }
-
-  String get _pageTitle {
-    final user = context.read<AppState>().currentUser;
-    return user?.fullName.split(' ').first ?? 'User';
-  }
-
-  bool get _showCreateBtn {
-    final role = context.read<AppState>().userRole;
-    return _currentPage == NavPage.taskManager &&
-        (role == 'admin' || role == 'principal' ||
-         role == 'coordinator' || role == 'dean' || role == 'registrar') &&
-        _activeTaskId == null &&
-        !_showingCreateTask &&
-        !_showingCreateTemplate;
-  }
-
-  bool get _showTemplateBtn {
-    final role = context.read<AppState>().userRole;
-    return _currentPage == NavPage.taskManager &&
-        (role == 'admin' || role == 'principal') &&
-        _activeTaskId == null &&
-        !_showingCreateTask &&
-        !_showingCreateTemplate;
-  }
-
-  void _showCreateTask(BuildContext ctx) {
-    setState(() {
-      _showingCreateTask = true;
-      _showingCreateTemplate = false;
-      _showingAddEvent = false;
-      _activeTaskId = null;
-    });
-  }
-
-  void _showCreateTemplateFn() {
-    setState(() {
-      _showingCreateTemplate = true;
-      _showingCreateTask = false;
-      _showingAddEvent = false;
-      _activeTaskId = null;
-    });
   }
 
   Future<void> _logout() async {
     await context.read<AppState>().logout();
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
-    }
+    // GoRouter's refreshListenable redirects to /login automatically
   }
 
-  Widget _buildTopBar(bool isMobile) {
+  bool _showCreateBtn(String loc, String role) =>
+      loc == '/tasks' &&
+      (role == 'admin' || role == 'principal' ||
+       role == 'coordinator' || role == 'dean' || role == 'registrar');
+
+  bool _showTemplateBtn(String loc, String role) =>
+      loc == '/tasks' && (role == 'admin' || role == 'principal');
+
+  @override
+  Widget build(BuildContext context) {
+    final role = context.watch<AppState>().userRole;
+    final user = context.read<AppState>().currentUser;
+    final loc = GoRouterState.of(context).matchedLocation;
+    final currentPage = _locationToPage(loc);
+    final isMobile = MediaQuery.of(context).size.width < 768;
+    final firstName = user?.fullName.split(' ').first ?? 'User';
+
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: AppTheme.bgColor,
+      drawer: isMobile
+          ? MobileNavDrawer(
+              currentPage: currentPage,
+              userName: firstName,
+              userRole: role,
+              userInitials: user?.initials ?? 'U',
+              onNavigate: _onNavigate,
+              onLogout: _logout,
+            )
+          : null,
+      body: Row(
+        children: [
+          if (!isMobile)
+            AppSidebar(
+              currentPage: currentPage,
+              userName: firstName,
+              userRole: role,
+              onNavigate: _onNavigate,
+              onLogout: _logout,
+              showCreateTask: _showCreateBtn(loc, role),
+              onCreateTask: () => context.go('/tasks/new'),
+            ),
+          Expanded(
+            child: Column(
+              children: [
+                _buildTopBar(isMobile, loc, role, firstName, user?.initials ?? 'U'),
+                Expanded(child: widget.child),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar(bool isMobile, String loc, String role, String firstName, String initials) {
     return Container(
       padding: EdgeInsets.fromLTRB(isMobile ? 12 : 24, 16, isMobile ? 12 : 24, 16),
       color: AppTheme.bgColor,
@@ -156,15 +118,15 @@ class _MainShellState extends State<MainShell> {
               ),
             )
           else
-            Text(_pageTitle,
+            Text(firstName,
                 style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.textPrimary)),
           const Spacer(),
-          if (!isMobile && _showTemplateBtn) ...[
+          if (!isMobile && _showTemplateBtn(loc, role)) ...[
             OutlinedButton.icon(
-              onPressed: _showCreateTemplateFn,
+              onPressed: () => context.go('/tasks/template'),
               icon: const Icon(Icons.library_add_outlined, size: 15),
               label: Text('Create Template',
                   style: GoogleFonts.plusJakartaSans(
@@ -173,21 +135,19 @@ class _MainShellState extends State<MainShell> {
                 foregroundColor: AppTheme.accentBlue,
                 side: const BorderSide(color: AppTheme.accentBlue),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
             ),
             const SizedBox(width: 8),
           ],
-          if (_showCreateBtn)
+          if (_showCreateBtn(loc, role))
             ElevatedButton(
-              onPressed: () => _showCreateTask(context),
+              onPressed: () => context.go('/tasks/new'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.darkBanner,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
               child: Text('Create Task',
                   style: GoogleFonts.plusJakartaSans(
@@ -195,95 +155,16 @@ class _MainShellState extends State<MainShell> {
             ),
           const SizedBox(width: 12),
           GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            ),
+            onTap: () => context.go('/profile'),
             child: CircleAvatar(
               radius: 20,
               backgroundColor: AppTheme.sidebarActive,
-              child: Text(
-                context.read<AppState>().currentUser?.initials ?? 'U',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16),
-              ),
+              child: Text(initials,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16)),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final role = context.watch<AppState>().userRole;
-    final isMobile = MediaQuery.of(context).size.width < 768;
-
-    final user = context.read<AppState>().currentUser;
-
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: AppTheme.bgColor,
-      drawer: isMobile
-          ? MobileNavDrawer(
-              currentPage: _currentPage,
-              userName: _pageTitle,
-              userRole: role,
-              userInitials: user?.initials ?? 'U',
-              onNavigate: _onNavigate,
-              onLogout: _logout,
-            )
-          : null,
-      body: Row(
-        children: [
-          // Desktop Sidebar — always visible
-          if (!isMobile)
-            AppSidebar(
-              currentPage: _currentPage,
-              userName: _pageTitle,
-              userRole: role,
-              onNavigate: _onNavigate,
-              onLogout: _logout,
-              showCreateTask: _showCreateBtn,
-              onCreateTask: () => _showCreateTask(context),
-            ),
-
-          // Main Content
-          Expanded(
-            child: _activeTaskId != null
-                // ── Task detail inline ──
-                ? TaskDetailScreen(
-                    taskId: _activeTaskId!,
-                    onBack: _clearTask,
-                  )
-                : _showingCreateTask
-                    // ── Create Task inline ──
-                    ? CreateTaskScreen(
-                        onBack: () => setState(() => _showingCreateTask = false),
-                        onCreated: () => setState(() => _showingCreateTask = false),
-                      )
-                    : _showingCreateTemplate
-                        // ── Create Template inline ──
-                        ? CreateTaskScreen(
-                            isTemplate: true,
-                            onBack: () => setState(() => _showingCreateTemplate = false),
-                            onCreated: () => setState(() => _showingCreateTemplate = false),
-                          )
-                        : _showingAddEvent
-                            // ── Add Event inline ──
-                            ? AddEventScreen(
-                                onBack: () => setState(() => _showingAddEvent = false),
-                                onCreated: () => setState(() => _showingAddEvent = false),
-                              )
-                            // ── Normal view ──
-                            : Column(
-                                children: [
-                                  _buildTopBar(isMobile),
-                                  Expanded(child: _buildPage()),
-                                ],
-                              ),
           ),
         ],
       ),

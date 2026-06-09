@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/skeleton_widgets.dart';
 import '../services/api_service.dart';
 
 class ActivityScreen extends StatefulWidget {
@@ -102,13 +103,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                if (_loading)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32),
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
+                if (_loading) const ActivitySkeleton()
                 else if (_error != null)
                   Center(
                     child: Padding(

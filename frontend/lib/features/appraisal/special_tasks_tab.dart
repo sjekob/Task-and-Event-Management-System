@@ -584,9 +584,12 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                         padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
                         child: Row(
                           children: [
-                            const Text('Special Task Evaluations',
-                                style: AppTextStyles.sectionTitle),
-                            const Spacer(),
+                            const Expanded(
+                              child: Text('Special Task Evaluations',
+                                  style: AppTextStyles.sectionTitle,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                            const SizedBox(width: 8),
 
                             // ── Filter mode ──────────────────────────────────
                             _StyledDropdown(
@@ -719,8 +722,12 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                       padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
                       child: Row(
                         children: [
-                          const Text('Dean Special Task Submissions', style: AppTextStyles.sectionTitle),
-                          const Spacer(),
+                          const Expanded(
+                            child: Text('Dean Special Task Submissions',
+                                style: AppTextStyles.sectionTitle,
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                          const SizedBox(width: 8),
                           // ── Filter mode ──────────────────────────────────
                           _StyledDropdown(
                             value: _filterModeValue,
@@ -1074,34 +1081,40 @@ class _StyledDropdown extends StatelessWidget {
                 ]),
               ))
           .toList(),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: borderColor, width: 1),
-          boxShadow: isDark
-              ? [BoxShadow(
-                  color: AppColors.tabActive.withValues(alpha: 0.15),
-                  blurRadius: 6, offset: const Offset(0, 2))]
-              : [BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 4, offset: const Offset(0, 1))],
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (leadingIcon != null) ...[
-            Icon(leadingIcon, size: 14, color: iconColor),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 170),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: borderColor, width: 1),
+            boxShadow: isDark
+                ? [BoxShadow(
+                    color: AppColors.tabActive.withValues(alpha: 0.15),
+                    blurRadius: 6, offset: const Offset(0, 2))]
+                : [BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 4, offset: const Offset(0, 1))],
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (leadingIcon != null) ...[
+              Icon(leadingIcon, size: 14, color: iconColor),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(displayLabel,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: fg)),
+            ),
             const SizedBox(width: 6),
-          ],
-          Text(displayLabel,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: fg)),
-          const SizedBox(width: 6),
-          Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: iconColor),
-        ]),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: iconColor),
+          ]),
+        ),
       ),
     );
   }

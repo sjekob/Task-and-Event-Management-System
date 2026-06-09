@@ -6,8 +6,9 @@ SCHEMA_VERSION = 7  # bump when schema changes
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -78,6 +79,18 @@ def init_db():
         coordinator_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         grade_level_id  INTEGER NOT NULL REFERENCES grade_levels(id) ON DELETE CASCADE,
         UNIQUE(coordinator_id, grade_level_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS coordinator_type (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id          INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        coordinator_type TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS dean_assignment (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id        INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        grade_level_id INTEGER NOT NULL REFERENCES grade_levels(id)
     );
 
     CREATE TABLE IF NOT EXISTS task_types (
@@ -486,9 +499,10 @@ def _seed(conn):
                    status, created_by))
 
     # ── Subjects reference data ────────────────────────────────────────────────
-    for subj in ['Mathematics', 'Science', 'English', 'Filipino', 'Araling Panlipunan',
-                 'MAPEH', 'ESP', 'TLE', 'Mother Tongue']:
+    for subj in ['Araling Panlipunan', 'ESP', 'English', 'Filipino', 'ICT',
+                 'MAPEH', 'Mathematics', 'Research', 'Science', 'TLE']:
         c.execute("INSERT OR IGNORE INTO subjects (subject_name) VALUES (?)", (subj,))
+    c.execute("DELETE FROM subjects WHERE subject_name='Mother Tongue'")
 
     # ── Special Tasks sample data ──────────────────────────────────────────────
     special_tasks = [

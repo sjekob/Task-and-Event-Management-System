@@ -6,12 +6,12 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:frontend/main.dart';
+import 'package:frontend/services/app_state.dart';
 
 void main() {
   testWidgets('TaskNet app smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const TaskNetApp());
+    await tester.pumpWidget(TaskNetApp(appState: AppState()));
     expect(find.byType(TaskNetApp), findsOneWidget);
   });
 }

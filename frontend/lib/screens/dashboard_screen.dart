@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/skeleton_widgets.dart';
 import 'task_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -32,7 +33,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 768;
-    if (_loading) return const Center(child: CircularProgressIndicator(color: AppTheme.accentBlue));
+    if (_loading) return const DashboardSkeleton();
 
     return RefreshIndicator(
       onRefresh: _load,

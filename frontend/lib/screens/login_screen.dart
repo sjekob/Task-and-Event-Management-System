@@ -4,8 +4,6 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
 import '../widgets/common_widgets.dart';
-import 'main_shell.dart';
-
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -35,11 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final state = context.read<AppState>();
     try {
       await state.login(_userCtrl.text.trim(), _passCtrl.text);
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const MainShell()),
-        );
-      }
+      // GoRouter's refreshListenable redirects to /dashboard automatically
     } catch (_) {
       setState(() => _error = 'Invalid username or password');
     }

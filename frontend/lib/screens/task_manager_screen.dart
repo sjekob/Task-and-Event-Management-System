@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/skeleton_widgets.dart';
 import 'task_detail_screen.dart';
 import 'edit_task_screen.dart';
 
@@ -168,13 +169,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
               ),
 
             // ── Loading ──
-            if (_loading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(40),
-                  child: CircularProgressIndicator(color: AppTheme.accentBlue),
-                ),
-              ),
+            if (_loading) const TaskManagerSkeleton(),
 
             // ── Empty ──
             if (!_loading && _errorMsg == null && _active.isEmpty && _disabled.isEmpty)

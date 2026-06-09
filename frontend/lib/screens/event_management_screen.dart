@@ -5,6 +5,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import '../widgets/skeleton_widgets.dart';
 
 // ─── Data Models ──────────────────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bgColor,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const EventManagementSkeleton()
           : SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
               child: Column(

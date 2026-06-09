@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/skeleton_widgets.dart';
 import 'task_detail_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
@@ -111,13 +112,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             const SizedBox(height: 16),
 
             // ── Loading ──
-            if (_loading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(40),
-                  child: CircularProgressIndicator(color: AppTheme.accentBlue),
-                ),
-              ),
+            if (_loading) const MyTasksSkeleton(),
 
             // ── Empty ──
             if (!_loading && _filtered.isEmpty)

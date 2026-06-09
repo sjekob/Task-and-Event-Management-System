@@ -461,6 +461,19 @@ class ApiService {
     return [];
   }
 
+  static Future<void> updatePersonnelSubjects(
+      int id, List<Map<String, dynamic>> subjects) async {
+    final res = await http.put(
+      Uri.parse('$baseUrl/api/personnel/$id/subjects'),
+      headers: await _headers,
+      body: jsonEncode({'subjects': subjects}),
+    );
+    if (res.statusCode != 200) {
+      throw Exception(
+          jsonDecode(res.body)['detail'] ?? 'Failed to update subjects');
+    }
+  }
+
   // ── Appraisal Management ──────────────────────────────────────────────────
 
   static Future<List<SpecialTask>> getSpecialTasks() async {
