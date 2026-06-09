@@ -1,0 +1,27 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    afterEvaluate {
+        if (it.plugins.hasPlugin('com.android.library')) {
+            it.android {
+                compileSdkVersion 36
+                buildToolsVersion "36.0.0"
+                ndkVersion "26.1.10909125"
+            }
+        }
+    }
+}
+
+rootProject.buildDir = '../build'
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(':app')
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

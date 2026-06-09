@@ -1,0 +1,95 @@
+# ── Python Virtual Environments ───────────────────────────────────────────────
+venv/
+backend/venv/
+.venv/
+env/
+
+# ── Databases & Sensitive Local Data ──────────────────────────────────────────
+dev.db
+backend/dev.db
+*.db
+*.sqlite
+.env
+backend/.env
+*.env.local
+
+# ── Python Build & Cache Artifacts ────────────────────────────────────────────
+__pycache__/
+backend/__pycache__/
+backend/app/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── IDEs, Editors & Local Workspace Settings ──────────────────────────────────
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docuser
+*.iml
+
+# ── Flutter / Dart ─────────────────────────────────────────────────────────────
+.dart_tool/
+frontend/.dart_tool/
+build/
+frontend/build/
+frontend-flutter/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+frontend/.flutter-plugins-dependencies
+frontend/.metadata
+.packages
+.pub/
+.pub-preload-cache/
+**/doc/api/
+
+# ── Android ───────────────────────────────────────────────────────────────────
+.gradle/
+frontend/android/.gradle/
+frontend/android/local.properties
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/**/gradle-wrapper.jar
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+*.jks
+
+# ── iOS / macOS / XCode ───────────────────────────────────────────────────────
+**/ios/**/*.mode1v3
+**/ios/**/*.mode2v3
+**/ios/**/*.pbxuser
+**/ios/**/*.perspectivev3
+**/ios/**/DerivedData/
+**/ios/**/Pods/
+**/ios/**/xcuserdata/
+**/ios/.generated/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral
+**/Pods/
+**/Flutter/ephemeral/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral
+**/xcuserdata/
+
+# ── Windows / Linux generated files ───────────────────────────────────────────
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/generated_plugins.cmake
+**/linux/flutter/generated_plugin_registrant.cc
+**/linux/flutter/generated_plugin_registrant.h
+**/linux/flutter/generated_plugins.cmake
+
+# ── Miscellaneous ──────────────────────────────────────────────────────────────
+*.class
+*.log
+*.swp
+.buildlog/
+.history
+coverage/
+app.*.symbols

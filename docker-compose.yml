@@ -1,0 +1,91 @@
+version: "3.9"
+
+# TaskNet — Microservices
+#
+# Run from project root:
+#   docker compose up --build
+#
+# Services:
+#   gateway    :8000  — API Gateway (routes to all services)
+#   auth       :8001  — Auth, users, grade-levels
+#   personnel  :8002  — Personnel management
+#   tasks      :8003  — Tasks, templates, reports, comments
+#   events     :8004  — Event calendar
+#   appraisal  :8005  — Appraisal & dashboard
+
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  volumes:
+    - ./backend:/app
+    - tasknet_uploads:/app/uploads
+  environment:
+    SECRET_KEY: ${SECRET_KEY:-tasknet-dev-secret-change-in-prod}
+  restart: unless-stopped
+
+services:
+
+  # ── API Gateway ──────────────────────────────────────────────────────────────
+  gateway:
+    <<: *backend-common
+    container_name: tasknet_gateway
+    command: uvicorn gateway.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth
+      - personnel
+      - tasks
+      - events
+      - appraisal
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-tasknet-dev-secret-change-in-prod}
+      AUTH_SERVICE_URL:      http://auth:8001
+      PERSONNEL_SERVICE_URL: http://personnel:8002
+      TASKS_SERVICE_URL:     http://tasks:8003
+      EVENTS_SERVICE_URL:    http://events:8004
+      APPRAISAL_SERVICE_URL: http://appraisal:8005
+
+  # ── Auth Service ─────────────────────────────────────────────────────────────
+  auth:
+    <<: *backend-common
+    container_name: tasknet_auth
+    command: uvicorn services.auth.main:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+
+  # ── Personnel Service ────────────────────────────────────────────────────────
+  personnel:
+    <<: *backend-common
+    container_name: tasknet_personnel
+    command: uvicorn services.personnel.main:app --host 0.0.0.0 --port 8002
+    ports:
+      - "8002:8002"
+
+  # ── Tasks Service ────────────────────────────────────────────────────────────
+  tasks:
+    <<: *backend-common
+    container_name: tasknet_tasks
+    command: uvicorn services.tasks.main:app --host 0.0.0.0 --port 8003
+    ports:
+      - "8003:8003"
+
+  # ── Events Service ───────────────────────────────────────────────────────────
+  events:
+    <<: *backend-common
+    container_name: tasknet_events
+    command: uvicorn services.events.main:app --host 0.0.0.0 --port 8004
+    ports:
+      - "8004:8004"
+
+  # ── Appraisal Service ────────────────────────────────────────────────────────
+  appraisal:
+    <<: *backend-common
+    container_name: tasknet_appraisal
+    command: uvicorn services.appraisal.main:app --host 0.0.0.0 --port 8005
+    ports:
+      - "8005:8005"
+
+volumes:
+  tasknet_uploads:
