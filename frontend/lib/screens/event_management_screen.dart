@@ -327,6 +327,10 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 canApprove: false,
                 onDisable: () => _confirmDisable(context, e),
                 onApprove: () {},
+                onTap: () => _showEventDetail(context, e,
+                    canManage: _canManage,
+                    canApprove: false,
+                    onDisable: () => _confirmDisable(context, e)),
               )),
           const SizedBox(height: 20),
         ],
@@ -340,6 +344,11 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 canApprove: _canApprove,
                 onDisable: () => _confirmDisable(context, e),
                 onApprove: () => _approve(e),
+                onTap: () => _showEventDetail(context, e,
+                    canManage: _canManage,
+                    canApprove: _canApprove,
+                    onApprove: () => _approve(e),
+                    onDisable: () => _confirmDisable(context, e)),
               )),
           const SizedBox(height: 20),
         ],
@@ -351,6 +360,8 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 event: e,
                 canManage: _canManage,
                 onEnable: () => _enable(e),
+                onTap: () => _showEventDetail(context, e,
+                    canManage: _canManage),
               )),
         ],
       ],
@@ -438,6 +449,165 @@ class _Tab extends StatelessWidget {
   }
 }
 
+// ─── Event Detail Sheet ───────────────────────────────────────────────────────
+
+void _showEventDetail(
+  BuildContext context,
+  _CalEvent event, {
+  bool canApprove = false,
+  bool canManage = false,
+  VoidCallback? onApprove,
+  VoidCallback? onDisable,
+}) {
+  final dateStr = '${_monthName(event.date.month)} ${event.date.day}, ${event.date.year}';
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.4,
+      maxChildSize: 0.85,
+      builder: (_, controller) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFDDE3ED),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+                children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text(event.title,
+                          style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1A1A2E))),
+                    ),
+                    const SizedBox(width: 10),
+                    _StatusBadge(status: event.status),
+                  ]),
+                  const SizedBox(height: 16),
+                  _DetailRow(icon: Icons.calendar_today_outlined, label: 'Date', value: dateStr),
+                  if (event.creatorName.isNotEmpty)
+                    _DetailRow(icon: Icons.person_outline, label: 'Created by', value: event.creatorName),
+                  const SizedBox(height: 12),
+                  const Text('Description',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF4A5568))),
+                  const SizedBox(height: 6),
+                  Text(event.description,
+                      style: const TextStyle(fontSize: 13, color: Color(0xFF718096), height: 1.5)),
+                  if (canApprove && event.status == _EventStatus.pendingApproval) ...[
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton(
+                        onPressed: () { Navigator.pop(context); onApprove?.call(); },
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF48BB78),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                        child: const Text('Approve Event',
+                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      ),
+                    ),
+                  ],
+                  if (canManage && event.status != _EventStatus.disabled) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton(
+                        onPressed: () { Navigator.pop(context); onDisable?.call(); },
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFE53E3E),
+                            side: const BorderSide(color: Color(0xFFE53E3E)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                        child: const Text('Disable Event',
+                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+String _monthName(int month) {
+  const months = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+  return months[month];
+}
+
+class _StatusBadge extends StatelessWidget {
+  final _EventStatus status;
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final isApproved  = status == _EventStatus.approved;
+    final isDisabled  = status == _EventStatus.disabled;
+    final color = isDisabled
+        ? const Color(0xFFE53E3E)
+        : isApproved ? const Color(0xFF48BB78) : const Color(0xFFED8936);
+    final label = isDisabled ? 'Disabled' : isApproved ? 'Approved' : 'Pending';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6)),
+      child: Text(label,
+          style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String   label;
+  final String   value;
+  const _DetailRow({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(children: [
+        Icon(icon, size: 16, color: const Color(0xFF718096)),
+        const SizedBox(width: 8),
+        Text('$label: ', style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
+        Expanded(
+          child: Text(value,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF1A1A2E))),
+        ),
+      ]),
+    );
+  }
+}
+
 // ─── Event Card ───────────────────────────────────────────────────────────────
 
 class _EventCard extends StatelessWidget {
@@ -446,6 +616,7 @@ class _EventCard extends StatelessWidget {
   final bool       canApprove;
   final VoidCallback onDisable;
   final VoidCallback onApprove;
+  final VoidCallback? onTap;
 
   const _EventCard({
     required this.event,
@@ -453,11 +624,14 @@ class _EventCard extends StatelessWidget {
     required this.canApprove,
     required this.onDisable,
     required this.onApprove,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
@@ -552,6 +726,7 @@ class _EventCard extends StatelessWidget {
             ),
         ],
       ),
+    ),
     );
   }
 }
@@ -562,16 +737,20 @@ class _DisabledEventCard extends StatelessWidget {
   final _CalEvent  event;
   final bool       canManage;
   final VoidCallback onEnable;
+  final VoidCallback? onTap;
 
   const _DisabledEventCard({
     required this.event,
     required this.canManage,
     required this.onEnable,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
@@ -623,6 +802,7 @@ class _DisabledEventCard extends StatelessWidget {
             ),
         ],
       ),
+    ),
     );
   }
 }
@@ -768,9 +948,4 @@ class _SideCalendar extends StatelessWidget {
     );
   }
 
-  String _monthName(int month) {
-    const months = ['', 'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-    return months[month];
-  }
 }

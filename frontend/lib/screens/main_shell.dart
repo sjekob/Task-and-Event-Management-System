@@ -59,7 +59,9 @@ class _MainShellState extends State<MainShell> {
     final loc = GoRouterState.of(context).matchedLocation;
     final currentPage = _locationToPage(loc);
     final isMobile = MediaQuery.of(context).size.width < 768;
-    final firstName = user?.fullName.split(' ').first ?? 'User';
+    final displayName = (user != null && (user.firstName?.isNotEmpty ?? false))
+        ? '${user.firstName}${user.lastName != null ? ' ${user.lastName}' : ''}'
+        : user?.fullName ?? 'User';
 
     return Scaffold(
       key: _scaffoldKey,
@@ -67,7 +69,7 @@ class _MainShellState extends State<MainShell> {
       drawer: isMobile
           ? MobileNavDrawer(
               currentPage: currentPage,
-              userName: firstName,
+              userName: displayName,
               userRole: role,
               userInitials: user?.initials ?? 'U',
               onNavigate: _onNavigate,
@@ -79,7 +81,7 @@ class _MainShellState extends State<MainShell> {
           if (!isMobile)
             AppSidebar(
               currentPage: currentPage,
-              userName: firstName,
+              userName: displayName,
               userRole: role,
               onNavigate: _onNavigate,
               onLogout: _logout,
@@ -89,7 +91,7 @@ class _MainShellState extends State<MainShell> {
           Expanded(
             child: Column(
               children: [
-                _buildTopBar(isMobile, loc, role, firstName, user?.initials ?? 'U'),
+                _buildTopBar(isMobile, loc, role, displayName, user?.initials ?? 'U'),
                 Expanded(child: widget.child),
               ],
             ),
@@ -99,7 +101,7 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
-  Widget _buildTopBar(bool isMobile, String loc, String role, String firstName, String initials) {
+  Widget _buildTopBar(bool isMobile, String loc, String role, String displayName, String initials) {
     return Container(
       padding: EdgeInsets.fromLTRB(isMobile ? 12 : 24, 16, isMobile ? 12 : 24, 16),
       color: AppTheme.bgColor,
@@ -118,7 +120,7 @@ class _MainShellState extends State<MainShell> {
               ),
             )
           else
-            Text(firstName,
+            Text(displayName,
                 style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,

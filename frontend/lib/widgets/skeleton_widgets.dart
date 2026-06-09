@@ -68,13 +68,62 @@ class _Bone extends StatelessWidget {
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
+class _DarkBone extends StatelessWidget {
+  final double height;
+  final double progress;
+  final double phase;
+  final double radius;
+  const _DarkBone({
+    required this.height,
+    required this.progress,
+    this.phase = 0,
+    this.radius = 4,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = (progress + phase) % 1.0;
+    final cx = p * 4.4 - 2.2;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        gradient: LinearGradient(
+          colors: const [Color(0xFF252540), Color(0xFF353560), Color(0xFF252540)],
+          begin: Alignment(cx - 0.9, 0),
+          end: Alignment(cx + 0.9, 0),
+        ),
+      ),
+      child: SizedBox(height: height),
+    );
+  }
+}
+
 class _BannerBone extends StatelessWidget {
   final double p;
   const _BannerBone({required this.p});
 
   @override
-  Widget build(BuildContext context) =>
-      _Bone(height: 88, progress: p, radius: 12);
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _DarkBone(height: 30, progress: p, radius: 5),
+          const SizedBox(height: 8),
+          FractionallySizedBox(
+            widthFactor: 0.65,
+            child: _DarkBone(height: 14, progress: p, phase: 0.05, radius: 3),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SearchBarBone extends StatelessWidget {

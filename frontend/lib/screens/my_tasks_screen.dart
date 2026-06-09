@@ -49,6 +49,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) return const MyTasksSkeleton();
     final isMobile = MediaQuery.of(context).size.width < 768;
 
     return RefreshIndicator(
@@ -110,9 +111,6 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
               ],
             ),
             const SizedBox(height: 16),
-
-            // ── Loading ──
-            if (_loading) const MyTasksSkeleton(),
 
             // ── Empty ──
             if (!_loading && _filtered.isEmpty)

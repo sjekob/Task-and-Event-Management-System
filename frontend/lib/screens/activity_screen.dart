@@ -66,6 +66,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) return const ActivitySkeleton();
     final isMobile = MediaQuery.of(context).size.width < 768;
 
     return SingleChildScrollView(
@@ -103,8 +104,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                if (_loading) const ActivitySkeleton()
-                else if (_error != null)
+                if (_error != null)
                   Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),

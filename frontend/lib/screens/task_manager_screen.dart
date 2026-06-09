@@ -90,6 +90,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) return const TaskManagerSkeleton();
     final isMobile = MediaQuery.of(context).size.width < 768;
     final role = context.read<AppState>().userRole;
     final canManage = role == 'admin' || role == 'principal' ||
@@ -167,9 +168,6 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                   ),
                 ]),
               ),
-
-            // ── Loading ──
-            if (_loading) const TaskManagerSkeleton(),
 
             // ── Empty ──
             if (!_loading && _errorMsg == null && _active.isEmpty && _disabled.isEmpty)
