@@ -295,16 +295,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
         duration: const Duration(milliseconds: 220), curve: Curves.easeInOut);
   }
 
-  Future<void> _submit() async {
-    if (_titleCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the event title in Step 1.')),
-      );
-      _goTo(0);
-      return;
-    }
-    setState(() => _submitting = true);
-
+  Map<String, dynamic> _buildPayload() {
     final matrixData = _matrixRows.map((r) => {
       'day': r['day']!.text, 'time': r['time']!.text,
       'event': r['event']!.text, 'speaker': r['speaker']!.text,
@@ -364,6 +355,29 @@ class _AddEventScreenState extends State<AddEventScreen> {
       'comments':            _commentsCtrl.text,
     };
 
+    return payload;
+  }
+
+  /// Whether the event being edited (if any) can still be saved as a draft.
+  /// Approved/disabled proposals shouldn't be silently demoted back to draft.
+  bool get _canSaveAsDraft {
+    final status = widget.existingEvent?['status'] as String?;
+    return status == null || status == 'draft' || status == 'pending_approval';
+  }
+
+  Future<void> _submit({bool asDraft = false}) async {
+    if (!asDraft && _titleCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter the event title in Step 1.')),
+      );
+      _goTo(0);
+      return;
+    }
+    setState(() => _submitting = true);
+
+    final payload = _buildPayload();
+    payload['status'] = asDraft ? 'draft' : 'pending_approval';
+
     try {
       dynamic result;
       if (_isEditing) {
@@ -375,9 +389,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
       if (result != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isEditing
-                ? 'Event updated successfully!'
-                : 'Event proposal submitted for approval!'),
+            content: Text(asDraft
+                ? 'Saved as draft.'
+                : _isEditing
+                    ? 'Event updated successfully!'
+                    : 'Event proposal submitted for approval!'),
             backgroundColor: const Color(0xFF48BB78),
           ),
         );
@@ -523,33 +539,52 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 )
               else
                 const SizedBox(),
-              SizedBox(
-                width: 160, height: 44,
-                child: ElevatedButton(
-                  onPressed: _submitting
-                      ? null
-                      : () {
-                          if (_step < _stepTitles.length - 1) {
-                            _goTo(_step + 1);
-                          } else {
-                            _submit();
-                          }
-                        },
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E2126),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                      elevation: 0),
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : Text(_step < _stepTitles.length - 1
-                          ? 'Next →'
-                          : _isEditing ? 'Save Changes' : 'Submit Proposal'),
-                ),
+              Row(
+                children: [
+                  if (_canSaveAsDraft) ...[
+                    SizedBox(
+                      width: 140, height: 44,
+                      child: OutlinedButton(
+                        onPressed: _submitting ? null : () => _submit(asDraft: true),
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1E2126),
+                            side: const BorderSide(color: Color(0xFFACC2DF)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8))),
+                        child: const Text('Save as Draft'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  SizedBox(
+                    width: 160, height: 44,
+                    child: ElevatedButton(
+                      onPressed: _submitting
+                          ? null
+                          : () {
+                              if (_step < _stepTitles.length - 1) {
+                                _goTo(_step + 1);
+                              } else {
+                                _submit();
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E2126),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          elevation: 0),
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 18, height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : Text(_step < _stepTitles.length - 1
+                              ? 'Next →'
+                              : _isEditing ? 'Save Changes' : 'Submit Proposal'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

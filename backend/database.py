@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 DB_PATH = "tasknet.db"
-SCHEMA_VERSION = 7  # bump when schema changes
+SCHEMA_VERSION = 8  # bump when schema changes
 
 
 def get_db():
@@ -231,7 +231,7 @@ def init_db():
         indicators          TEXT,
         comments            TEXT,
         status              TEXT NOT NULL DEFAULT 'pending_approval'
-            CHECK(status IN ('pending_approval','approved','disabled')),
+            CHECK(status IN ('pending_approval','approved','disabled','draft')),
         created_by          INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );

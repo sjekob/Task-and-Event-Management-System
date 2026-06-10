@@ -6,9 +6,10 @@ import 'package:table_calendar/table_calendar.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
+import '../utils/event_print_helper.dart';
 import '../widgets/skeleton_widgets.dart';
 
-enum _EventStatus { approved, pendingApproval, disabled }
+enum _EventStatus { approved, pendingApproval, disabled, draft }
 
 class _CalEvent {
   final int?         id;
@@ -96,6 +97,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     switch (s) {
       case 'approved':  return _EventStatus.approved;
       case 'disabled':  return _EventStatus.disabled;
+      case 'draft':     return _EventStatus.draft;
       default:          return _EventStatus.pendingApproval;
     }
   }
@@ -113,11 +115,19 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
 
   bool get _isPrincipal => context.read<AppState>().userRole == 'principal';
 
-  List<_CalEvent> get _activeEvents =>
-      _events.where((e) => e.status != _EventStatus.disabled).toList();
+  List<_CalEvent> get _activeEvents => _events
+      .where((e) => e.status != _EventStatus.disabled && e.status != _EventStatus.draft)
+      .toList();
 
   List<_CalEvent> get _disabledEvents =>
       _events.where((e) => e.status == _EventStatus.disabled).toList();
+
+  List<_CalEvent> get _draftEvents {
+    final myId = context.read<AppState>().currentUser?.id;
+    return _events
+        .where((e) => e.status == _EventStatus.draft && e.createdBy == myId)
+        .toList();
+  }
 
   List<_CalEvent> get _filteredActive {
     if (_selectedTab == 1) {
@@ -164,6 +174,21 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
       builder: (_) => _ConfirmDisableDialog(eventTitle: event.title),
     );
     if (confirmed == true) _disable(event);
+  }
+
+  Future<void> _deleteDraft(_CalEvent event) async {
+    if (event.id != null) {
+      try { await ApiService.deleteEvent(event.id!); } catch (_) {}
+    }
+    setState(() => _events.removeWhere((e) => e.id == event.id));
+  }
+
+  Future<void> _confirmDeleteDraft(BuildContext ctx, _CalEvent event) async {
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (_) => _ConfirmDeleteDialog(eventTitle: event.title),
+    );
+    if (confirmed == true) _deleteDraft(event);
   }
 
   void _editEvent(_CalEvent event) {
@@ -312,6 +337,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 onEdit: () {},
                 onDisable: () {},
                 onApprove: () {},
+                onPrint: () => EventPrintHelper.printEvent(context, e.raw),
                 onTap: () => _showEventDetail(context, e,
                     canManage: false,
                     canApprove: false,
@@ -332,6 +358,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 onEdit: () => _editEvent(e),
                 onDisable: () => _confirmDisable(context, e),
                 onApprove: () => _approve(e),
+                onPrint: () => EventPrintHelper.printEvent(context, e.raw),
                 onTap: () => _showEventDetail(context, e,
                     canManage: _canManage,
                     canApprove: _canApprove,
@@ -350,8 +377,21 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 event: e,
                 canManage: _canManage,
                 onEnable: () => _enable(e),
+                onPrint: () => EventPrintHelper.printEvent(context, e.raw),
                 onTap: () => _showEventDetail(context, e,
                     canManage: _canManage, isPrincipal: _isPrincipal),
+              )),
+          const SizedBox(height: 20),
+        ],
+
+        // Drafts — private to the creator, never shown to other users
+        if (_draftEvents.isNotEmpty) ...[
+          _sectionLabel('Drafts'),
+          const SizedBox(height: 10),
+          ..._draftEvents.map((e) => _DraftEventCard(
+                event: e,
+                onContinue: () => _editEvent(e),
+                onDelete: () => _confirmDeleteDraft(context, e),
               )),
         ],
       ],
@@ -511,9 +551,11 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final isApproved = status == _EventStatus.approved;
     final isDisabled = status == _EventStatus.disabled;
+    final isDraft    = status == _EventStatus.draft;
     final color = isDisabled ? const Color(0xFFE53E3E)
+        : isDraft ? const Color(0xFF718096)
         : isApproved ? const Color(0xFF48BB78) : const Color(0xFFED8936);
-    final label = isDisabled ? 'Disabled' : isApproved ? 'Approved' : 'Pending';
+    final label = isDisabled ? 'Disabled' : isDraft ? 'Draft' : isApproved ? 'Approved' : 'Pending';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
@@ -548,12 +590,13 @@ class _EventCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDisable;
   final VoidCallback onApprove;
+  final VoidCallback? onPrint;
   final VoidCallback? onTap;
 
   const _EventCard({
     required this.event, required this.canManage, required this.canApprove,
     required this.isPrincipal, required this.onEdit, required this.onDisable,
-    required this.onApprove, this.onTap,
+    required this.onApprove, this.onPrint, this.onTap,
   });
 
   @override
@@ -597,6 +640,16 @@ class _EventCard extends StatelessWidget {
               ],
             ]),
           ),
+
+          // Print / Save as PDF — available to all roles for all statuses
+          if (onPrint != null)
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18, color: Color(0xFF718096)),
+              onPressed: onPrint,
+              tooltip: 'Print / Save as PDF',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
 
           // Principal: Approve + Disable for pending events
           if (isPrincipal && canApprove && event.status == _EventStatus.pendingApproval)
@@ -651,9 +704,9 @@ class _EventCard extends StatelessWidget {
 
 class _DisabledEventCard extends StatelessWidget {
   final _CalEvent event; final bool canManage;
-  final VoidCallback onEnable; final VoidCallback? onTap;
+  final VoidCallback onEnable; final VoidCallback? onPrint; final VoidCallback? onTap;
   const _DisabledEventCard({required this.event, required this.canManage,
-      required this.onEnable, this.onTap});
+      required this.onEnable, this.onPrint, this.onTap});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -679,6 +732,14 @@ class _DisabledEventCard extends StatelessWidget {
             const SizedBox(height: 3),
             Text(event.description, style: const TextStyle(fontSize: 12, color: Color(0xFFB0B7C3))),
           ])),
+          if (onPrint != null)
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18, color: Color(0xFF718096)),
+              onPressed: onPrint,
+              tooltip: 'Print / Save as PDF',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
           if (canManage)
             TextButton(onPressed: onEnable,
               style: TextButton.styleFrom(foregroundColor: const Color(0xFF48BB78),
@@ -686,6 +747,52 @@ class _DisabledEventCard extends StatelessWidget {
               child: const Text('Enable')),
         ]),
       ),
+    );
+  }
+}
+
+// ─── Draft Event Card ─────────────────────────────────────────────────────────
+
+class _DraftEventCard extends StatelessWidget {
+  final _CalEvent event;
+  final VoidCallback onContinue;
+  final VoidCallback onDelete;
+  const _DraftEventCard({required this.event, required this.onContinue, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = event.title.trim().isEmpty ? 'Untitled Draft' : event.title;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFDDE3ED))),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Flexible(child: Text(title,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)))),
+              const SizedBox(width: 8),
+              const _StatusBadge(status: _EventStatus.draft),
+            ]),
+            const SizedBox(height: 3),
+            const Text('Continue where you left off.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF718096))),
+          ]),
+        ),
+        TextButton(onPressed: onContinue,
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFF1E2126),
+              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          child: const Text('Continue Editing')),
+        IconButton(
+          icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFE53E3E)),
+          onPressed: onDelete,
+          tooltip: 'Delete draft',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        ),
+      ]),
     );
   }
 }
@@ -715,6 +822,47 @@ class _ConfirmDisableDialog extends StatelessWidget {
                       foregroundColor: Colors.white, elevation: 0,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                   child: const Text('Disable', style: TextStyle(fontWeight: FontWeight.w600))))),
+              const SizedBox(width: 12),
+              Expanded(child: SizedBox(height: 44,
+                child: OutlinedButton(onPressed: () => Navigator.pop(context, false),
+                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF4A5568),
+                      side: const BorderSide(color: Color(0xFFDDE3ED)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600))))),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Confirm Delete Dialog ────────────────────────────────────────────────────
+
+class _ConfirmDeleteDialog extends StatelessWidget {
+  final String eventTitle;
+  const _ConfirmDeleteDialog({required this.eventTitle});
+  @override
+  Widget build(BuildContext context) {
+    final title = eventTitle.trim().isEmpty ? 'Untitled Draft' : eventTitle;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SizedBox(width: 320,
+        child: Padding(padding: const EdgeInsets.all(28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Delete Draft',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            const SizedBox(height: 12),
+            Text('Delete "$title"? This cannot be undone.', textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
+            const SizedBox(height: 24),
+            Row(children: [
+              Expanded(child: SizedBox(height: 44,
+                child: ElevatedButton(onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE53E3E),
+                      foregroundColor: Colors.white, elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w600))))),
               const SizedBox(width: 12),
               Expanded(child: SizedBox(height: 44,
                 child: OutlinedButton(onPressed: () => Navigator.pop(context, false),
