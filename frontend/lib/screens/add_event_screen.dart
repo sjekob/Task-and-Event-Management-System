@@ -6,8 +6,14 @@ import '../services/api_service.dart';
 class AddEventScreen extends StatefulWidget {
   final VoidCallback onBack;
   final VoidCallback onCreated;
+  final Map<String, dynamic>? existingEvent; // null = create, non-null = edit
 
-  const AddEventScreen({super.key, required this.onBack, required this.onCreated});
+  const AddEventScreen({
+    super.key,
+    required this.onBack,
+    required this.onCreated,
+    this.existingEvent,
+  });
 
   @override
   State<AddEventScreen> createState() => _AddEventScreenState();
@@ -17,6 +23,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
   int _step = 0;
   final _pageController = PageController();
   bool _submitting = false;
+
+  bool get _isEditing => widget.existingEvent != null;
 
   final _stepTitles = const [
     'Proposal Brief',
@@ -28,30 +36,26 @@ class _AddEventScreenState extends State<AddEventScreen> {
   ];
 
   // Step 1
-  final _titleCtrl     = TextEditingController();
-  final _dateCtrl      = TextEditingController();
-  final _venueCtrl     = TextEditingController();
-  final _budgetCtrl    = TextEditingController();
-  final _fundCtrl      = TextEditingController();
-  final _focalNameCtrl = TextEditingController();
-  final _focalRoleCtrl = TextEditingController();
-  final _focalCpCtrl   = TextEditingController();
-  String _nature       = 'Co-curricular';
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _dateCtrl;
+  late final TextEditingController _venueCtrl;
+  late final TextEditingController _budgetCtrl;
+  late final TextEditingController _fundCtrl;
+  late final TextEditingController _focalNameCtrl;
+  late final TextEditingController _focalRoleCtrl;
+  late final TextEditingController _focalCpCtrl;
+  late String _nature;
   int _tMale = 0, _tFemale = 0, _jMale = 0, _jFemale = 0;
-  final List<TextEditingController> _outputCtrls = [
-    TextEditingController(), TextEditingController()
-  ];
+  late final List<TextEditingController> _outputCtrls;
 
   // Step 2
-  final _rationaleCtrl = TextEditingController();
-  final List<TextEditingController> _objCtrls = [
-    TextEditingController(), TextEditingController(), TextEditingController(),
-  ];
+  late final TextEditingController _rationaleCtrl;
+  late final List<TextEditingController> _objCtrls;
 
   // Step 3
-  final _p1Ctrl = TextEditingController(text: 'Planning\nRecruitment of participants');
-  final _p2Ctrl = TextEditingController(text: 'Training-workshop sessions');
-  final _p3Ctrl = TextEditingController(text: 'Selection of school paper staff\nEvaluation of the activity');
+  late final TextEditingController _p1Ctrl;
+  late final TextEditingController _p2Ctrl;
+  late final TextEditingController _p3Ctrl;
 
   // Step 4
   late List<Map<String, TextEditingController>> _matrixRows;
@@ -63,8 +67,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
   late List<Map<String, dynamic>> _twgGroups;
 
   // Step 6
-  final _meCtrl       = TextEditingController();
-  final _commentsCtrl = TextEditingController();
+  late final TextEditingController _meCtrl;
+  late final TextEditingController _commentsCtrl;
   final List<Map<String, dynamic>> _indicators = [
     {'label': 'The special program has an approved proposal.',                                                                                  'value': '', 'remarks': TextEditingController()},
     {'label': 'The training matrix was observed or was completely delivered.',                                                                  'value': '', 'remarks': TextEditingController()},
@@ -78,37 +82,199 @@ class _AddEventScreenState extends State<AddEventScreen> {
     {'label': 'The trainers/facilitators used appropriate resource package (Pretest and post-tests, power point, video presentation, etc.)',    'value': '', 'remarks': TextEditingController()},
   ];
 
-  Map<String, TextEditingController> _newMatrix() => {
-    'day': TextEditingController(), 'time': TextEditingController(),
-    'event': TextEditingController(), 'speaker': TextEditingController(),
+  Map<String, TextEditingController> _newMatrix({String day='',String time='',String event='',String speaker=''}) => {
+    'day': TextEditingController(text: day),
+    'time': TextEditingController(text: time),
+    'event': TextEditingController(text: event),
+    'speaker': TextEditingController(text: speaker),
   };
-  Map<String, TextEditingController> _newMat() => {
-    'item': TextEditingController(), 'qty': TextEditingController(),
-    'cost': TextEditingController(), 'total': TextEditingController(),
+  Map<String, TextEditingController> _newMat({String item='',String qty='',String cost='',String total=''}) => {
+    'item': TextEditingController(text: item),
+    'qty': TextEditingController(text: qty),
+    'cost': TextEditingController(text: cost),
+    'total': TextEditingController(text: total),
   };
-  Map<String, TextEditingController> _newSnack() => {
-    'item': TextEditingController(), 'pax': TextEditingController(),
-    'cost': TextEditingController(), 'total': TextEditingController(),
+  Map<String, TextEditingController> _newSnack({String item='',String pax='',String cost='',String total=''}) => {
+    'item': TextEditingController(text: item),
+    'pax': TextEditingController(text: pax),
+    'cost': TextEditingController(text: cost),
+    'total': TextEditingController(text: total),
   };
-  Map<String, TextEditingController> _newExec() => {
-    'name': TextEditingController(), 'position': TextEditingController(),
+  Map<String, TextEditingController> _newExec({String name='',String position=''}) => {
+    'name': TextEditingController(text: name),
+    'position': TextEditingController(text: position),
   };
-  Map<String, TextEditingController> _newMember() => {
-    'name': TextEditingController(), 'designation': TextEditingController(),
-    'tor': TextEditingController(), 'output': TextEditingController(),
+  Map<String, TextEditingController> _newMember({String name='',String designation='',String tor='',String output=''}) => {
+    'name': TextEditingController(text: name),
+    'designation': TextEditingController(text: designation),
+    'tor': TextEditingController(text: tor),
+    'output': TextEditingController(text: output),
   };
 
   @override
   void initState() {
     super.initState();
-    _matrixRows = List.generate(3, (_) => _newMatrix());
-    _matRows    = List.generate(2, (_) => _newMat());
-    _snackRows  = List.generate(1, (_) => _newSnack());
-    _execRows   = List.generate(2, (_) => _newExec());
-    _twgGroups  = [
-      {'title': TextEditingController(text: 'Supervising Committee'),    'members': <Map<String, TextEditingController>>[_newMember()]},
-      {'title': TextEditingController(text: 'Program Implementation Committee'), 'members': <Map<String, TextEditingController>>[_newMember()]},
-    ];
+    final e = widget.existingEvent;
+
+    // Step 1
+    _titleCtrl     = TextEditingController(text: e?['title'] ?? '');
+    _dateCtrl      = TextEditingController(text: e?['target_date'] ?? '');
+    _venueCtrl     = TextEditingController(text: e?['venue'] ?? '');
+    _budgetCtrl    = TextEditingController(text: e?['proposed_budget'] ?? '');
+    _fundCtrl      = TextEditingController(text: e?['fund_source'] ?? '');
+    _focalNameCtrl = TextEditingController(text: e?['focal_name'] ?? '');
+    _focalRoleCtrl = TextEditingController(text: e?['focal_role'] ?? '');
+    _focalCpCtrl   = TextEditingController(text: e?['focal_contact'] ?? '');
+    _nature        = e?['nature'] ?? 'Co-curricular';
+
+    // Parse participants
+    if (e?['participants'] != null) {
+      try {
+        final p = jsonDecode(e!['participants']) as Map<String, dynamic>;
+        _tMale   = (p['teachers']?['male']    ?? 0) as int;
+        _tFemale = (p['teachers']?['female']  ?? 0) as int;
+        _jMale   = (p['journalists']?['male']   ?? 0) as int;
+        _jFemale = (p['journalists']?['female'] ?? 0) as int;
+      } catch (_) {}
+    }
+
+    // Parse expected outputs
+    List<String> outputs = ['', ''];
+    if (e?['expected_outputs'] != null) {
+      try {
+        final decoded = jsonDecode(e!['expected_outputs']);
+        if (decoded is List) outputs = List<String>.from(decoded);
+      } catch (_) {}
+    }
+    _outputCtrls = outputs.map((t) => TextEditingController(text: t)).toList();
+    if (_outputCtrls.isEmpty) {
+      _outputCtrls.addAll([TextEditingController(), TextEditingController()]);
+    }
+
+    // Step 2
+    _rationaleCtrl = TextEditingController(text: e?['rationale'] ?? '');
+    List<String> objs = ['', '', ''];
+    if (e?['objectives'] != null) {
+      try {
+        final decoded = jsonDecode(e!['objectives']);
+        if (decoded is List) objs = List<String>.from(decoded);
+      } catch (_) {}
+    }
+    _objCtrls = objs.map((t) => TextEditingController(text: t)).toList();
+    if (_objCtrls.isEmpty) {
+      _objCtrls.addAll([TextEditingController(), TextEditingController(), TextEditingController()]);
+    }
+
+    // Step 3
+    _p1Ctrl = TextEditingController(text: e?['phase1'] ?? 'Planning\nRecruitment of participants');
+    _p2Ctrl = TextEditingController(text: e?['phase2'] ?? 'Training-workshop sessions');
+    _p3Ctrl = TextEditingController(text: e?['phase3'] ?? 'Selection of school paper staff\nEvaluation of the activity');
+
+    // Step 4 - Activity matrix
+    _matrixRows = [];
+    if (e?['activity_matrix'] != null) {
+      try {
+        final decoded = jsonDecode(e!['activity_matrix']);
+        if (decoded is List && decoded.isNotEmpty) {
+          _matrixRows = decoded.map((r) => _newMatrix(
+            day: r['day'] ?? '', time: r['time'] ?? '',
+            event: r['event'] ?? '', speaker: r['speaker'] ?? '',
+          )).toList();
+        }
+      } catch (_) {}
+    }
+    if (_matrixRows.isEmpty) _matrixRows = List.generate(3, (_) => _newMatrix());
+
+    // Step 5 - Budget
+    _matRows = [];
+    if (e?['training_materials'] != null) {
+      try {
+        final decoded = jsonDecode(e!['training_materials']);
+        if (decoded is List && decoded.isNotEmpty) {
+          _matRows = decoded.map((r) => _newMat(
+            item: r['item'] ?? '', qty: r['qty'] ?? '',
+            cost: r['cost'] ?? '', total: r['total'] ?? '',
+          )).toList();
+        }
+      } catch (_) {}
+    }
+    if (_matRows.isEmpty) _matRows = List.generate(2, (_) => _newMat());
+
+    _snackRows = [];
+    if (e?['snacks'] != null) {
+      try {
+        final decoded = jsonDecode(e!['snacks']);
+        if (decoded is List && decoded.isNotEmpty) {
+          _snackRows = decoded.map((r) => _newSnack(
+            item: r['item'] ?? '', pax: r['pax'] ?? '',
+            cost: r['cost'] ?? '', total: r['total'] ?? '',
+          )).toList();
+        }
+      } catch (_) {}
+    }
+    if (_snackRows.isEmpty) _snackRows = List.generate(1, (_) => _newSnack());
+
+    _execRows = [];
+    if (e?['exec_committee'] != null) {
+      try {
+        final decoded = jsonDecode(e!['exec_committee']);
+        if (decoded is List && decoded.isNotEmpty) {
+          _execRows = decoded.map((r) => _newExec(
+            name: r['name'] ?? '', position: r['position'] ?? '',
+          )).toList();
+        }
+      } catch (_) {}
+    }
+    if (_execRows.isEmpty) _execRows = List.generate(2, (_) => _newExec());
+
+    // TWG groups
+    _twgGroups = [];
+    if (e?['twg_groups'] != null) {
+      try {
+        final decoded = jsonDecode(e!['twg_groups']);
+        if (decoded is List && decoded.isNotEmpty) {
+          for (final g in decoded) {
+            final members = <Map<String, TextEditingController>>[];
+            if (g['members'] is List) {
+              for (final m in g['members']) {
+                members.add(_newMember(
+                  name: m['name'] ?? '', designation: m['designation'] ?? '',
+                  tor: m['tor'] ?? '', output: m['output'] ?? '',
+                ));
+              }
+            }
+            if (members.isEmpty) members.add(_newMember());
+            _twgGroups.add({
+              'title': TextEditingController(text: g['title'] ?? ''),
+              'members': members,
+            });
+          }
+        }
+      } catch (_) {}
+    }
+    if (_twgGroups.isEmpty) {
+      _twgGroups = [
+        {'title': TextEditingController(text: 'Supervising Committee'),    'members': <Map<String, TextEditingController>>[_newMember()]},
+        {'title': TextEditingController(text: 'Program Implementation Committee'), 'members': <Map<String, TextEditingController>>[_newMember()]},
+      ];
+    }
+
+    // Step 6
+    _meCtrl       = TextEditingController(text: e?['monitoring_criteria'] ?? '');
+    _commentsCtrl = TextEditingController(text: e?['comments'] ?? '');
+
+    // Pre-fill indicators if editing
+    if (e?['indicators'] != null) {
+      try {
+        final decoded = jsonDecode(e!['indicators']);
+        if (decoded is List) {
+          for (int i = 0; i < decoded.length && i < _indicators.length; i++) {
+            _indicators[i]['value'] = decoded[i]['value'] ?? '';
+            (_indicators[i]['remarks'] as TextEditingController).text = decoded[i]['remarks'] ?? '';
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   @override
@@ -129,16 +295,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
         duration: const Duration(milliseconds: 220), curve: Curves.easeInOut);
   }
 
-  Future<void> _submit() async {
-    if (_titleCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the event title in Step 1.')),
-      );
-      _goTo(0);
-      return;
-    }
-    setState(() => _submitting = true);
-
+  Map<String, dynamic> _buildPayload() {
     final matrixData = _matrixRows.map((r) => {
       'day': r['day']!.text, 'time': r['time']!.text,
       'event': r['event']!.text, 'speaker': r['speaker']!.text,
@@ -169,43 +326,75 @@ class _AddEventScreenState extends State<AddEventScreen> {
     }).toList();
 
     final payload = {
-      'title':            _titleCtrl.text,
-      'nature':           _nature,
-      'target_date':      _dateCtrl.text,
-      'venue':            _venueCtrl.text,
-      'proposed_budget':  _budgetCtrl.text,
-      'fund_source':      _fundCtrl.text,
-      'focal_name':       _focalNameCtrl.text,
-      'focal_role':       _focalRoleCtrl.text,
-      'focal_contact':    _focalCpCtrl.text,
-      'expected_outputs': jsonEncode(_outputCtrls.map((c) => c.text).toList()),
+      'title':              _titleCtrl.text,
+      'nature':             _nature,
+      'target_date':        _dateCtrl.text,
+      'venue':              _venueCtrl.text,
+      'proposed_budget':    _budgetCtrl.text,
+      'fund_source':        _fundCtrl.text,
+      'focal_name':         _focalNameCtrl.text,
+      'focal_role':         _focalRoleCtrl.text,
+      'focal_contact':      _focalCpCtrl.text,
+      'expected_outputs':   jsonEncode(_outputCtrls.map((c) => c.text).toList()),
       'participants': jsonEncode({
         'teachers':    {'male': _tMale, 'female': _tFemale},
         'journalists': {'male': _jMale, 'female': _jFemale},
       }),
-      'rationale':          _rationaleCtrl.text,
-      'objectives':         jsonEncode(_objCtrls.map((c) => c.text).toList()),
-      'phase1':             _p1Ctrl.text,
-      'phase2':             _p2Ctrl.text,
-      'phase3':             _p3Ctrl.text,
-      'activity_matrix':    jsonEncode(matrixData),
-      'training_materials': jsonEncode(matData),
-      'snacks':             jsonEncode(snackData),
-      'exec_committee':     jsonEncode(execData),
-      'twg_groups':         jsonEncode(twgData),
+      'rationale':           _rationaleCtrl.text,
+      'objectives':          jsonEncode(_objCtrls.map((c) => c.text).toList()),
+      'phase1':              _p1Ctrl.text,
+      'phase2':              _p2Ctrl.text,
+      'phase3':              _p3Ctrl.text,
+      'activity_matrix':     jsonEncode(matrixData),
+      'training_materials':  jsonEncode(matData),
+      'snacks':              jsonEncode(snackData),
+      'exec_committee':      jsonEncode(execData),
+      'twg_groups':          jsonEncode(twgData),
       'monitoring_criteria': _meCtrl.text,
       'indicators':          jsonEncode(indicatorData),
       'comments':            _commentsCtrl.text,
     };
 
+    return payload;
+  }
+
+  /// Whether the event being edited (if any) can still be saved as a draft.
+  /// Approved/disabled proposals shouldn't be silently demoted back to draft.
+  bool get _canSaveAsDraft {
+    final status = widget.existingEvent?['status'] as String?;
+    return status == null || status == 'draft' || status == 'pending_approval';
+  }
+
+  Future<void> _submit({bool asDraft = false}) async {
+    if (!asDraft && _titleCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter the event title in Step 1.')),
+      );
+      _goTo(0);
+      return;
+    }
+    setState(() => _submitting = true);
+
+    final payload = _buildPayload();
+    payload['status'] = asDraft ? 'draft' : 'pending_approval';
+
     try {
-      final result = await ApiService.createEvent(payload);
+      dynamic result;
+      if (_isEditing) {
+        result = await ApiService.updateEvent(widget.existingEvent!['id'] as int, payload);
+      } else {
+        result = await ApiService.createEvent(payload);
+      }
       if (!mounted) return;
       if (result != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Event proposal submitted for approval!'),
-            backgroundColor: Color(0xFF48BB78),
+          SnackBar(
+            content: Text(asDraft
+                ? 'Saved as draft.'
+                : _isEditing
+                    ? 'Event updated successfully!'
+                    : 'Event proposal submitted for approval!'),
+            backgroundColor: const Color(0xFF48BB78),
           ),
         );
         widget.onCreated();
@@ -241,7 +430,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
               onPressed: widget.onBack,
             ),
             const SizedBox(width: 8),
-            Text('Add New Event',
+            Text(_isEditing ? 'Edit Event' : 'Add New Event',
                 style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
@@ -350,33 +539,52 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 )
               else
                 const SizedBox(),
-              SizedBox(
-                width: 160, height: 44,
-                child: ElevatedButton(
-                  onPressed: _submitting
-                      ? null
-                      : () {
-                          if (_step < _stepTitles.length - 1) {
-                            _goTo(_step + 1);
-                          } else {
-                            _submit();
-                          }
-                        },
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E2126),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                      elevation: 0),
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : Text(_step < _stepTitles.length - 1
-                          ? 'Next →'
-                          : 'Submit Proposal'),
-                ),
+              Row(
+                children: [
+                  if (_canSaveAsDraft) ...[
+                    SizedBox(
+                      width: 140, height: 44,
+                      child: OutlinedButton(
+                        onPressed: _submitting ? null : () => _submit(asDraft: true),
+                        style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1E2126),
+                            side: const BorderSide(color: Color(0xFFACC2DF)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8))),
+                        child: const Text('Save as Draft'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  SizedBox(
+                    width: 160, height: 44,
+                    child: ElevatedButton(
+                      onPressed: _submitting
+                          ? null
+                          : () {
+                              if (_step < _stepTitles.length - 1) {
+                                _goTo(_step + 1);
+                              } else {
+                                _submit();
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E2126),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          elevation: 0),
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 18, height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : Text(_step < _stepTitles.length - 1
+                              ? 'Next →'
+                              : _isEditing ? 'Save Changes' : 'Submit Proposal'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -385,14 +593,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
-  // ── Step 1: Proposal Brief ────────────────────────────────────────────────
+  // ── Step 1 ────────────────────────────────────────────────────────────────
   Widget _buildProposalBrief() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12),
-        ),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -446,8 +652,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     children: ['', 'MALE', 'FEMALE', 'TOTAL']
                         .map((h) => Padding(
                             padding: const EdgeInsets.all(10),
-                            child: Text(h,
-                                textAlign: TextAlign.center,
+                            child: Text(h, textAlign: TextAlign.center,
                                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))))
                         .toList(),
                   ),
@@ -470,8 +675,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             ..._outputCtrls.asMap().entries.map((e) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Row(children: [
-                    Text('${e.key + 1}. ',
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
+                    Text('${e.key + 1}. ', style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
                     Expanded(child: _tField(e.value, hint: 'Expected output...')),
                   ]),
                 )),
@@ -507,7 +711,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
-  // ── Step 2: Rationale & Objectives ────────────────────────────────────────
+  // ── Step 2 ────────────────────────────────────────────────────────────────
   Widget _buildRationale() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -521,26 +725,20 @@ class _AddEventScreenState extends State<AddEventScreen> {
             _tField(_rationaleCtrl, hint: 'Provide the rationale for this activity...', maxLines: 8),
             const SizedBox(height: 28),
             _secTitle('III. OBJECTIVES'),
-            const Text('This project aims to:',
-                style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
+            const Text('This project aims to:', style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
             const SizedBox(height: 12),
             ..._objCtrls.asMap().entries.map((e) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 28, height: 28,
-                        margin: const EdgeInsets.only(right: 10, top: 2),
-                        decoration: BoxDecoration(
-                            color: const Color(0xFF1E2126),
-                            borderRadius: BorderRadius.circular(14)),
-                        child: Center(child: Text('${e.key + 1}',
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
-                      ),
-                      Expanded(child: _tField(e.value, hint: 'Objective ${e.key + 1}...')),
-                    ],
-                  ),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      width: 28, height: 28,
+                      margin: const EdgeInsets.only(right: 10, top: 2),
+                      decoration: BoxDecoration(color: const Color(0xFF1E2126), borderRadius: BorderRadius.circular(14)),
+                      child: Center(child: Text('${e.key + 1}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
+                    ),
+                    Expanded(child: _tField(e.value, hint: 'Objective ${e.key + 1}...')),
+                  ]),
                 )),
             TextButton.icon(
                 onPressed: () => setState(() => _objCtrls.add(TextEditingController())),
@@ -553,7 +751,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
-  // ── Step 3: Methodology ───────────────────────────────────────────────────
+  // ── Step 3 ────────────────────────────────────────────────────────────────
   Widget _buildMethodology() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -565,7 +763,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
           children: [
             _secTitle('IV. METHODOLOGY'),
             const Text(
-              'The training shall be composed of lectures, video clip viewing, sharing and games. 5E\'s approach shall be utilized for most of the sessions.',
+              "The training shall be composed of lectures, video clip viewing, sharing and games. 5E's approach shall be utilized for most of the sessions.",
               style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
             const SizedBox(height: 20),
             SingleChildScrollView(
@@ -602,7 +800,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
-  // ── Step 4: Activity Matrix ───────────────────────────────────────────────
+  // ── Step 4 ────────────────────────────────────────────────────────────────
   Widget _buildActivityMatrix() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -623,7 +821,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   decoration: const BoxDecoration(
                       color: Color(0xFFF7F9FC),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
-                  child: Row(children: const [
+                  child: const Row(children: [
                     Expanded(flex: 2, child: Text('Day', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
                     Expanded(flex: 2, child: Text('Time', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
                     Expanded(flex: 3, child: Text('Event', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
@@ -667,7 +865,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
-  // ── Step 5: Budget & Working Committee ────────────────────────────────────
+  // ── Step 5 ────────────────────────────────────────────────────────────────
   Widget _buildBudget() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -678,12 +876,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _secTitle('VII. PROPOSED BUDGET'),
-            const Text(
-              'Charged against School Paper Fund/SPTA Fund subject to usual accounting and auditing rules.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
+            const Text('Charged against School Paper Fund/SPTA Fund subject to usual accounting and auditing rules.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
             const SizedBox(height: 20),
-            const Text('a. Training Materials',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const Text('a. Training Materials', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
             _budgetTable(
               headers: ['Particulars', 'Quantity', 'Cost', 'Total'],
@@ -693,8 +889,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
               onRemove: (i) => setState(() => _matRows.removeAt(i)),
             ),
             const SizedBox(height: 20),
-            const Text('b. Snacks for Program Partners',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const Text('b. Snacks for Program Partners', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
             _budgetTable(
               headers: ['Particulars', 'No. of Participants', 'Cost/pax', 'Total'],
@@ -705,8 +900,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             ),
             const SizedBox(height: 28),
             _secTitle('VI. WORKING COMMITTEE'),
-            const Text('a. Executive Committee',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const Text('a. Executive Committee', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
             _committeeTable(
               rows: _execRows, headers: ['Name', 'Position'],
@@ -716,8 +910,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
               onRemove: (i) => setState(() => _execRows.removeAt(i)),
             ),
             const SizedBox(height: 24),
-            const Text('b. Technical Working Group',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const Text('b. Technical Working Group', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
             ..._twgGroups.asMap().entries.map((g) {
               final members = g.value['members'] as List<Map<String, TextEditingController>>;
@@ -773,7 +966,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
-  // ── Step 6: Monitoring & Evaluation ──────────────────────────────────────
+  // ── Step 6 ────────────────────────────────────────────────────────────────
   Widget _buildMonitoringEvaluation() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -785,13 +978,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
           children: [
             _secTitle('VIII. MONITORING AND EVALUATION'),
             _fLabel('Monitoring Instructions / Evaluation Criteria'),
-            _tField(_meCtrl,
-                hint: 'Add specific monitoring instructions or evaluation criteria...', maxLines: 6),
+            _tField(_meCtrl, hint: 'Add specific monitoring instructions or evaluation criteria...', maxLines: 6),
             const SizedBox(height: 28),
             _secTitle('Observation Tool Indicators'),
-            const Text(
-              'Please assess the effectiveness of the project/program according to the indicators below.',
-              style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
+            const Text('Please assess the effectiveness of the project/program according to the indicators below.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
             const SizedBox(height: 16),
             Container(
               decoration: BoxDecoration(
@@ -803,7 +994,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   decoration: const BoxDecoration(
                       color: Color(0xFFF7F9FC),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
-                  child: Row(children: const [
+                  child: const Row(children: [
                     Expanded(flex: 5, child: Text('Indicators', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
                     SizedBox(width: 8),
                     SizedBox(width: 80, child: Text('Evident', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
@@ -817,38 +1008,35 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 ..._indicators.asMap().entries.map((e) => Column(children: [
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(flex: 5, child: Text('${e.key + 1}. ${e.value['label']}',
-                                style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)))),
-                            const SizedBox(width: 8),
-                            SizedBox(width: 80, child: Radio<String>(
-                                value: 'evident', groupValue: e.value['value'] as String,
-                                onChanged: (v) => setState(() => _indicators[e.key]['value'] = v!),
-                                activeColor: const Color(0xFF48BB78))),
-                            const SizedBox(width: 8),
-                            SizedBox(width: 100, child: Radio<String>(
-                                value: 'not_evident', groupValue: e.value['value'] as String,
-                                onChanged: (v) => setState(() => _indicators[e.key]['value'] = v!),
-                                activeColor: const Color(0xFFE53E3E))),
-                            const SizedBox(width: 8),
-                            Expanded(flex: 2, child: TextField(
-                              controller: e.value['remarks'] as TextEditingController,
-                              style: const TextStyle(fontSize: 12),
-                              decoration: InputDecoration(
-                                hintText: 'Remarks...',
-                                hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 11),
-                                filled: true, fillColor: const Color(0xFFF7F9FC),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-                                    borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-                                    borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              ),
-                            )),
-                          ],
-                        ),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                          Expanded(flex: 5, child: Text('${e.key + 1}. ${e.value['label']}',
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)))),
+                          const SizedBox(width: 8),
+                          SizedBox(width: 80, child: Radio<String>(
+                              value: 'evident', groupValue: e.value['value'] as String,
+                              onChanged: (v) => setState(() => _indicators[e.key]['value'] = v!),
+                              activeColor: const Color(0xFF48BB78))),
+                          const SizedBox(width: 8),
+                          SizedBox(width: 100, child: Radio<String>(
+                              value: 'not_evident', groupValue: e.value['value'] as String,
+                              onChanged: (v) => setState(() => _indicators[e.key]['value'] = v!),
+                              activeColor: const Color(0xFFE53E3E))),
+                          const SizedBox(width: 8),
+                          Expanded(flex: 2, child: TextField(
+                            controller: e.value['remarks'] as TextEditingController,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              hintText: 'Remarks...',
+                              hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 11),
+                              filled: true, fillColor: const Color(0xFFF7F9FC),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            ),
+                          )),
+                        ]),
                       ),
                       if (e.key < _indicators.length - 1)
                         const Divider(height: 1, color: Color(0xFFE2E8F0)),
@@ -857,8 +1045,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             ),
             const SizedBox(height: 24),
             _fLabel('Comments and Recommendations'),
-            _tField(_commentsCtrl,
-                hint: 'Write your comments and recommendations here...', maxLines: 5),
+            _tField(_commentsCtrl, hint: 'Write your comments and recommendations here...', maxLines: 5),
           ],
         ),
       ),

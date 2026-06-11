@@ -138,6 +138,14 @@ class _TaskNetAppState extends State<TaskNetApp> {
                     onCreated: () => context.go('/events'),
                   ),
                 ),
+                GoRoute(
+                  path: ':id/edit',
+                  builder: (context, state) => AddEventScreen(
+                    onBack: () => context.go('/events'),
+                    onCreated: () => context.go('/events'),
+                    existingEvent: state.extra as Map<String, dynamic>?,
+                  ),
+                ),
               ],
             ),
             GoRoute(

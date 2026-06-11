@@ -541,6 +541,15 @@ class ApiService {
     throw Exception('Failed to load events');
   }
 
+  static Future<Map<String, dynamic>?> getEvent(int id) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/events/$id'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> createEvent(Map<String, dynamic> payload) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/events'),
@@ -548,6 +557,16 @@ class ApiService {
       body: jsonEncode(payload),
     );
     if (res.statusCode == 201) return jsonDecode(res.body) as Map<String, dynamic>;
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> updateEvent(int id, Map<String, dynamic> payload) async {
+    final res = await http.put(
+      Uri.parse('$baseUrl/api/events/$id'),
+      headers: await _headers,
+      body: jsonEncode(payload),
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
     return null;
   }
 

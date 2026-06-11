@@ -21,12 +21,6 @@ def _event_row(row, db):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.get("")
-def list_events(db=Depends(get_db), user=Depends(get_current_user)):
-    rows = db.execute("SELECT * FROM events ORDER BY created_at DESC").fetchall()
-    return [_event_row(r, db) for r in rows]
-
-
 @router.get("/{event_id}")
 def get_event(event_id: int, db=Depends(get_db), user=Depends(get_current_user)):
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
@@ -60,20 +54,37 @@ class EventCreateBody(BaseModel):
     monitoring_criteria: Optional[str] = None
     indicators: Optional[str] = None
     comments: Optional[str] = None
+    status: Optional[str] = 'pending_approval'
+
+
+CREATE_STATUSES = ('draft', 'pending_approval')
+
+
+@router.get("")
+def list_events(db=Depends(get_db), user=Depends(get_current_user)):
+    uid = int(user["sub"])
+    rows = db.execute("SELECT * FROM events ORDER BY created_at DESC").fetchall()
+    if user["role"] == "admin":
+        return [_event_row(r, db) for r in rows]
+    return [_event_row(r, db) for r in rows
+            if r["status"] != "draft" or r["created_by"] == uid]
 
 
 @router.post("", status_code=201)
 def create_event(body: EventCreateBody, db=Depends(get_db),
                  user=Depends(require_event_manager)):
     uid = int(user["sub"])
+    status = body.status or 'pending_approval'
+    if status not in CREATE_STATUSES:
+        raise HTTPException(400, f"status must be one of {CREATE_STATUSES}")
     db.execute(
         """INSERT INTO events
            (title, nature, target_date, venue, proposed_budget, fund_source,
             focal_name, focal_role, focal_contact, expected_outputs, participants,
             rationale, objectives, phase1, phase2, phase3, activity_matrix,
             training_materials, snacks, exec_committee, twg_groups,
-            monitoring_criteria, indicators, comments, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            monitoring_criteria, indicators, comments, status, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (body.title, body.nature, body.target_date, body.venue,
          body.proposed_budget, body.fund_source, body.focal_name,
          body.focal_role, body.focal_contact, body.expected_outputs,
@@ -81,10 +92,61 @@ def create_event(body: EventCreateBody, db=Depends(get_db),
          body.phase1, body.phase2, body.phase3, body.activity_matrix,
          body.training_materials, body.snacks, body.exec_committee,
          body.twg_groups, body.monitoring_criteria, body.indicators,
-         body.comments, uid)
+         body.comments, status, uid)
     )
     db.commit()
     row = db.execute("SELECT * FROM events ORDER BY id DESC LIMIT 1").fetchone()
+    return _event_row(row, db)
+
+
+@router.put("/{event_id}")
+def update_event(event_id: int, body: EventCreateBody, db=Depends(get_db),
+                 user=Depends(require_event_manager)):
+    uid = int(user["sub"])
+    role = user["role"]
+    row = db.execute("SELECT created_by FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    if role not in ("admin",) and row["created_by"] != uid:
+        raise HTTPException(403, "You can only edit events you created")
+    if body.status in CREATE_STATUSES:
+        db.execute(
+            """UPDATE events SET
+               title=?, nature=?, target_date=?, venue=?, proposed_budget=?, fund_source=?,
+               focal_name=?, focal_role=?, focal_contact=?, expected_outputs=?, participants=?,
+               rationale=?, objectives=?, phase1=?, phase2=?, phase3=?, activity_matrix=?,
+               training_materials=?, snacks=?, exec_committee=?, twg_groups=?,
+               monitoring_criteria=?, indicators=?, comments=?, status=?
+               WHERE id=?""",
+            (body.title, body.nature, body.target_date, body.venue,
+             body.proposed_budget, body.fund_source, body.focal_name,
+             body.focal_role, body.focal_contact, body.expected_outputs,
+             body.participants, body.rationale, body.objectives,
+             body.phase1, body.phase2, body.phase3, body.activity_matrix,
+             body.training_materials, body.snacks, body.exec_committee,
+             body.twg_groups, body.monitoring_criteria, body.indicators,
+             body.comments, body.status, event_id)
+        )
+    else:
+        db.execute(
+            """UPDATE events SET
+               title=?, nature=?, target_date=?, venue=?, proposed_budget=?, fund_source=?,
+               focal_name=?, focal_role=?, focal_contact=?, expected_outputs=?, participants=?,
+               rationale=?, objectives=?, phase1=?, phase2=?, phase3=?, activity_matrix=?,
+               training_materials=?, snacks=?, exec_committee=?, twg_groups=?,
+               monitoring_criteria=?, indicators=?, comments=?
+               WHERE id=?""",
+            (body.title, body.nature, body.target_date, body.venue,
+             body.proposed_budget, body.fund_source, body.focal_name,
+             body.focal_role, body.focal_contact, body.expected_outputs,
+             body.participants, body.rationale, body.objectives,
+             body.phase1, body.phase2, body.phase3, body.activity_matrix,
+             body.training_materials, body.snacks, body.exec_committee,
+             body.twg_groups, body.monitoring_criteria, body.indicators,
+             body.comments, event_id)
+        )
+    db.commit()
+    row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     return _event_row(row, db)
 
 

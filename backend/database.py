@@ -231,7 +231,7 @@ def init_db():
         indicators          TEXT,
         comments            TEXT,
         status              TEXT NOT NULL DEFAULT 'pending_approval'
-            CHECK(status IN ('pending_approval','approved','disabled')),
+            CHECK(status IN ('pending_approval','approved','disabled','draft')),
         created_by          INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
