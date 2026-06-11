@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
+import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
@@ -33,6 +35,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 768;
+    final role = context.watch<AppState>().userRole;
+    final isPrincipal = role == 'principal';
     if (_loading) return const DashboardSkeleton();
 
     return RefreshIndicator(
@@ -59,8 +63,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             isMobile
                 ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                     _buildTaskManagerSection(),
-                    const SizedBox(height: 14),
-                    _buildMyTaskSection(),
+                    if (!isPrincipal) ...[
+                      const SizedBox(height: 14),
+                      _buildMyTaskSection(),
+                    ],
                     const SizedBox(height: 14),
                     _buildPendingSection(),
                   ])
@@ -68,8 +74,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                         _buildTaskManagerSection(),
-                        const SizedBox(height: 14),
-                        _buildMyTaskSection(),
+                        if (!isPrincipal) ...[
+                          const SizedBox(height: 14),
+                          _buildMyTaskSection(),
+                        ],
                         const SizedBox(height: 14),
                         _buildPendingSection(),
                       ]),

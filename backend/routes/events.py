@@ -63,11 +63,21 @@ CREATE_STATUSES = ('draft', 'pending_approval')
 @router.get("")
 def list_events(db=Depends(get_db), user=Depends(get_current_user)):
     uid = int(user["sub"])
+    role = user["role"]
     rows = db.execute("SELECT * FROM events ORDER BY created_at DESC").fetchall()
-    if user["role"] == "admin":
-        return [_event_row(r, db) for r in rows]
-    return [_event_row(r, db) for r in rows
-            if r["status"] != "draft" or r["created_by"] == uid]
+    result = []
+    for r in rows:
+        status = r["status"]
+        is_mine = r["created_by"] == uid
+        can_see_all_pending = role in ("principal", "admin")
+        # Drafts: only the creator sees them
+        if status == "draft" and not is_mine:
+            continue
+        # Pending: only the creator or principal/admin sees them
+        if status == "pending_approval" and not is_mine and not can_see_all_pending:
+            continue
+        result.append(_event_row(r, db))
+    return result
 
 
 @router.post("", status_code=201)

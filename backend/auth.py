@@ -96,7 +96,7 @@ def require_appraisal_access(user=Depends(get_current_user)):
 
 
 def require_event_manager(user=Depends(get_current_user)):
-    """Event creation/management: principal, coordinator, and dean."""
-    if user["role"] not in ("principal", "coordinator", "dean", "admin"):
-        raise HTTPException(403, "Event management requires Principal, Coordinator, or Dean role")
+    """Event creation/management: all personnel except principal."""
+    if user["role"] not in ("teacher", "coordinator", "dean", "registrar", "admin"):
+        raise HTTPException(403, "Principal accounts are for oversight only and cannot create events")
     return user
