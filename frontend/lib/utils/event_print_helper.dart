@@ -1569,7 +1569,7 @@ function downloadDoc() {
     if (phase1Raw != null) {
       try {
         final decoded = jsonDecode(phase1Raw.toString());
-        if (decoded is List && decoded.isNotEmpty) {
+        if (decoded is List) {
           final buf = StringBuffer();
           for (var i = 0; i < decoded.length; i++) {
             final m = decoded[i] as Map;

@@ -912,34 +912,70 @@ class _AddEventScreenState extends State<AddEventScreen> {
               "The training shall be composed of lectures, video clip viewing, sharing and games. 5E's approach shall be utilized for most of the sessions.",
               style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
             const SizedBox(height: 20),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width - 96),
-                child: Container(
-                  decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Table(
-                    columnWidths: const {
-                      0: FixedColumnWidth(90), 1: FixedColumnWidth(160), 2: FixedColumnWidth(220), 3: FixedColumnWidth(44),
-                    },
-                    children: [
-                      TableRow(
-                        decoration: const BoxDecoration(color: Color(0xFFF7F9FC)),
-                        children: [
-                          ...['Phase', 'Stage', 'Activities']
-                              .map((h) => Padding(padding: const EdgeInsets.all(12),
-                                  child: Text(h, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)))),
-                          const SizedBox(),
-                        ],
-                      ),
-                      ..._methodologyRows.asMap().entries.map((e) =>
-                          _phaseRow(e.key, e.value, _methodologyRows.length > 1)),
-                    ],
-                  ),
+            Container(
+              decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(8)),
+              child: Column(children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                      color: Color(0xFFF7F9FC),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
+                  child: const Row(children: [
+                    Expanded(flex: 1, child: Text('Phase', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    Expanded(flex: 2, child: Text('Stage', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    Expanded(flex: 3, child: Text('Activities', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    SizedBox(width: 36),
+                  ]),
                 ),
-              ),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                ..._methodologyRows.asMap().entries.map((e) => Column(children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Expanded(flex: 1, child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                              child: Text('Phase ${e.key + 1}',
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)))),
+                          const SizedBox(width: 8),
+                          Expanded(flex: 2, child: TextField(
+                            controller: e.value['stage'], maxLines: null,
+                            style: const TextStyle(fontSize: 13),
+                            decoration: InputDecoration(
+                              filled: true, fillColor: const Color(0xFFF7F9FC),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              contentPadding: const EdgeInsets.all(10)),
+                          )),
+                          const SizedBox(width: 8),
+                          Expanded(flex: 3, child: TextField(
+                            controller: e.value['activities'], maxLines: null,
+                            style: const TextStyle(fontSize: 13),
+                            decoration: InputDecoration(
+                              filled: true, fillColor: const Color(0xFFF7F9FC),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              contentPadding: const EdgeInsets.all(10)),
+                          )),
+                          const SizedBox(width: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: GestureDetector(
+                              onTap: () => setState(() => _methodologyRows.removeAt(e.key)),
+                              child: const Icon(Icons.remove_circle_outline, size: 20, color: Color(0xFFE53E3E)),
+                            ),
+                          ),
+                        ]),
+                      ),
+                      if (e.key < _methodologyRows.length - 1)
+                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    ])),
+              ]),
             ),
             const SizedBox(height: 12),
             TextButton.icon(
@@ -1280,42 +1316,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
         ),
       ),
     );
-  }
-
-  TableRow _phaseRow(int index, Map<String, TextEditingController> row, bool canRemove) {
-    return TableRow(children: [
-      Padding(padding: const EdgeInsets.all(12),
-          child: Text('Phase ${index + 1}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-      Padding(padding: const EdgeInsets.all(8), child: TextField(
-        controller: row['stage'], maxLines: null,
-        style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(
-          filled: true, fillColor: const Color(0xFFF7F9FC),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-          contentPadding: const EdgeInsets.all(10)),
-      )),
-      Padding(padding: const EdgeInsets.all(8), child: TextField(
-        controller: row['activities'], maxLines: null,
-        style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(
-          filled: true, fillColor: const Color(0xFFF7F9FC),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-          contentPadding: const EdgeInsets.all(10)),
-      )),
-      Padding(padding: const EdgeInsets.all(8),
-          child: canRemove
-              ? GestureDetector(
-                  onTap: () => setState(() => _methodologyRows.removeAt(index)),
-                  child: const Icon(Icons.remove_circle_outline, size: 20, color: Color(0xFFE53E3E)),
-                )
-              : const SizedBox(width: 20)),
-    ]);
   }
 
   Widget _mini(TextEditingController c, String hint) {
