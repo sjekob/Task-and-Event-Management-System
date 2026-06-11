@@ -20,7 +20,10 @@ import 'screens/add_event_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final appState = AppState();
-  await appState.tryAutoLogin();
+  await appState.tryAutoLogin().timeout(
+    const Duration(seconds: 5),
+    onTimeout: () => false,
+  );
   runApp(
     ChangeNotifierProvider.value(
       value: appState,

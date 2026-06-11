@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.10:8000';
+  static const String baseUrl = 'http://localhost:8000'; // change to your PC's IP when testing on a physical device
 
   static String? _token;
 
@@ -39,20 +39,21 @@ class ApiService {
       Uri.parse('$baseUrl/api/auth/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'username': username, 'password': password}),
-    );
+    ).timeout(const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Cannot reach server. Check your network.'));
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
       await saveToken(data['token']);
       return data;
     }
-    throw Exception('Invalid credentials');
+    throw Exception('Invalid username or password');
   }
 
   static Future<User> getMe() async {
     final res = await http.get(
       Uri.parse('$baseUrl/api/auth/me'),
       headers: await _headers,
-    );
+    ).timeout(const Duration(seconds: 10), onTimeout: () => throw Exception('Timeout'));
     if (res.statusCode == 200) return User.fromJson(jsonDecode(res.body));
     throw Exception('Not authenticated');
   }

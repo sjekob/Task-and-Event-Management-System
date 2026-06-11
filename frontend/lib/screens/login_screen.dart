@@ -34,8 +34,9 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await state.login(_userCtrl.text.trim(), _passCtrl.text);
       // GoRouter's refreshListenable redirects to /dashboard automatically
-    } catch (_) {
-      setState(() => _error = 'Invalid username or password');
+    } catch (e) {
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      setState(() => _error = msg);
     }
   }
 

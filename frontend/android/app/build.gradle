@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace "com.example.tasknet"
-    compileSdk 35
+    compileSdk 36
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
