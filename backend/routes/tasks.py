@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
-from database import get_db
+from database import get_db, create_notification
 from auth import (get_current_user, require_task_creator, require_can_assign,
                   TASK_CREATORS, can_assign)
 
@@ -230,6 +230,15 @@ def create_task(req: CreateTaskRequest, user=Depends(require_task_creator)):
                     "INSERT INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?)",
                     (task_id, assign_uid, uid)
                 )
+                try:
+                    create_notification(
+                        db, assign_uid, "task",
+                        f"New task assigned: {req.title}",
+                        req.instructions[:120] if req.instructions else "",
+                        task_id,
+                    )
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -325,6 +334,15 @@ def assign_task(task_id: int, req: AssignRequest, user=Depends(require_can_assig
                 (task_id, assign_uid, uid)
             )
             added.append(assign_uid)
+            task_title = db.execute("SELECT title FROM tasks WHERE id=?", (task_id,)).fetchone()
+            try:
+                create_notification(
+                    db, assign_uid, "task",
+                    f"New task assigned: {task_title['title'] if task_title else 'a task'}",
+                    "", task_id,
+                )
+            except Exception:
+                pass
         except Exception:
             skipped.append(assign_uid)
 

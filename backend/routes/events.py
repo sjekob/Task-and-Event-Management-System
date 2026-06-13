@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db
+from database import get_db, create_notification
 from auth import get_current_user, require_admin_or_principal, require_event_manager
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
@@ -106,6 +106,23 @@ def create_event(body: EventCreateBody, db=Depends(get_db),
     )
     db.commit()
     row = db.execute("SELECT * FROM events ORDER BY id DESC LIMIT 1").fetchone()
+    event_id = row["id"]
+    # Notify all active users when an event is submitted for approval
+    if status == "pending_approval":
+        try:
+            recipients = db.execute(
+                "SELECT id FROM users WHERE is_active=1 AND id!=?", (uid,)
+            ).fetchall()
+            for r in recipients:
+                create_notification(
+                    db, r["id"], "event",
+                    f"New event proposal: {body.title}",
+                    f"Submitted for approval — {body.target_date or 'date TBD'}",
+                    event_id,
+                )
+            db.commit()
+        except Exception:
+            pass
     return _event_row(row, db)
 
 

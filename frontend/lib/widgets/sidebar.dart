@@ -1,6 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../theme/app_theme.dart';
+import '../services/api_service.dart';
 import '../widgets/common_widgets.dart';
 
 enum NavPage { dashboard, taskManager, myTasks, activity, personnelManagement, appraisal, eventManagement }
@@ -40,6 +42,38 @@ class AppSidebar extends StatefulWidget {
 
 class _AppSidebarState extends State<AppSidebar> {
   bool _collapsed = false;
+  int  _unreadCount = 0;
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUnread();
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _fetchUnread());
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchUnread() async {
+    try {
+      final count = await ApiService.getUnreadNotificationCount();
+      if (mounted) setState(() => _unreadCount = count);
+    } catch (_) {}
+  }
+
+  Future<void> _openNotifications() async {
+    await ApiService.markAllNotificationsRead();
+    if (mounted) setState(() => _unreadCount = 0);
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (_) => const _NotificationPanel(),
+    );
+  }
 
   bool get _isTopManager =>
       widget.userRole == 'admin' || widget.userRole == 'principal';
@@ -241,30 +275,68 @@ class _AppSidebarState extends State<AppSidebar> {
                   ),
                 ]),
                 const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: widget.onLogout,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.logout_rounded,
-                            color: Color(0xCCFFFFFF), size: 15),
-                        const SizedBox(width: 7),
-                        Text('Logout',
-                            style: GoogleFonts.plusJakartaSans(
-                                color: const Color(0xCCFFFFFF),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500)),
-                      ],
+                Row(children: [
+                  // Notification bell
+                  GestureDetector(
+                    onTap: _openNotifications,
+                    child: Stack(clipBehavior: Clip.none, children: [
+                      Container(
+                        width: 34, height: 34,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: const Icon(Icons.notifications_outlined,
+                            color: Color(0xCCFFFFFF), size: 17),
+                      ),
+                      if (_unreadCount > 0)
+                        Positioned(
+                          top: -4, right: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFE53E3E),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              _unreadCount > 9 ? '9+' : '$_unreadCount',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                    ]),
+                  ),
+                  const SizedBox(width: 8),
+                  // Logout
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: widget.onLogout,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.logout_rounded,
+                                color: Color(0xCCFFFFFF), size: 15),
+                            const SizedBox(width: 7),
+                            Text('Logout',
+                                style: GoogleFonts.plusJakartaSans(
+                                    color: const Color(0xCCFFFFFF),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ]),
               ],
             ),
     );
@@ -602,5 +674,137 @@ String _roleLabelFor(String role) {
     case 'teacher':     return 'Teacher';
     case 'registrar':   return 'Registrar';
     default:            return role;
+  }
+}
+
+// ── Notification Panel ────────────────────────────────────────────────────────
+
+class _NotificationPanel extends StatefulWidget {
+  const _NotificationPanel();
+
+  @override
+  State<_NotificationPanel> createState() => _NotificationPanelState();
+}
+
+class _NotificationPanelState extends State<_NotificationPanel> {
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await ApiService.getNotifications();
+      if (mounted) setState(() { _items = data; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _delete(int id) async {
+    await ApiService.deleteNotification(id);
+    setState(() => _items.removeWhere((n) => n['id'] == id));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SizedBox(
+        width: 360,
+        height: 480,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 12, 0),
+            child: Row(children: [
+              const Icon(Icons.notifications_outlined, size: 18, color: Color(0xFF1A1A2E)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Notifications',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A1A2E))),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () => Navigator.pop(context),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+            ]),
+          ),
+          const Divider(height: 16),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                : _items.isEmpty
+                    ? const Center(
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.notifications_none_outlined,
+                              size: 40, color: Color(0xFFB0B7C3)),
+                          SizedBox(height: 10),
+                          Text('No notifications yet',
+                              style: TextStyle(fontSize: 13, color: Color(0xFF718096))),
+                        ]),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        itemCount: _items.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final n = _items[i];
+                          final isRead = (n['is_read'] as int?) == 1;
+                          final type = n['type']?.toString() ?? 'general';
+                          final icon = type == 'task'
+                              ? Icons.task_alt_outlined
+                              : type == 'event'
+                                  ? Icons.event_outlined
+                                  : Icons.info_outline;
+                          final iconColor = type == 'task'
+                              ? const Color(0xFF60A5FA)
+                              : type == 'event'
+                                  ? const Color(0xFF48BB78)
+                                  : const Color(0xFFED8936);
+                          return ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            leading: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: iconColor.withValues(alpha: 0.12),
+                              child: Icon(icon, size: 16, color: iconColor),
+                            ),
+                            title: Text(n['title']?.toString() ?? '',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: isRead
+                                        ? FontWeight.w400
+                                        : FontWeight.w600,
+                                    color: const Color(0xFF1A1A2E))),
+                            subtitle: (n['body']?.toString() ?? '').isNotEmpty
+                                ? Text(n['body'].toString(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 11, color: Color(0xFF718096)))
+                                : null,
+                            trailing: IconButton(
+                              icon: const Icon(Icons.close,
+                                  size: 14, color: Color(0xFFB0B7C3)),
+                              onPressed: () => _delete(n['id'] as int),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 24, minHeight: 24),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ]),
+      ),
+    );
   }
 }

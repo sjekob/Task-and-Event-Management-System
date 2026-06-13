@@ -52,6 +52,15 @@ class _MainShellState extends State<MainShell> {
   bool _showTemplateBtn(String loc, String role) =>
       loc == '/tasks' && (role == 'admin' || role == 'principal');
 
+  String _stripRolePrefix(String name, String role) {
+    if (name.isEmpty || role.isEmpty) return name;
+    final prefix = role.toLowerCase();
+    if (name.toLowerCase().startsWith('$prefix ')) {
+      return name.substring(role.length + 1).trim();
+    }
+    return name;
+  }
+
   @override
   Widget build(BuildContext context) {
     final role = context.watch<AppState>().userRole;
@@ -59,9 +68,10 @@ class _MainShellState extends State<MainShell> {
     final loc = GoRouterState.of(context).matchedLocation;
     final currentPage = _locationToPage(loc);
     final isMobile = MediaQuery.of(context).size.width < 768;
-    final displayName = (user != null && (user.firstName?.isNotEmpty ?? false))
+    final rawName = (user != null && (user.firstName?.isNotEmpty ?? false))
         ? '${user.firstName}${user.lastName != null ? ' ${user.lastName}' : ''}'
         : user?.fullName ?? 'User';
+    final displayName = _stripRolePrefix(rawName, role);
 
     return Scaffold(
       key: _scaffoldKey,

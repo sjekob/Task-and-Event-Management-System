@@ -601,4 +601,49 @@ class ApiService {
     );
     if (res.statusCode != 200) throw Exception('Failed to delete event');
   }
+
+  // ── Notifications ───────────────────────────────────────────────────────────
+
+  static Future<List<Map<String, dynamic>>> getNotifications() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/notifications'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    throw Exception('Failed to load notifications');
+  }
+
+  static Future<int> getUnreadNotificationCount() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/notifications/unread-count'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return (jsonDecode(res.body) as Map<String, dynamic>)['count'] as int;
+    }
+    return 0;
+  }
+
+  static Future<void> markNotificationRead(int id) async {
+    await http.post(
+      Uri.parse('$baseUrl/api/notifications/$id/read'),
+      headers: await _headers,
+    );
+  }
+
+  static Future<void> markAllNotificationsRead() async {
+    await http.post(
+      Uri.parse('$baseUrl/api/notifications/read-all'),
+      headers: await _headers,
+    );
+  }
+
+  static Future<void> deleteNotification(int id) async {
+    await http.delete(
+      Uri.parse('$baseUrl/api/notifications/$id'),
+      headers: await _headers,
+    );
+  }
 }

@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 DB_PATH = "tasknet.db"
-SCHEMA_VERSION = 7  # bump when schema changes
+SCHEMA_VERSION = 8  # bump when schema changes
 
 
 def get_db():
@@ -281,6 +281,19 @@ def init_db():
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- ── Notifications ─────────────────────────────────────────────────────────
+    -- Per-user in-app notifications triggered by task assignments and event posts.
+    CREATE TABLE IF NOT EXISTS notifications (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type       TEXT NOT NULL CHECK(type IN ('task','event','comment','general')),
+        title      TEXT NOT NULL,
+        body       TEXT,
+        ref_id     INTEGER,
+        is_read    INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS event_evaluations (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id         INTEGER NOT NULL REFERENCES school_events(id) ON DELETE CASCADE,
@@ -301,6 +314,14 @@ def init_db():
     conn.commit()
     _seed(conn)
     conn.close()
+
+
+def create_notification(db, user_id: int, notif_type: str, title: str, body: str = "", ref_id: int = None):
+    """Insert one in-app notification for a user. Caller owns the commit."""
+    db.execute(
+        "INSERT INTO notifications (user_id, type, title, body, ref_id) VALUES (?,?,?,?,?)",
+        (user_id, notif_type, title, body, ref_id),
+    )
 
 
 def _seed(conn):

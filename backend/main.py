@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from database import init_db
-from routes import auth, users, tasks, reports, comments, dashboard, templates, personnel, appraisal, events
+from routes import auth, users, tasks, reports, comments, dashboard, templates, personnel, appraisal, events, notifications
 
 app = FastAPI(title="TaskNet API", docs_url="/docs", redoc_url="/redoc")
 
@@ -35,3 +35,4 @@ app.include_router(templates.router)
 app.include_router(personnel.router)
 app.include_router(appraisal.router)
 app.include_router(events.router)
+app.include_router(notifications.router)
