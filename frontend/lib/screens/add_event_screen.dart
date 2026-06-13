@@ -45,6 +45,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
   late final TextEditingController _focalRoleCtrl;
   late final TextEditingController _focalCpCtrl;
   late String _nature;
+  late final TextEditingController _pCat1Ctrl;
+  late final TextEditingController _pCat2Ctrl;
   int _tMale = 0, _tFemale = 0, _jMale = 0, _jFemale = 0;
   late final List<TextEditingController> _outputCtrls;
 
@@ -53,9 +55,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   late final List<TextEditingController> _objCtrls;
 
   // Step 3
-  late final TextEditingController _p1Ctrl;
-  late final TextEditingController _p2Ctrl;
-  late final TextEditingController _p3Ctrl;
+  late List<Map<String, TextEditingController>> _methodologyRows;
 
   // Step 4
   late List<Map<String, TextEditingController>> _matrixRows;
@@ -69,19 +69,18 @@ class _AddEventScreenState extends State<AddEventScreen> {
   // Step 6
   late final TextEditingController _meCtrl;
   late final TextEditingController _commentsCtrl;
-  final List<Map<String, dynamic>> _indicators = [
-    {'label': 'The special program has an approved proposal.',                                                                                  'value': '', 'remarks': TextEditingController()},
-    {'label': 'The training matrix was observed or was completely delivered.',                                                                  'value': '', 'remarks': TextEditingController()},
-    {'label': 'The number of days were maximized as stated in the training design.',                                                            'value': '', 'remarks': TextEditingController()},
-    {'label': 'The objectives of the special program were met.',                                                                                'value': '', 'remarks': TextEditingController()},
-    {'label': 'The monitoring and evaluation tools were utilized.',                                                                             'value': '', 'remarks': TextEditingController()},
-    {'label': 'Participants were able to submit the required output.',                                                                          'value': '', 'remarks': TextEditingController()},
-    {'label': 'Attendance was systematically monitored.',                                                                                       'value': '', 'remarks': TextEditingController()},
-    {'label': 'The venue was conducive.',                                                                                                       'value': '', 'remarks': TextEditingController()},
-    {'label': 'The Session started and ended on time.',                                                                                        'value': '', 'remarks': TextEditingController()},
-    {'label': 'The trainers/facilitators used appropriate resource package (Pretest and post-tests, power point, video presentation, etc.)',    'value': '', 'remarks': TextEditingController()},
-  ];
+  late List<Map<String, dynamic>> _indicators;
 
+  Map<String, dynamic> _newIndicator({String label = '', String value = '', String remarks = ''}) => {
+    'label': TextEditingController(text: label),
+    'value': value,
+    'remarks': TextEditingController(text: remarks),
+  };
+
+  Map<String, TextEditingController> _newPhase({String stage='',String activities=''}) => {
+    'stage': TextEditingController(text: stage),
+    'activities': TextEditingController(text: activities),
+  };
   Map<String, TextEditingController> _newMatrix({String day='',String time='',String event='',String speaker=''}) => {
     'day': TextEditingController(text: day),
     'time': TextEditingController(text: time),
@@ -128,15 +127,29 @@ class _AddEventScreenState extends State<AddEventScreen> {
     _nature        = e?['nature'] ?? 'Co-curricular';
 
     // Parse participants
+    String pCat1 = 'Teachers/Speakers';
+    String pCat2 = 'Aspiring journalists';
     if (e?['participants'] != null) {
       try {
         final p = jsonDecode(e!['participants']) as Map<String, dynamic>;
-        _tMale   = (p['teachers']?['male']    ?? 0) as int;
-        _tFemale = (p['teachers']?['female']  ?? 0) as int;
-        _jMale   = (p['journalists']?['male']   ?? 0) as int;
-        _jFemale = (p['journalists']?['female'] ?? 0) as int;
+        final rows = p['rows'] as List?;
+        if (rows != null && rows.length >= 2) {
+          pCat1    = (rows[0]['category'] ?? pCat1).toString();
+          _tMale   = (rows[0]['male']   ?? 0) as int;
+          _tFemale = (rows[0]['female'] ?? 0) as int;
+          pCat2    = (rows[1]['category'] ?? pCat2).toString();
+          _jMale   = (rows[1]['male']   ?? 0) as int;
+          _jFemale = (rows[1]['female'] ?? 0) as int;
+        } else {
+          _tMale   = (p['teachers']?['male']    ?? 0) as int;
+          _tFemale = (p['teachers']?['female']  ?? 0) as int;
+          _jMale   = (p['journalists']?['male']   ?? 0) as int;
+          _jFemale = (p['journalists']?['female'] ?? 0) as int;
+        }
       } catch (_) {}
     }
+    _pCat1Ctrl = TextEditingController(text: pCat1);
+    _pCat2Ctrl = TextEditingController(text: pCat2);
 
     // Parse expected outputs
     List<String> outputs = ['', ''];
@@ -165,10 +178,26 @@ class _AddEventScreenState extends State<AddEventScreen> {
       _objCtrls.addAll([TextEditingController(), TextEditingController(), TextEditingController()]);
     }
 
-    // Step 3
-    _p1Ctrl = TextEditingController(text: e?['phase1'] ?? 'Planning\nRecruitment of participants');
-    _p2Ctrl = TextEditingController(text: e?['phase2'] ?? 'Training-workshop sessions');
-    _p3Ctrl = TextEditingController(text: e?['phase3'] ?? 'Selection of school paper staff\nEvaluation of the activity');
+    // Step 3 - Methodology phases
+    _methodologyRows = [];
+    if (e?['phase1'] != null) {
+      try {
+        final decoded = jsonDecode(e!['phase1']);
+        if (decoded is List && decoded.isNotEmpty) {
+          _methodologyRows = decoded.map((r) => _newPhase(
+            stage: (r['stage'] ?? '').toString(),
+            activities: (r['activities'] ?? '').toString(),
+          )).toList();
+        }
+      } catch (_) {}
+    }
+    if (_methodologyRows.isEmpty) {
+      _methodologyRows = [
+        _newPhase(stage: 'Pre-Implementation Stage', activities: (e?['phase1'] ?? 'Planning\nRecruitment of participants').toString()),
+        _newPhase(stage: 'Implementation', activities: (e?['phase2'] ?? 'Training-workshop sessions').toString()),
+        _newPhase(stage: 'Post-Implementation', activities: (e?['phase3'] ?? 'Selection of school paper staff\nEvaluation of the activity').toString()),
+      ];
+    }
 
     // Step 4 - Activity matrix
     _matrixRows = [];
@@ -263,18 +292,21 @@ class _AddEventScreenState extends State<AddEventScreen> {
     _meCtrl       = TextEditingController(text: e?['monitoring_criteria'] ?? '');
     _commentsCtrl = TextEditingController(text: e?['comments'] ?? '');
 
-    // Pre-fill indicators if editing
+    // Indicators
+    _indicators = [];
     if (e?['indicators'] != null) {
       try {
         final decoded = jsonDecode(e!['indicators']);
-        if (decoded is List) {
-          for (int i = 0; i < decoded.length && i < _indicators.length; i++) {
-            _indicators[i]['value'] = decoded[i]['value'] ?? '';
-            (_indicators[i]['remarks'] as TextEditingController).text = decoded[i]['remarks'] ?? '';
-          }
+        if (decoded is List && decoded.isNotEmpty) {
+          _indicators = decoded.map((d) => _newIndicator(
+            label: (d['label'] ?? '').toString(),
+            value: (d['value'] ?? '').toString(),
+            remarks: (d['remarks'] ?? '').toString(),
+          )).toList();
         }
       } catch (_) {}
     }
+    if (_indicators.isEmpty) _indicators = [_newIndicator()];
   }
 
   @override
@@ -282,10 +314,23 @@ class _AddEventScreenState extends State<AddEventScreen> {
     _titleCtrl.dispose(); _dateCtrl.dispose(); _venueCtrl.dispose();
     _budgetCtrl.dispose(); _fundCtrl.dispose(); _focalNameCtrl.dispose();
     _focalRoleCtrl.dispose(); _focalCpCtrl.dispose();
-    _rationaleCtrl.dispose(); _p1Ctrl.dispose(); _p2Ctrl.dispose();
-    _p3Ctrl.dispose(); _meCtrl.dispose(); _commentsCtrl.dispose();
-    for (final c in _outputCtrls) c.dispose();
-    for (final c in _objCtrls) c.dispose();
+    _rationaleCtrl.dispose();
+    _meCtrl.dispose(); _commentsCtrl.dispose();
+    _pCat1Ctrl.dispose(); _pCat2Ctrl.dispose();
+    for (final c in _outputCtrls) {
+      c.dispose();
+    }
+    for (final c in _objCtrls) {
+      c.dispose();
+    }
+    for (final ind in _indicators) {
+      (ind['label'] as TextEditingController).dispose();
+      (ind['remarks'] as TextEditingController).dispose();
+    }
+    for (final row in _methodologyRows) {
+      row['stage']!.dispose();
+      row['activities']!.dispose();
+    }
     super.dispose();
   }
 
@@ -293,6 +338,93 @@ class _AddEventScreenState extends State<AddEventScreen> {
     setState(() => _step = s);
     _pageController.animateToPage(s,
         duration: const Duration(milliseconds: 220), curve: Curves.easeInOut);
+  }
+
+  /// Returns the step index and a message for the first unanswered required
+  /// field, or null if every field across all steps has been filled in.
+  (int, String)? _firstEmptyField() {
+    // Step 1 - Proposal Brief
+    if (_titleCtrl.text.trim().isEmpty) return (0, 'Please enter the event title.');
+    if (_dateCtrl.text.trim().isEmpty) return (0, 'Please enter the target date.');
+    if (_venueCtrl.text.trim().isEmpty) return (0, 'Please enter the proposed venue.');
+    if (_pCat1Ctrl.text.trim().isEmpty) return (0, 'Please name the first target participant category.');
+    if (_pCat2Ctrl.text.trim().isEmpty) return (0, 'Please name the second target participant category.');
+    for (var i = 0; i < _outputCtrls.length; i++) {
+      if (_outputCtrls[i].text.trim().isEmpty) return (0, 'Please fill in expected output #${i + 1}.');
+    }
+    if (_budgetCtrl.text.trim().isEmpty) return (0, 'Please enter the proposed budget.');
+    if (_fundCtrl.text.trim().isEmpty) return (0, 'Please enter the source of fund.');
+    if (_focalNameCtrl.text.trim().isEmpty) return (0, "Please enter the focal person's name.");
+    if (_focalRoleCtrl.text.trim().isEmpty) return (0, "Please enter the focal person's designation.");
+    if (_focalCpCtrl.text.trim().isEmpty) return (0, "Please enter the focal person's contact number.");
+
+    // Step 2 - Rationale & Objectives
+    if (_rationaleCtrl.text.trim().isEmpty) return (1, 'Please provide the rationale.');
+    for (var i = 0; i < _objCtrls.length; i++) {
+      if (_objCtrls[i].text.trim().isEmpty) return (1, 'Please fill in objective #${i + 1}.');
+    }
+
+    // Step 3 - Methodology
+    for (var i = 0; i < _methodologyRows.length; i++) {
+      final row = _methodologyRows[i];
+      if (row['stage']!.text.trim().isEmpty) return (2, 'Please fill in the stage for Phase ${i + 1}.');
+      if (row['activities']!.text.trim().isEmpty) return (2, 'Please fill in the activities for Phase ${i + 1}.');
+    }
+
+    // Step 4 - Activity Matrix
+    for (var i = 0; i < _matrixRows.length; i++) {
+      final row = _matrixRows[i];
+      if (row['day']!.text.trim().isEmpty) return (3, 'Please fill in the day for activity matrix row ${i + 1}.');
+      if (row['time']!.text.trim().isEmpty) return (3, 'Please fill in the time for activity matrix row ${i + 1}.');
+      if (row['event']!.text.trim().isEmpty) return (3, 'Please fill in the event for activity matrix row ${i + 1}.');
+      if (row['speaker']!.text.trim().isEmpty) return (3, 'Please fill in the speaker for activity matrix row ${i + 1}.');
+    }
+
+    // Step 5 - Budget
+    for (var i = 0; i < _matRows.length; i++) {
+      final row = _matRows[i];
+      if (row['item']!.text.trim().isEmpty) return (4, 'Please fill in the item for training material row ${i + 1}.');
+      if (row['qty']!.text.trim().isEmpty) return (4, 'Please fill in the quantity for training material row ${i + 1}.');
+      if (row['cost']!.text.trim().isEmpty) return (4, 'Please fill in the cost for training material row ${i + 1}.');
+      if (row['total']!.text.trim().isEmpty) return (4, 'Please fill in the total for training material row ${i + 1}.');
+    }
+    for (var i = 0; i < _snackRows.length; i++) {
+      final row = _snackRows[i];
+      if (row['item']!.text.trim().isEmpty) return (4, 'Please fill in the item for snack row ${i + 1}.');
+      if (row['pax']!.text.trim().isEmpty) return (4, 'Please fill in the pax for snack row ${i + 1}.');
+      if (row['cost']!.text.trim().isEmpty) return (4, 'Please fill in the cost for snack row ${i + 1}.');
+      if (row['total']!.text.trim().isEmpty) return (4, 'Please fill in the total for snack row ${i + 1}.');
+    }
+    for (var i = 0; i < _execRows.length; i++) {
+      final row = _execRows[i];
+      if (row['name']!.text.trim().isEmpty) return (4, 'Please fill in the name for executive committee member ${i + 1}.');
+      if (row['position']!.text.trim().isEmpty) return (4, 'Please fill in the position for executive committee member ${i + 1}.');
+    }
+    for (var i = 0; i < _twgGroups.length; i++) {
+      final group = _twgGroups[i];
+      final title = group['title'] as TextEditingController;
+      if (title.text.trim().isEmpty) return (4, 'Please name TWG group ${i + 1}.');
+      final members = group['members'] as List<Map<String, TextEditingController>>;
+      for (var j = 0; j < members.length; j++) {
+        final m = members[j];
+        if (m['name']!.text.trim().isEmpty) return (4, 'Please fill in the name for ${title.text} member ${j + 1}.');
+        if (m['designation']!.text.trim().isEmpty) return (4, 'Please fill in the designation for ${title.text} member ${j + 1}.');
+        if (m['tor']!.text.trim().isEmpty) return (4, 'Please fill in the terms of reference for ${title.text} member ${j + 1}.');
+        if (m['output']!.text.trim().isEmpty) return (4, 'Please fill in the output for ${title.text} member ${j + 1}.');
+      }
+    }
+
+    // Step 6 - Monitoring & Evaluation
+    if (_meCtrl.text.trim().isEmpty) return (5, 'Please provide the monitoring instructions / evaluation criteria.');
+    for (var i = 0; i < _indicators.length; i++) {
+      final ind = _indicators[i];
+      if ((ind['label'] as TextEditingController).text.trim().isEmpty) return (5, 'Please fill in indicator #${i + 1}.');
+      if ((ind['value'] as String).isEmpty) return (5, 'Please mark indicator #${i + 1} as Evident or Not Evident.');
+      if ((ind['remarks'] as TextEditingController).text.trim().isEmpty) return (5, 'Please add remarks for indicator #${i + 1}.');
+    }
+    if (_commentsCtrl.text.trim().isEmpty) return (5, 'Please add comments and recommendations.');
+
+    return null;
   }
 
   Map<String, dynamic> _buildPayload() {
@@ -321,7 +453,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
           .toList(),
     }).toList();
     final indicatorData = _indicators.map((ind) => {
-      'label': ind['label'], 'value': ind['value'],
+      'label': (ind['label'] as TextEditingController).text,
+      'value': ind['value'],
       'remarks': (ind['remarks'] as TextEditingController).text,
     }).toList();
 
@@ -337,14 +470,23 @@ class _AddEventScreenState extends State<AddEventScreen> {
       'focal_contact':      _focalCpCtrl.text,
       'expected_outputs':   jsonEncode(_outputCtrls.map((c) => c.text).toList()),
       'participants': jsonEncode({
-        'teachers':    {'male': _tMale, 'female': _tFemale},
-        'journalists': {'male': _jMale, 'female': _jFemale},
+        'rows': [
+          {'category': _pCat1Ctrl.text, 'male': _tMale, 'female': _tFemale, 'total': _tMale + _tFemale},
+          {'category': _pCat2Ctrl.text, 'male': _jMale, 'female': _jFemale, 'total': _jMale + _jFemale},
+        ],
+        'totals': {
+          'male': _tMale + _jMale,
+          'female': _tFemale + _jFemale,
+          'total': _tMale + _tFemale + _jMale + _jFemale,
+        },
       }),
       'rationale':           _rationaleCtrl.text,
       'objectives':          jsonEncode(_objCtrls.map((c) => c.text).toList()),
-      'phase1':              _p1Ctrl.text,
-      'phase2':              _p2Ctrl.text,
-      'phase3':              _p3Ctrl.text,
+      'phase1':              jsonEncode(_methodologyRows.map((r) => {
+        'stage': r['stage']!.text, 'activities': r['activities']!.text,
+      }).toList()),
+      'phase2':              '',
+      'phase3':              '',
       'activity_matrix':     jsonEncode(matrixData),
       'training_materials':  jsonEncode(matData),
       'snacks':              jsonEncode(snackData),
@@ -366,12 +508,16 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   Future<void> _submit({bool asDraft = false}) async {
-    if (!asDraft && _titleCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the event title in Step 1.')),
-      );
-      _goTo(0);
-      return;
+    if (!asDraft) {
+      final issue = _firstEmptyField();
+      if (issue != null) {
+        final (step, message) = issue;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: const Color(0xFFE53E3E)),
+        );
+        _goTo(step);
+        return;
+      }
     }
     setState(() => _submitting = true);
 
@@ -656,8 +802,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
                                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))))
                         .toList(),
                   ),
-                  _paxRow('Teachers/Speakers', _tMale, _tFemale, 'tm', 'tf'),
-                  _paxRow('Aspiring journalists', _jMale, _jFemale, 'jm', 'jf'),
+                  _paxRow(_pCat1Ctrl, _tMale, _tFemale, 'tm', 'tf'),
+                  _paxRow(_pCat2Ctrl, _jMale, _jFemale, 'jm', 'jf'),
                   TableRow(children: [
                     const Padding(padding: EdgeInsets.all(10),
                         child: Text('TOTAL', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
@@ -766,34 +912,77 @@ class _AddEventScreenState extends State<AddEventScreen> {
               "The training shall be composed of lectures, video clip viewing, sharing and games. 5E's approach shall be utilized for most of the sessions.",
               style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
             const SizedBox(height: 20),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width - 96),
-                child: Container(
-                  decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Table(
-                    columnWidths: const {
-                      0: FixedColumnWidth(90), 1: FixedColumnWidth(160), 2: FixedColumnWidth(220),
-                    },
-                    children: [
-                      TableRow(
-                        decoration: const BoxDecoration(color: Color(0xFFF7F9FC)),
-                        children: ['Phase', 'Stage', 'Activities']
-                            .map((h) => Padding(padding: const EdgeInsets.all(12),
-                                child: Text(h, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))))
-                            .toList(),
-                      ),
-                      _phaseRow('Phase 1', 'Pre-Implementation Stage', _p1Ctrl),
-                      _phaseRow('Phase 2', 'Implementation', _p2Ctrl),
-                      _phaseRow('Phase 3', 'Post-Implementation', _p3Ctrl),
-                    ],
-                  ),
+            Container(
+              decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(8)),
+              child: Column(children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                      color: Color(0xFFF7F9FC),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
+                  child: const Row(children: [
+                    Expanded(flex: 1, child: Text('Phase', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    Expanded(flex: 2, child: Text('Stage', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    Expanded(flex: 3, child: Text('Activities', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    SizedBox(width: 36),
+                  ]),
                 ),
-              ),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                ..._methodologyRows.asMap().entries.map((e) => Column(children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Expanded(flex: 1, child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                              child: Text('Phase ${e.key + 1}',
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)))),
+                          const SizedBox(width: 8),
+                          Expanded(flex: 2, child: TextField(
+                            controller: e.value['stage'], maxLines: null,
+                            style: const TextStyle(fontSize: 13),
+                            decoration: InputDecoration(
+                              filled: true, fillColor: const Color(0xFFF7F9FC),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              contentPadding: const EdgeInsets.all(10)),
+                          )),
+                          const SizedBox(width: 8),
+                          Expanded(flex: 3, child: TextField(
+                            controller: e.value['activities'], maxLines: null,
+                            style: const TextStyle(fontSize: 13),
+                            decoration: InputDecoration(
+                              filled: true, fillColor: const Color(0xFFF7F9FC),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                              contentPadding: const EdgeInsets.all(10)),
+                          )),
+                          const SizedBox(width: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: GestureDetector(
+                              onTap: () => setState(() => _methodologyRows.removeAt(e.key)),
+                              child: const Icon(Icons.remove_circle_outline, size: 20, color: Color(0xFFE53E3E)),
+                            ),
+                          ),
+                        ]),
+                      ),
+                      if (e.key < _methodologyRows.length - 1)
+                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    ])),
+              ]),
             ),
+            const SizedBox(height: 12),
+            TextButton.icon(
+                onPressed: () => setState(() => _methodologyRows.add(_newPhase())),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add phase'),
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFF63B3ED))),
           ],
         ),
       ),
@@ -1009,8 +1198,19 @@ class _AddEventScreenState extends State<AddEventScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                          Expanded(flex: 5, child: Text('${e.key + 1}. ${e.value['label']}',
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)))),
+                          Expanded(flex: 5, child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                            Text('${e.key + 1}. ', style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
+                            Expanded(child: TextField(
+                              controller: e.value['label'] as TextEditingController,
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                hintText: 'Indicator...',
+                                hintStyle: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12),
+                              ),
+                            )),
+                          ])),
                           const SizedBox(width: 8),
                           SizedBox(width: 80, child: Radio<String>(
                               value: 'evident', groupValue: e.value['value'] as String,
@@ -1036,6 +1236,13 @@ class _AddEventScreenState extends State<AddEventScreen> {
                               contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                             ),
                           )),
+                          if (_indicators.length > 1) ...[
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () => setState(() => _indicators.removeAt(e.key)),
+                              child: const Icon(Icons.remove_circle_outline, size: 20, color: Color(0xFFE53E3E)),
+                            ),
+                          ],
                         ]),
                       ),
                       if (e.key < _indicators.length - 1)
@@ -1043,6 +1250,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     ])),
               ]),
             ),
+            const SizedBox(height: 12),
+            TextButton.icon(
+                onPressed: () => setState(() => _indicators.add(_newIndicator())),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add indicator'),
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFF63B3ED))),
             const SizedBox(height: 24),
             _fLabel('Comments and Recommendations'),
             _tField(_commentsCtrl, hint: 'Write your comments and recommendations here...', maxLines: 5),
@@ -1054,10 +1267,19 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   // ── Shared helpers ────────────────────────────────────────────────────────
 
-  TableRow _paxRow(String label, int male, int female, String mk, String fk) {
+  TableRow _paxRow(TextEditingController labelCtrl, int male, int female, String mk, String fk) {
     return TableRow(children: [
       Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Text(label, style: const TextStyle(fontSize: 13))),
+          child: TextField(
+            controller: labelCtrl,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontSize: 13),
+            decoration: const InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              hintText: 'Category',
+            ),
+          )),
       _numCell(male, mk), _numCell(female, fk),
       Padding(padding: const EdgeInsets.all(10),
           child: Text('${male + female}', textAlign: TextAlign.center,
@@ -1074,8 +1296,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
         onChanged: (v) {
           final n = int.tryParse(v) ?? 0;
           setState(() {
-            if (key == 'tm') _tMale = n;
-            else if (key == 'tf') _tFemale = n;
+            if (key == 'tm') {
+              _tMale = n;
+            } else if (key == 'tf') _tFemale = n;
             else if (key == 'jm') _jMale = n;
             else if (key == 'jf') _jFemale = n;
           });
@@ -1093,26 +1316,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
         ),
       ),
     );
-  }
-
-  TableRow _phaseRow(String ph, String stage, TextEditingController ctrl) {
-    return TableRow(children: [
-      Padding(padding: const EdgeInsets.all(12),
-          child: Text(ph, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-      Padding(padding: const EdgeInsets.all(12),
-          child: Text(stage, style: const TextStyle(fontSize: 13))),
-      Padding(padding: const EdgeInsets.all(8), child: TextField(
-        controller: ctrl, maxLines: null,
-        style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(
-          filled: true, fillColor: const Color(0xFFF7F9FC),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-          contentPadding: const EdgeInsets.all(10)),
-      )),
-    ]);
   }
 
   Widget _mini(TextEditingController c, String hint) {
