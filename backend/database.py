@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 DB_PATH = "tasknet.db"
-SCHEMA_VERSION = 7  # bump when schema changes
+SCHEMA_VERSION = 8  # bump when schema changes
 
 
 def get_db():
@@ -266,6 +266,21 @@ def init_db():
             CHECK(status IN ('upcoming','ongoing','completed','cancelled')),
         created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- ── Notifications ─────────────────────────────────────────────────────────
+    -- Stores per-user in-app notifications for task/event assignments.
+    -- type: 'task' | 'event'
+    -- ref_id: the id of the task or event that triggered this notification
+    CREATE TABLE IF NOT EXISTS notifications (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type       TEXT NOT NULL CHECK(type IN ('task','event','comment','general')),
+        title      TEXT NOT NULL,
+        body       TEXT,
+        ref_id     INTEGER,
+        is_read    INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS event_evaluations (

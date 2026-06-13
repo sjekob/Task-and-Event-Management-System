@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'dart:io';
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
 import '../widgets/common_widgets.dart';
-import 'main_shell.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -36,12 +37,30 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await state.login(_userCtrl.text.trim(), _passCtrl.text);
       if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const MainShell()),
-        );
+        // GoRouter's refreshListenable fires on AppState.notifyListeners()
+        // and the redirect sends the user to /dashboard automatically.
+        // The explicit go() here is a safety net in case the listener fires
+        // slightly after this frame.
+        context.go('/dashboard');
       }
-    } catch (_) {
-      setState(() => _error = 'Invalid username or password');
+    } catch (e) {
+      String msg;
+      final err = e.toString().toLowerCase();
+      if (err.contains('socketexception') ||
+          err.contains('connection refused') ||
+          err.contains('network') ||
+          err.contains('failed host lookup') ||
+          err.contains('os error')) {
+        msg = 'Cannot reach server. Make sure the backend is running.';
+      } else if (err.contains('invalid credentials') ||
+          err.contains('invalid username') ||
+          err.contains('401') ||
+          err.contains('unauthorized')) {
+        msg = 'Invalid username or password.';
+      } else {
+        msg = 'Login failed. Please try again.';
+      }
+      setState(() => _error = msg);
     }
   }
 

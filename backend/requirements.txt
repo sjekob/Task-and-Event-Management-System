@@ -6,3 +6,8 @@ bcrypt>=4.1.0
 python-multipart>=0.0.9
 psycopg2-binary>=2.9.9
 python-dotenv>=1.0.0
+
+# Rate limiting — provides @limiter.limit() decorator and SlowAPIMiddleware
+# for per-IP and per-user request throttling (OWASP A07).
+slowapi>=0.1.9
+limits>=3.6.0

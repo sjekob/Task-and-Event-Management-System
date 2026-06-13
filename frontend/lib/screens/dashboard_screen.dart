@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
-import 'task_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -164,7 +164,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _openDetail(int id) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: id)));
+  /// Navigate to task detail. Opens inside the shell so the sidebar stays visible.
+  void _openDetail(int id) => context.go('/task-manager/$id');
 }
 
 class _DashTaskItem extends StatelessWidget {

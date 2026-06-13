@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.23:8000';
+  static const String baseUrl = 'http://localhost:8000';
   static String? _token;
 
   static Future<String?> get token async {
@@ -44,7 +44,7 @@ class ApiService {
       await saveToken(data['token']);
       return data;
     }
-    throw Exception('Invalid credentials');
+    throw Exception('Invalid username or password (401)');
   }
 
   static Future<User> getMe() async {
@@ -566,5 +566,55 @@ class ApiService {
       headers: await _headers,
     );
     if (res.statusCode != 200) throw Exception('Failed to delete event');
+  }
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+
+  /// Fetch all notifications for the current user (latest 50), newest first.
+  static Future<List<Map<String, dynamic>>> getNotifications() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/notifications'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    throw Exception('Failed to load notifications');
+  }
+
+  /// Return just the unread count — used to update the bell badge cheaply.
+  static Future<int> getUnreadNotificationCount() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/notifications/unread-count'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return (jsonDecode(res.body) as Map<String, dynamic>)['count'] as int;
+    }
+    return 0;
+  }
+
+  /// Mark a single notification as read.
+  static Future<void> markNotificationRead(int id) async {
+    await http.post(
+      Uri.parse('$baseUrl/api/notifications/$id/read'),
+      headers: await _headers,
+    );
+  }
+
+  /// Mark every unread notification as read (called when panel is opened).
+  static Future<void> markAllNotificationsRead() async {
+    await http.post(
+      Uri.parse('$baseUrl/api/notifications/read-all'),
+      headers: await _headers,
+    );
+  }
+
+  /// Permanently delete a notification.
+  static Future<void> deleteNotification(int id) async {
+    await http.delete(
+      Uri.parse('$baseUrl/api/notifications/$id'),
+      headers: await _headers,
+    );
   }
 }

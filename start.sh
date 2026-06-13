@@ -3,8 +3,8 @@
 
 echo "🚀 Starting TaskNet..."
 
-# Install dependencies
-pip install fastapi uvicorn python-multipart bcrypt python-jose[cryptography] --break-system-packages -q
+# Install dependencies from requirements.txt (includes all security packages)
+pip install -r "$(dirname "$0")/backend/requirements.txt" --break-system-packages -q
 
 # Start backend
 cd "$(dirname "$0")/backend"

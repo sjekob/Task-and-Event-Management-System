@@ -1,64 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'services/app_state.dart';
-import 'screens/login_screen.dart';
-import 'screens/main_shell.dart';
+import 'router.dart';
 
-void main() {
+/// Initialise auth before the first frame so the router never shows a
+/// spurious /login flash for users who already have a stored token.
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final appState = AppState();
+  await appState.tryAutoLogin(); // checks stored JWT token against /api/auth/me
+
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => AppState(),
-      child: const TaskNetApp(),
+    ChangeNotifierProvider.value(
+      value: appState,
+      child: TaskNetApp(appState: appState),
     ),
   );
 }
 
-class TaskNetApp extends StatelessWidget {
-  const TaskNetApp({super.key});
+class TaskNetApp extends StatefulWidget {
+  final AppState appState;
+  const TaskNetApp({super.key, required this.appState});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'TaskNet',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.theme,
-      home: const _SplashRouter(),
-    );
-  }
+  State<TaskNetApp> createState() => _TaskNetAppState();
 }
 
-class _SplashRouter extends StatefulWidget {
-  const _SplashRouter();
+class _TaskNetAppState extends State<TaskNetApp> {
+  late final GoRouter _router;
 
-  @override
-  State<_SplashRouter> createState() => _SplashRouterState();
-}
-
-class _SplashRouterState extends State<_SplashRouter> {
   @override
   void initState() {
     super.initState();
-    _check();
+    // Create the router once — refreshListenable wires auth state changes
+    // so GoRouter re-evaluates the redirect whenever login/logout happens.
+    _router = createRouter(widget.appState);
   }
 
-  Future<void> _check() async {
-    final state = context.read<AppState>();
-    final ok = await state.tryAutoLogin();
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => ok ? const MainShell() : const LoginScreen()),
-      );
-    }
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: AppTheme.bgColor,
-      body: Center(
-        child: CircularProgressIndicator(color: AppTheme.accentBlue),
-      ),
+    return MaterialApp.router(
+      title: 'TaskNet',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.theme,
+      routerConfig: _router,
     );
   }
 }

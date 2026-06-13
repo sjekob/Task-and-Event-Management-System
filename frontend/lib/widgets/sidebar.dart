@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../services/api_service.dart';
 
 enum NavPage { dashboard, taskManager, myTasks, activity, personnelManagement, appraisal, eventManagement }
 
@@ -40,6 +42,47 @@ class AppSidebar extends StatefulWidget {
 
 class _AppSidebarState extends State<AppSidebar> {
   bool _collapsed = false;
+
+  // ── Notification state ──
+  int _unreadCount = 0;
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUnreadCount();
+    // Poll for new notifications every 30 seconds.
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _fetchUnreadCount();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchUnreadCount() async {
+    try {
+      final count = await ApiService.getUnreadNotificationCount();
+      if (mounted) setState(() => _unreadCount = count);
+    } catch (_) {
+      // Silently ignore — network may not be ready yet.
+    }
+  }
+
+  void _openNotificationPanel(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (_) => _NotificationPanel(
+        onDismiss: () {
+          _fetchUnreadCount(); // refresh badge after panel is closed
+        },
+      ),
+    ).then((_) => _fetchUnreadCount());
+  }
 
   bool get _isTopManager =>
       widget.userRole == 'admin' || widget.userRole == 'principal';
@@ -101,6 +144,12 @@ class _AppSidebarState extends State<AppSidebar> {
                     onTap: () => widget.onNavigate(NavPage.activity),
                   ),
                   if (!_collapsed) _sectionLabel('MANAGEMENT'),
+                  // ── Notifications nav item ──
+                  _NotifNavItem(
+                    count: _unreadCount,
+                    collapsed: _collapsed,
+                    onTap: () => _openNotificationPanel(context),
+                  ),
                   if (_isTopManager || _canReassign)
                     _NavItem(
                       icon: Icons.check_box_outlined,
@@ -375,7 +424,7 @@ class _NavItemState extends State<_NavItem> {
 
 // ── Mobile Hamburger Drawer ───────────────────────────────────────────────────
 
-class MobileNavDrawer extends StatelessWidget {
+class MobileNavDrawer extends StatefulWidget {
   final NavPage currentPage;
   final String userName;
   final String userRole;
@@ -393,20 +442,40 @@ class MobileNavDrawer extends StatelessWidget {
     required this.onLogout,
   });
 
-  bool get _isTopManager => userRole == 'admin' || userRole == 'principal';
+  @override
+  State<MobileNavDrawer> createState() => _MobileNavDrawerState();
+}
+
+class _MobileNavDrawerState extends State<MobileNavDrawer> {
+  int _unreadCount = 0;
+
+  bool get _isTopManager => widget.userRole == 'admin' || widget.userRole == 'principal';
   bool get _canReassign =>
-      userRole == 'coordinator' || userRole == 'dean' ||
-      userRole == 'registrar';
-  bool get _isLeaf => userRole == 'teacher' || userRole == 'registrar';
+      widget.userRole == 'coordinator' || widget.userRole == 'dean' ||
+      widget.userRole == 'registrar';
+  bool get _isLeaf => widget.userRole == 'teacher' || widget.userRole == 'registrar';
   bool get _canManagePersonnel =>
-      userRole == 'principal' || userRole == 'registrar' || userRole == 'admin';
+      widget.userRole == 'principal' || widget.userRole == 'registrar' || widget.userRole == 'admin';
   bool get _hasAppraisalAccess =>
-      userRole == 'principal' || userRole == 'coordinator' ||
-      userRole == 'dean' || userRole == 'admin';
+      widget.userRole == 'principal' || widget.userRole == 'coordinator' ||
+      widget.userRole == 'dean' || widget.userRole == 'admin';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUnreadCount();
+  }
+
+  Future<void> _fetchUnreadCount() async {
+    try {
+      final count = await ApiService.getUnreadNotificationCount();
+      if (mounted) setState(() => _unreadCount = count);
+    } catch (_) {}
+  }
 
   void _navigate(BuildContext context, NavPage page) {
     Navigator.of(context).pop();
-    onNavigate(page);
+    widget.onNavigate(page);
   }
 
   @override
@@ -456,48 +525,62 @@ class MobileNavDrawer extends StatelessWidget {
                     _NavItem(
                       icon: Icons.dashboard_outlined,
                       label: 'Dashboard',
-                      isActive: currentPage == NavPage.dashboard,
+                      isActive: widget.currentPage == NavPage.dashboard,
                       onTap: () => _navigate(context, NavPage.dashboard),
                     ),
                     if (_canReassign || _isLeaf)
                       _NavItem(
                         icon: Icons.assignment_outlined,
                         label: 'My Tasks',
-                        isActive: currentPage == NavPage.myTasks,
+                        isActive: widget.currentPage == NavPage.myTasks,
                         onTap: () => _navigate(context, NavPage.myTasks),
                       ),
                     _NavItem(
                       icon: Icons.calendar_today_outlined,
                       label: 'Activity',
-                      isActive: currentPage == NavPage.activity,
+                      isActive: widget.currentPage == NavPage.activity,
                       onTap: () => _navigate(context, NavPage.activity),
                     ),
                     _drawerSectionLabel('MANAGEMENT'),
+                    // ── Notifications nav item ──
+                    _NotifNavItem(
+                      count: _unreadCount,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        showDialog(
+                          context: context,
+                          barrierColor: Colors.black54,
+                          builder: (_) => _NotificationPanel(
+                            onDismiss: _fetchUnreadCount,
+                          ),
+                        ).then((_) => _fetchUnreadCount());
+                      },
+                    ),
                     if (_isTopManager || _canReassign)
                       _NavItem(
                         icon: Icons.check_box_outlined,
                         label: 'Task Manager',
-                        isActive: currentPage == NavPage.taskManager,
+                        isActive: widget.currentPage == NavPage.taskManager,
                         onTap: () => _navigate(context, NavPage.taskManager),
                       ),
                     if (_canManagePersonnel)
                       _NavItem(
                         icon: Icons.people_outlined,
                         label: 'Personnel',
-                        isActive: currentPage == NavPage.personnelManagement,
+                        isActive: widget.currentPage == NavPage.personnelManagement,
                         onTap: () => _navigate(context, NavPage.personnelManagement),
                       ),
                     if (_hasAppraisalAccess)
                       _NavItem(
                         icon: Icons.star_border_outlined,
                         label: 'Appraisal',
-                        isActive: currentPage == NavPage.appraisal,
+                        isActive: widget.currentPage == NavPage.appraisal,
                         onTap: () => _navigate(context, NavPage.appraisal),
                       ),
                     _NavItem(
                       icon: Icons.event_outlined,
                       label: 'Events',
-                      isActive: currentPage == NavPage.eventManagement,
+                      isActive: widget.currentPage == NavPage.eventManagement,
                       onTap: () => _navigate(context, NavPage.eventManagement),
                     ),
                   ],
@@ -517,7 +600,7 @@ class MobileNavDrawer extends StatelessWidget {
                     CircleAvatar(
                       radius: 17,
                       backgroundColor: Colors.white.withOpacity(0.15),
-                      child: Text(userInitials,
+                      child: Text(widget.userInitials,
                           style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
@@ -528,14 +611,14 @@ class MobileNavDrawer extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(userName,
+                          Text(widget.userName,
                               style: GoogleFonts.plusJakartaSans(
                                   color: Colors.white,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis),
-                          Text(_roleLabelFor(userRole),
+                          Text(_roleLabelFor(widget.userRole),
                               style: GoogleFonts.plusJakartaSans(
                                   color: Colors.white.withOpacity(0.6),
                                   fontSize: 11)),
@@ -547,7 +630,7 @@ class MobileNavDrawer extends StatelessWidget {
                   GestureDetector(
                     onTap: () {
                       Navigator.of(context).pop();
-                      onLogout();
+                      widget.onLogout();
                     },
                     child: Container(
                       width: double.infinity,
@@ -590,6 +673,411 @@ class MobileNavDrawer extends StatelessWidget {
                 letterSpacing: 0.8)),
       );
 }
+
+// ── Notification Nav Item ─────────────────────────────────────────────────────
+
+/// A nav-row styled like the other sidebar items but with a badge for unread count.
+class _NotifNavItem extends StatefulWidget {
+  final int count;
+  final bool collapsed;
+  final VoidCallback onTap;
+
+  const _NotifNavItem({
+    required this.count,
+    required this.onTap,
+    this.collapsed = false,
+  });
+
+  @override
+  State<_NotifNavItem> createState() => _NotifNavItemState();
+}
+
+class _NotifNavItemState extends State<_NotifNavItem> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.only(bottom: 2),
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: _hovered ? _kHoverBg : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              // Left indicator bar placeholder (no active state for notifications)
+              Container(width: 3, height: 16, margin: const EdgeInsets.only(left: 10, right: 8)),
+              // Bell icon with badge
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    widget.count > 0
+                        ? Icons.notifications_rounded
+                        : Icons.notifications_none_rounded,
+                    size: 17,
+                    color: widget.count > 0
+                        ? const Color(0xFFFFD60A)
+                        : _kMuted,
+                  ),
+                  if (widget.count > 0)
+                    Positioned(
+                      top: -5,
+                      right: -5,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE53935),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          widget.count > 99 ? '99+' : '${widget.count}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w700),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (!widget.collapsed) ...[
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'Notifications',
+                    style: TextStyle(
+                      color: _hovered ? Colors.white : _kMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: 0.1,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+// ── Notification Panel ────────────────────────────────────────────────────────
+
+class _NotificationPanel extends StatefulWidget {
+  final VoidCallback? onDismiss;
+
+  const _NotificationPanel({this.onDismiss});
+
+  @override
+  State<_NotificationPanel> createState() => _NotificationPanelState();
+}
+
+class _NotificationPanelState extends State<_NotificationPanel> {
+  List<Map<String, dynamic>> _notifications = [];
+  bool _loading = true;
+  bool _markingAll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final list = await ApiService.getNotifications();
+      if (mounted) setState(() { _notifications = list; _loading = false; });
+      // Auto-mark all as read when panel opens.
+      await ApiService.markAllNotificationsRead();
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _delete(int id) async {
+    await ApiService.deleteNotification(id);
+    if (mounted) {
+      setState(() => _notifications.removeWhere((n) => n['id'] == id));
+    }
+  }
+
+  String _timeAgo(String? createdAt) {
+    if (createdAt == null) return '';
+    try {
+      final dt = DateTime.parse(createdAt);
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 1) return 'Just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      return '${diff.inDays}d ago';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  IconData _iconFor(String? type) {
+    switch (type) {
+      case 'task':    return Icons.assignment_outlined;
+      case 'event':   return Icons.event_outlined;
+      case 'comment': return Icons.chat_bubble_outline;
+      default:        return Icons.notifications_none_rounded;
+    }
+  }
+
+  Color _colorFor(String? type) {
+    switch (type) {
+      case 'task':    return const Color(0xFF4F8EF7);
+      case 'event':   return const Color(0xFF43C6AC);
+      case 'comment': return const Color(0xFFFF9F43);
+      default:        return const Color(0xFF8892A4);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(0),
+      child: Builder(builder: (ctx) {
+        final screenW = MediaQuery.of(ctx).size.width;
+        final isMobile = screenW < 700;
+        return Align(
+          alignment: isMobile ? Alignment.center : Alignment.topLeft,
+          child: Padding(
+            // On desktop: anchor to the right of the sidebar.
+            // On mobile: show centred with top padding.
+            padding: isMobile
+                ? const EdgeInsets.symmetric(horizontal: 16, vertical: 80)
+                : const EdgeInsets.only(left: 232, top: 62),
+            child: Material(
+              color: const Color(0xFF1E2235),
+              borderRadius: BorderRadius.circular(14),
+              elevation: 12,
+              child: Container(
+                width: 340,
+                constraints: const BoxConstraints(maxHeight: 480),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ── Header ──
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.notifications_rounded,
+                              color: Color(0xFFFFD60A), size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text('Notifications',
+                                style: GoogleFonts.plusJakartaSans(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                          if (_notifications.isNotEmpty)
+                            TextButton(
+                              onPressed: _markingAll ? null : () async {
+                                setState(() => _markingAll = true);
+                                await ApiService.markAllNotificationsRead();
+                                if (mounted) setState(() {
+                                  for (final n in _notifications) {
+                                    n['is_read'] = 1;
+                                  }
+                                  _markingAll = false;
+                                });
+                              },
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Text('Mark all read',
+                                  style: GoogleFonts.plusJakartaSans(
+                                      color: const Color(0xFF4F8EF7), fontSize: 11)),
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Color(0xFF8892A4), size: 18),
+                            onPressed: () => Navigator.of(context).pop(),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const Divider(color: Color(0x1FFFFFFF), height: 1),
+
+                    // ── Body ──
+                    Flexible(
+                      child: _loading
+                          ? const Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Center(
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            )
+                          : _notifications.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.all(32),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.notifications_off_outlined,
+                                          color: Color(0xFF8892A4), size: 40),
+                                      const SizedBox(height: 10),
+                                      Text('No notifications yet',
+                                          style: GoogleFonts.plusJakartaSans(
+                                              color: const Color(0xFF8892A4),
+                                              fontSize: 13)),
+                                    ],
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  itemCount: _notifications.length,
+                                  separatorBuilder: (_, __) =>
+                                      const Divider(color: Color(0x0FFFFFFF), height: 1),
+                                  itemBuilder: (context, i) {
+                                    final n = _notifications[i];
+                                    final isUnread = (n['is_read'] as int? ?? 0) == 0;
+                                    return _NotifTile(
+                                      icon: _iconFor(n['type'] as String?),
+                                      iconColor: _colorFor(n['type'] as String?),
+                                      title: n['title'] as String? ?? '',
+                                      body: n['body'] as String? ?? '',
+                                      timeAgo: _timeAgo(n['created_at'] as String?),
+                                      isUnread: isUnread,
+                                      onDelete: () => _delete(n['id'] as int),
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+
+class _NotifTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String body;
+  final String timeAgo;
+  final bool isUnread;
+  final VoidCallback onDelete;
+
+  const _NotifTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.body,
+    required this.timeAgo,
+    required this.isUnread,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: isUnread ? Colors.white.withOpacity(0.04) : Colors.transparent,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Type icon
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: iconColor, size: 16),
+            ),
+            const SizedBox(width: 10),
+
+            // Text
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(title,
+                            style: GoogleFonts.plusJakartaSans(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: isUnread
+                                    ? FontWeight.w600
+                                    : FontWeight.w400),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      if (isUnread)
+                        Container(
+                          width: 7,
+                          height: 7,
+                          margin: const EdgeInsets.only(left: 6, top: 3),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF4F8EF7),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (body.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(body,
+                        style: GoogleFonts.plusJakartaSans(
+                            color: const Color(0xFF8892A4), fontSize: 11),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(timeAgo,
+                      style: GoogleFonts.plusJakartaSans(
+                          color: const Color(0xFF8892A4).withOpacity(0.7),
+                          fontSize: 10)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+
+            // Delete button
+            GestureDetector(
+              onTap: onDelete,
+              child: const Icon(Icons.close, color: Color(0xFF8892A4), size: 15),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
 

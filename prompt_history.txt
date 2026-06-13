@@ -64,4 +64,20 @@ list, Task Detail reviewer view, Task Detail submitter view with comments and po
 
 [2026-05-20] for the prompt generate it to the prompt history textfile
 
+[2026-05-20] On my project, put a rate limiting that on all public endpoints (IP+ User based sensible defaults, graceful 429s). Strict input sanitization and validation on all user inputs schema based type checks length limit and reject unexpected fields. And secure api key handling remove hard coded keys, move to environment, rotate keys, ensure no keys are exposed to the client side. Follow OWASP best practices, include clear comments, and do not break existing functionality. Also put comments on every functionality so we can know what the code should do.
+
+[2026-05-20] put this new information to the claude.md and the prompt put it on the prompt textfile
+
+[2026-05-20] now why i cant login to my device
+
+[2026-05-20] ITS NOT LOGGING IN
+
+[2026-05-20] why i need to do this, because if i need to do this on other device should do this also that my user is not a techie like me
+
+[2026-05-20] why it needed to do a start windows bat it should not be doing like this
+
+[2026-05-30] can you put a notification on this and i want it to populate when an event, task are being assigned to them specifically to them also can you explain to me also on how i can do a email notification system that notifys them to a email address
+
+
+
 
