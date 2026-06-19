@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db
+from database import connect_db
 from auth import (get_current_user, require_admin, require_admin_or_principal,
                   require_can_assign, hash_password, ASSIGNABLE_TO)
 
@@ -12,7 +12,7 @@ router = APIRouter(tags=["Users"])
 
 @router.get("/api/users")
 def list_users(user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     rows = db.execute(
         """SELECT u.id, u.username, u.full_name, u.role, u.avatar_url,
                   u.grade_level_id, gl.grade_level
@@ -25,7 +25,7 @@ def list_users(user=Depends(get_current_user)):
 
 @router.get("/api/users/assignable")
 def list_assignable_users(user=Depends(require_can_assign)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
     allowed_roles = ASSIGNABLE_TO.get(role, set())
@@ -67,7 +67,7 @@ def create_user(req: CreateUserRequest, user=Depends(require_admin_or_principal)
     valid_roles = {"admin", "principal", "coordinator", "dean", "teacher", "registrar"}
     if req.role not in valid_roles:
         raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
-    db = get_db()
+    db = connect_db()
     try:
         db.execute(
             "INSERT INTO users (username,password_hash,full_name,role,grade_level_id) VALUES (?,?,?,?,?)",
@@ -86,7 +86,7 @@ def create_user(req: CreateUserRequest, user=Depends(require_admin_or_principal)
 
 @router.get("/api/users/me/profile")
 def get_my_profile(user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     u = db.execute(
         """SELECT u.*, gl.grade_level FROM users u
@@ -127,7 +127,7 @@ class UpdateProfileRequest(BaseModel):
 
 @router.put("/api/users/me/profile")
 def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     updates = {k: v for k, v in req.dict().items() if v is not None}
     if updates:
@@ -149,7 +149,7 @@ def list_subjects(user=Depends(get_current_user)):
 
 @router.get("/api/grade-levels")
 def list_grade_levels(user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     rows = db.execute("SELECT * FROM grade_levels ORDER BY id").fetchall()
     db.close()
     return [dict(r) for r in rows]
@@ -161,7 +161,7 @@ class GradeLevelRequest(BaseModel):
 
 @router.post("/api/grade-levels")
 def create_grade_level(req: GradeLevelRequest, user=Depends(require_admin)):
-    db = get_db()
+    db = connect_db()
     try:
         db.execute("INSERT INTO grade_levels (grade_level) VALUES (?)", (req.grade_level,))
         db.commit()
@@ -175,7 +175,7 @@ def create_grade_level(req: GradeLevelRequest, user=Depends(require_admin)):
 
 @router.get("/api/task-types")
 def list_task_types(user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     rows = db.execute("SELECT * FROM task_types ORDER BY id").fetchall()
     db.close()
     return [dict(r) for r in rows]

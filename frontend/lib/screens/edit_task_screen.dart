@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
+import '../widgets/common_widgets.dart';
 
 class EditTaskScreen extends StatefulWidget {
   final Task task;
@@ -394,39 +395,29 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                   const SizedBox(width: 8),
                   _AttIcon(Icons.play_circle_outline, const Color(0xFFFF0000), () => _openAttachmentInput('youtube')),
                   const Spacer(),
-                  GestureDetector(
+                  HoverScale(
                     onTap: () => Navigator.pop(context),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF6B7280), Color(0xFF374151)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.borderColor),
                       ),
                       child: Text('Cancel',
                           style: GoogleFonts.plusJakartaSans(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
-                              color: Colors.white)),
+                              color: AppTheme.textMuted)),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  GestureDetector(
+                  HoverScale(
                     onTap: _submitting ? null : _submit,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       decoration: BoxDecoration(
-                        gradient: _submitting
-                            ? null
-                            : const LinearGradient(
-                                colors: [Color(0xFF6B7280), Color(0xFF374151)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                        color: _submitting ? AppTheme.borderColor : null,
+                        color: _submitting ? AppTheme.borderColor : AppTheme.darkBanner,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: _submitting

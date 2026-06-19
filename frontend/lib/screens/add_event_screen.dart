@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../services/app_state.dart';
 
 class AddEventScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -23,6 +26,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
   int _step = 0;
   final _pageController = PageController();
   bool _submitting = false;
+
+  // True once the proposal has been explicitly submitted/saved or auto-saved,
+  // so we don't create duplicate drafts on exit/logout/expiry.
+  bool _persisted = false;
+  AppState? _appState;
 
   bool get _isEditing => widget.existingEvent != null;
 
@@ -52,7 +60,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   // Step 2
   late final TextEditingController _rationaleCtrl;
-  late final List<TextEditingController> _objCtrls;
+  late final TextEditingController _objectivesCtrl;
 
   // Step 3
   late List<Map<String, TextEditingController>> _methodologyRows;
@@ -70,11 +78,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
   late final TextEditingController _meCtrl;
   late final TextEditingController _commentsCtrl;
   late List<Map<String, dynamic>> _indicators;
+  late final List<Map<String, dynamic>> _signatoryRows;
 
-  Map<String, dynamic> _newIndicator({String label = '', String value = '', String remarks = ''}) => {
+  Map<String, dynamic> _newIndicator({String label = ''}) => {
     'label': TextEditingController(text: label),
-    'value': value,
-    'remarks': TextEditingController(text: remarks),
   };
 
   Map<String, TextEditingController> _newPhase({String stage='',String activities=''}) => {
@@ -113,6 +120,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
   @override
   void initState() {
     super.initState();
+    // Register draft auto-save so a logout / token-expiry persists the work.
+    _appState = context.read<AppState>();
+    _appState?.registerDraftAutosave(_autoSaveDraft);
+
     final e = widget.existingEvent;
 
     // Step 1
@@ -166,17 +177,22 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
     // Step 2
     _rationaleCtrl = TextEditingController(text: e?['rationale'] ?? '');
-    List<String> objs = ['', '', ''];
+    String objText = '';
     if (e?['objectives'] != null) {
+      final raw = e!['objectives'].toString();
       try {
-        final decoded = jsonDecode(e!['objectives']);
-        if (decoded is List) objs = List<String>.from(decoded);
-      } catch (_) {}
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          // Legacy JSON-array format → join as newline-separated text
+          objText = decoded.where((s) => s.toString().trim().isNotEmpty).join('\n');
+        } else {
+          objText = raw;
+        }
+      } catch (_) {
+        objText = raw;
+      }
     }
-    _objCtrls = objs.map((t) => TextEditingController(text: t)).toList();
-    if (_objCtrls.isEmpty) {
-      _objCtrls.addAll([TextEditingController(), TextEditingController(), TextEditingController()]);
-    }
+    _objectivesCtrl = TextEditingController(text: objText);
 
     // Step 3 - Methodology phases
     _methodologyRows = [];
@@ -300,32 +316,70 @@ class _AddEventScreenState extends State<AddEventScreen> {
         if (decoded is List && decoded.isNotEmpty) {
           _indicators = decoded.map((d) => _newIndicator(
             label: (d['label'] ?? '').toString(),
-            value: (d['value'] ?? '').toString(),
-            remarks: (d['remarks'] ?? '').toString(),
           )).toList();
         }
       } catch (_) {}
     }
     if (_indicators.isEmpty) _indicators = [_newIndicator()];
+
+    // Signatories (stored in comments field as JSON)
+    final sigDefaults = [
+      {'role': 'Noted',                   'name': '', 'title': 'School Principal'},
+      {'role': 'Endorsed',                'name': '', 'title': 'Public Schools District Supervisor'},
+      {'role': 'Recommending Approval',   'name': '', 'title': 'Assistant Schools Division Superintendent'},
+      {'role': 'Approved',                'name': '', 'title': 'Schools Division Superintendent'},
+    ];
+    if (e?['comments'] != null) {
+      try {
+        final dec = jsonDecode(e!['comments'].toString());
+        if (dec is Map && dec['signatories'] is List) {
+          final list = dec['signatories'] as List;
+          for (int i = 0; i < sigDefaults.length && i < list.length; i++) {
+            sigDefaults[i]['name']  = (list[i]['name']  ?? '').toString();
+            sigDefaults[i]['title'] = (list[i]['title'] ?? sigDefaults[i]['title']).toString();
+          }
+        }
+      } catch (_) {}
+    }
+    _signatoryRows = sigDefaults.map((d) => <String, dynamic>{
+      'role':  d['role'],
+      'name':  TextEditingController(text: d['name']),
+      'title': TextEditingController(text: d['title']),
+    }).toList();
   }
 
   @override
   void dispose() {
+    // Auto-save as draft on exit (navigating away / closing the screen).
+    // Build the payload synchronously here — before the controllers below are
+    // disposed — then fire the request without awaiting.
+    if (!_persisted && _canSaveAsDraft && _titleCtrl.text.trim().isNotEmpty) {
+      _persisted = true;
+      final payload = _buildPayload()..['status'] = 'draft';
+      if (_isEditing) {
+        ApiService.updateEvent(widget.existingEvent!['id'] as int, payload);
+      } else {
+        ApiService.createEvent(payload);
+      }
+    }
+    _appState?.unregisterDraftAutosave(_autoSaveDraft);
+
     _titleCtrl.dispose(); _dateCtrl.dispose(); _venueCtrl.dispose();
     _budgetCtrl.dispose(); _fundCtrl.dispose(); _focalNameCtrl.dispose();
     _focalRoleCtrl.dispose(); _focalCpCtrl.dispose();
     _rationaleCtrl.dispose();
+    _objectivesCtrl.dispose();
     _meCtrl.dispose(); _commentsCtrl.dispose();
+    for (final s in _signatoryRows) {
+      (s['name'] as TextEditingController).dispose();
+      (s['title'] as TextEditingController).dispose();
+    }
     _pCat1Ctrl.dispose(); _pCat2Ctrl.dispose();
     for (final c in _outputCtrls) {
       c.dispose();
     }
-    for (final c in _objCtrls) {
-      c.dispose();
-    }
     for (final ind in _indicators) {
       (ind['label'] as TextEditingController).dispose();
-      (ind['remarks'] as TextEditingController).dispose();
     }
     for (final row in _methodologyRows) {
       row['stage']!.dispose();
@@ -360,9 +414,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
     // Step 2 - Rationale & Objectives
     if (_rationaleCtrl.text.trim().isEmpty) return (1, 'Please provide the rationale.');
-    for (var i = 0; i < _objCtrls.length; i++) {
-      if (_objCtrls[i].text.trim().isEmpty) return (1, 'Please fill in objective #${i + 1}.');
-    }
+    if (_objectivesCtrl.text.trim().isEmpty) return (1, 'Please provide the objectives.');
 
     // Step 3 - Methodology
     for (var i = 0; i < _methodologyRows.length; i++) {
@@ -419,10 +471,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     for (var i = 0; i < _indicators.length; i++) {
       final ind = _indicators[i];
       if ((ind['label'] as TextEditingController).text.trim().isEmpty) return (5, 'Please fill in indicator #${i + 1}.');
-      if ((ind['value'] as String).isEmpty) return (5, 'Please mark indicator #${i + 1} as Evident or Not Evident.');
-      if ((ind['remarks'] as TextEditingController).text.trim().isEmpty) return (5, 'Please add remarks for indicator #${i + 1}.');
     }
-    if (_commentsCtrl.text.trim().isEmpty) return (5, 'Please add comments and recommendations.');
 
     return null;
   }
@@ -454,8 +503,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
     }).toList();
     final indicatorData = _indicators.map((ind) => {
       'label': (ind['label'] as TextEditingController).text,
-      'value': ind['value'],
-      'remarks': (ind['remarks'] as TextEditingController).text,
     }).toList();
 
     final payload = {
@@ -481,7 +528,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
         },
       }),
       'rationale':           _rationaleCtrl.text,
-      'objectives':          jsonEncode(_objCtrls.map((c) => c.text).toList()),
+      'objectives':          _objectivesCtrl.text,
       'phase1':              jsonEncode(_methodologyRows.map((r) => {
         'stage': r['stage']!.text, 'activities': r['activities']!.text,
       }).toList()),
@@ -494,7 +541,13 @@ class _AddEventScreenState extends State<AddEventScreen> {
       'twg_groups':          jsonEncode(twgData),
       'monitoring_criteria': _meCtrl.text,
       'indicators':          jsonEncode(indicatorData),
-      'comments':            _commentsCtrl.text,
+      'comments':            jsonEncode({
+        'signatories': _signatoryRows.map((s) => {
+          'role':  s['role'],
+          'name':  (s['name']  as TextEditingController).text,
+          'title': (s['title'] as TextEditingController).text,
+        }).toList(),
+      }),
     };
 
     return payload;
@@ -505,6 +558,26 @@ class _AddEventScreenState extends State<AddEventScreen> {
   bool get _canSaveAsDraft {
     final status = widget.existingEvent?['status'] as String?;
     return status == null || status == 'draft' || status == 'pending_approval';
+  }
+
+  /// Persists the current form as a draft. Invoked by the AppState auto-save
+  /// hook on logout / token-expiry. Guarded so it saves at most once and only
+  /// when there is meaningful, still-draftable content.
+  Future<void> _autoSaveDraft() async {
+    if (_persisted || !_canSaveAsDraft) return;
+    if (_titleCtrl.text.trim().isEmpty) return; // nothing worth saving
+    _persisted = true;
+    final payload = _buildPayload();
+    payload['status'] = 'draft';
+    try {
+      if (_isEditing) {
+        await ApiService.updateEvent(widget.existingEvent!['id'] as int, payload);
+      } else {
+        await ApiService.createEvent(payload);
+      }
+    } catch (_) {
+      _persisted = false; // let a later trigger retry
+    }
   }
 
   Future<void> _submit({bool asDraft = false}) async {
@@ -531,6 +604,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
       } else {
         result = await ApiService.createEvent(payload);
       }
+      if (result != null) _persisted = true;
       if (!mounted) return;
       if (result != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -871,26 +945,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
             _tField(_rationaleCtrl, hint: 'Provide the rationale for this activity...', maxLines: 8),
             const SizedBox(height: 28),
             _secTitle('III. OBJECTIVES'),
-            const Text('This project aims to:', style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
+            const Text(
+              'Enter each objective on a new line. They will be numbered automatically in the printed proposal.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF4A5568)),
+            ),
             const SizedBox(height: 12),
-            ..._objCtrls.asMap().entries.map((e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Container(
-                      width: 28, height: 28,
-                      margin: const EdgeInsets.only(right: 10, top: 2),
-                      decoration: BoxDecoration(color: const Color(0xFF1E2126), borderRadius: BorderRadius.circular(14)),
-                      child: Center(child: Text('${e.key + 1}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
-                    ),
-                    Expanded(child: _tField(e.value, hint: 'Objective ${e.key + 1}...')),
-                  ]),
-                )),
-            TextButton.icon(
-                onPressed: () => setState(() => _objCtrls.add(TextEditingController())),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add objective'),
-                style: TextButton.styleFrom(foregroundColor: const Color(0xFF63B3ED))),
+            _tField(_objectivesCtrl,
+                hint: 'equip young journalists with the basics of writing...\nproduce various journalistic articles...\nchoose the campus journalists who will compete...',
+                maxLines: 8),
           ],
         ),
       ),
@@ -1170,7 +1232,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
             _tField(_meCtrl, hint: 'Add specific monitoring instructions or evaluation criteria...', maxLines: 6),
             const SizedBox(height: 28),
             _secTitle('Observation Tool Indicators'),
-            const Text('Please assess the effectiveness of the project/program according to the indicators below.',
+            const Text(
+                'List the indicators to be observed. The Evident / Not Evident columns will be filled in on the printed evaluation form.',
                 style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
             const SizedBox(height: 16),
             Container(
@@ -1179,61 +1242,33 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   borderRadius: BorderRadius.circular(8)),
               child: Column(children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: const BoxDecoration(
                       color: Color(0xFFF7F9FC),
                       borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
                   child: const Row(children: [
-                    Expanded(flex: 5, child: Text('Indicators', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-                    SizedBox(width: 8),
-                    SizedBox(width: 80, child: Text('Evident', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-                    SizedBox(width: 8),
-                    SizedBox(width: 100, child: Text('Not Evident', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-                    SizedBox(width: 8),
-                    Expanded(flex: 2, child: Text('Remarks', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    Text('#', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF718096))),
+                    SizedBox(width: 12),
+                    Expanded(child: Text('Indicator Description', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
                   ]),
                 ),
                 const Divider(height: 1, color: Color(0xFFE2E8F0)),
                 ..._indicators.asMap().entries.map((e) => Column(children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                          Expanded(flex: 5, child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                            Text('${e.key + 1}. ', style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
-                            Expanded(child: TextField(
-                              controller: e.value['label'] as TextEditingController,
-                              style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)),
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                border: InputBorder.none,
-                                hintText: 'Indicator...',
-                                hintStyle: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12),
-                              ),
-                            )),
-                          ])),
-                          const SizedBox(width: 8),
-                          SizedBox(width: 80, child: Radio<String>(
-                              value: 'evident', groupValue: e.value['value'] as String,
-                              onChanged: (v) => setState(() => _indicators[e.key]['value'] = v!),
-                              activeColor: const Color(0xFF48BB78))),
-                          const SizedBox(width: 8),
-                          SizedBox(width: 100, child: Radio<String>(
-                              value: 'not_evident', groupValue: e.value['value'] as String,
-                              onChanged: (v) => setState(() => _indicators[e.key]['value'] = v!),
-                              activeColor: const Color(0xFFE53E3E))),
-                          const SizedBox(width: 8),
-                          Expanded(flex: 2, child: TextField(
-                            controller: e.value['remarks'] as TextEditingController,
-                            style: const TextStyle(fontSize: 12),
-                            decoration: InputDecoration(
-                              hintText: 'Remarks...',
-                              hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 11),
-                              filled: true, fillColor: const Color(0xFFF7F9FC),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6),
-                                  borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          Text('${e.key + 1}. ', style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
+                          const SizedBox(width: 6),
+                          Expanded(child: TextField(
+                            controller: e.value['label'] as TextEditingController,
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              hintText: 'Describe what will be observed...',
+                              hintStyle: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12),
                             ),
                           )),
                           if (_indicators.length > 1) ...[
@@ -1256,9 +1291,25 @@ class _AddEventScreenState extends State<AddEventScreen> {
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Add indicator'),
                 style: TextButton.styleFrom(foregroundColor: const Color(0xFF63B3ED))),
-            const SizedBox(height: 24),
-            _fLabel('Comments and Recommendations'),
-            _tField(_commentsCtrl, hint: 'Write your comments and recommendations here...', maxLines: 5),
+            const SizedBox(height: 32),
+            _secTitle('Signatories'),
+            const Text(
+                'Enter the names and positions of the signatories. These will appear in the printed proposal.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF4A5568))),
+            const SizedBox(height: 16),
+            ..._signatoryRows.map((s) => Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(s['role'] as String,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF718096))),
+                const SizedBox(height: 6),
+                Row(children: [
+                  Expanded(child: _tField(s['name'] as TextEditingController, hint: 'Full name (e.g. JUAN D. CRUZ)')),
+                  const SizedBox(width: 10),
+                  Expanded(child: _tField(s['title'] as TextEditingController, hint: 'Position/Title')),
+                ]),
+              ]),
+            )),
           ],
         ),
       ),
@@ -1443,7 +1494,7 @@ Widget _fLabel(String t) => Padding(
     child: Text(t, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))));
 
 Widget _tField(TextEditingController c, {String hint = '', int maxLines = 1}) {
-  return TextField(
+  final field = TextField(
     controller: c, maxLines: maxLines,
     style: const TextStyle(fontSize: 13),
     decoration: InputDecoration(
@@ -1458,6 +1509,22 @@ Widget _tField(TextEditingController c, {String hint = '', int maxLines = 1}) {
           borderSide: const BorderSide(color: Color(0xFFACC2DF), width: 1.5)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     ),
+  );
+  if (maxLines <= 1) return field;
+  return CallbackShortcuts(
+    bindings: {
+      const SingleActivator(LogicalKeyboardKey.tab): () {
+        final sel = c.selection;
+        if (!sel.isValid) return;
+        final text = c.text;
+        final newText = text.replaceRange(sel.start, sel.end, '    ');
+        c.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: sel.start + 4),
+        );
+      },
+    },
+    child: field,
   );
 }
 

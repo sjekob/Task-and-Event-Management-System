@@ -896,6 +896,40 @@ class EventPrintHelper {
     final monitoring  = (event['monitoring_criteria'] ?? '').toString();
     final creatorName = _esc(event['creator_name']    ?? '');
 
+    // Parse proponent-defined observation indicators
+    List<String> indicatorLabels = [];
+    try {
+      final raw = event['indicators'];
+      if (raw != null && raw.toString().isNotEmpty) {
+        final decoded = jsonDecode(raw.toString());
+        if (decoded is List) {
+          for (final item in decoded) {
+            final label = (item is Map ? (item['label'] ?? '') : item).toString().trim();
+            if (label.isNotEmpty) indicatorLabels.add(label);
+          }
+        }
+      }
+    } catch (_) {}
+    // Fall back to standard DepEd indicators if proponent left them blank
+    if (indicatorLabels.isEmpty) {
+      indicatorLabels = [
+        'The special program has an approved proposal.',
+        'The training matrix was observed or was completely delivered.',
+        'The number of days were maximized as stated in the training design.',
+        'The objectives of the special program were met.',
+        'The monitoring and evaluation tools were utilized.',
+        'Participants were able to submit the required output.',
+        'Attendance was systematically monitored.',
+        'The venue was conducive.',
+        'The session started and ended on time.',
+        'The trainers/facilitators used appropriate resource package '
+            '(Pretest and post-tests, PowerPoint, video presentation, etc.)',
+      ];
+    }
+    final obsRows = indicatorLabels.asMap().entries.map((e) =>
+        '<tr><td>${e.key + 1}. ${_esc(e.value)}</td><td></td><td></td><td></td></tr>'
+    ).join('\n      ');
+
     final isCurricular      = nature == 'Curricular';
     final isCoCurricular    = nature == 'Co-curricular';
     final isExtraCurricular = nature == 'Extra-curricular';
@@ -914,6 +948,32 @@ class EventPrintHelper {
 
     final proponentName  = focalName.isNotEmpty ? focalName.toUpperCase() : creatorName.toUpperCase();
     final proponentTitle = focalRole.isNotEmpty ? focalRole : 'Proponent';
+
+    // Parse signatories from comments field
+    final sigDefaults = [
+      {'role': 'Noted',                 'name': '________________________________', 'title': 'School Principal'},
+      {'role': 'Endorsed',              'name': '________________________________', 'title': 'Public Schools District Supervisor'},
+      {'role': 'Recommending Approval', 'name': '________________________________', 'title': 'Assistant Schools Division Superintendent'},
+      {'role': 'Approved',              'name': '________________________________', 'title': 'Schools Division Superintendent'},
+    ];
+    try {
+      final commentsRaw = (event['comments'] ?? '').toString();
+      if (commentsRaw.isNotEmpty) {
+        final dec = jsonDecode(commentsRaw);
+        if (dec is Map && dec['signatories'] is List) {
+          final list = dec['signatories'] as List;
+          for (int i = 0; i < sigDefaults.length && i < list.length; i++) {
+            final n = (list[i]['name'] ?? '').toString().trim();
+            final t = (list[i]['title'] ?? '').toString().trim();
+            if (n.isNotEmpty) sigDefaults[i]['name']  = n.toUpperCase();
+            if (t.isNotEmpty) sigDefaults[i]['title'] = t;
+          }
+        }
+      }
+    } catch (_) {}
+    String sigBlock(int i) =>
+        '<div class="sig-name">${_esc(sigDefaults[i]['name']!)}</div>'
+        '<div class="sig-title">${_esc(sigDefaults[i]['title']!)}</div>';
 
     final fileSafeTitle = (event['title'] ?? 'EventProposal')
         .toString()
@@ -1088,9 +1148,10 @@ p       { text-align: justify; text-indent: 24px; margin-bottom: 7px; font-size:
 .sig-ctr   { text-align: center; margin-top: 10px; }
 
 /* ── Observation Tool ── */
-.obs-table    { width: 100%; border-collapse: collapse; margin-top: 10px; }
-.obs-table th { border: 1px solid #000; padding: 4px 6px; font-weight: bold; text-align: center; font-size: 10pt; }
-.obs-table td { border: 1px solid #000; padding: 4px 6px; font-size: 10pt; }
+.obs-table    { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.obs-table th { border: 1px solid #000; padding: 3px 5px; font-weight: bold; text-align: center; font-size: 9.5pt; }
+.obs-table td { border: 1px solid #000; padding: 3px 5px; font-size: 9.5pt; }
+.obs-page     { page-break-inside: avoid; break-inside: avoid; }
 
 /* ── Page Break ── */
 .pg-break { page-break-before: always; }
@@ -1427,31 +1488,21 @@ function downloadDoc() {
     </div>
     <div>
       <div class="sig-lbl">Noted:</div>
-      <div class="sig-line">
-        <div class="sig-name">________________________________</div>
-        <div class="sig-title">School Principal</div>
-      </div>
+      <div class="sig-line">${sigBlock(0)}</div>
     </div>
     <div>
       <div class="sig-lbl">Endorsed:</div>
-      <div class="sig-line">
-        <div class="sig-name">________________________________</div>
-        <div class="sig-title">Public Schools District Supervisor</div>
-      </div>
+      <div class="sig-line">${sigBlock(1)}</div>
     </div>
     <div>
       <div class="sig-lbl">Recommending Approval:</div>
-      <div class="sig-line">
-        <div class="sig-name">________________________________</div>
-        <div class="sig-title">Assistant Schools Division Superintendent</div>
-      </div>
+      <div class="sig-line">${sigBlock(2)}</div>
     </div>
   </div>
   <div class="sig-ctr">
     <div class="sig-lbl">Approved:</div><br>
     <div class="sig-line" style="display:inline-block;width:52%;text-align:center;">
-      <div class="sig-name">________________________________</div>
-      <div class="sig-title">Schools Division Superintendent</div>
+      ${sigBlock(3)}
     </div>
   </div>
 </div>
@@ -1460,7 +1511,8 @@ function downloadDoc() {
      ║  PAGE 8 – OBSERVATION TOOL  ║
      ╚══════════════════════════════╝ -->
 <div class="pg-break">
-  <div class="doc-header">
+<div class="obs-page">
+  <div class="doc-header" style="margin-bottom:8px;">
     <img src="$_kagawaranDataUri" class="seal" alt="Kagawaran ng Edukasyon Seal">
     <div class="rep">Republika ng Pilipinas</div>
     <div class="dept">Kagawaran ng Edukasyon</div>
@@ -1472,17 +1524,17 @@ function downloadDoc() {
     </div>
   </div>
 
-  <div style="text-align:center;margin:20px 0 16px;">
+  <div style="text-align:center;margin:10px 0 10px;">
     <div class="section-title">OBSERVATION TOOL</div>
-    <p style="text-indent:0;margin-top:8px;"><strong>$title</strong></p>
-    ${targetDate.isNotEmpty ? '<p style="text-indent:0;">$targetDate</p>' : ''}
+    <p style="text-indent:0;margin-top:6px;margin-bottom:2px;"><strong>$title</strong></p>
+    ${targetDate.isNotEmpty ? '<p style="text-indent:0;margin:2px 0;">$targetDate</p>' : ''}
   </div>
 
-  <div style="margin:12px 0;font-size:11pt;">
+  <div style="margin:8px 0;font-size:10pt;">
     Name (Optional): ___________________________________ &nbsp;&nbsp; Grade &amp; Section: ____________________
   </div>
 
-  <p><strong>Directions:</strong> Please assess the effectiveness of the project/program
+  <p style="margin:6px 0;font-size:10pt;"><strong>Directions:</strong> Please assess the effectiveness of the project/program
      according to the indicators below. Put a check (&#10003;) under the appropriate column.</p>
 
   <table class="obs-table">
@@ -1495,27 +1547,18 @@ function downloadDoc() {
       </tr>
     </thead>
     <tbody>
-      <tr><td>1. The special program has an approved proposal.</td><td></td><td></td><td></td></tr>
-      <tr><td>2. The training matrix was observed or was completely delivered.</td><td></td><td></td><td></td></tr>
-      <tr><td>3. The number of days were maximized as stated in the training design.</td><td></td><td></td><td></td></tr>
-      <tr><td>4. The objectives of the special program were met.</td><td></td><td></td><td></td></tr>
-      <tr><td>5. The monitoring and evaluation tools were utilized.</td><td></td><td></td><td></td></tr>
-      <tr><td>6. Participants were able to submit the required output.</td><td></td><td></td><td></td></tr>
-      <tr><td>7. Attendance was systematically monitored.</td><td></td><td></td><td></td></tr>
-      <tr><td>8. The venue was conducive.</td><td></td><td></td><td></td></tr>
-      <tr><td>9. The session started and ended on time.</td><td></td><td></td><td></td></tr>
-      <tr><td>10. The trainers/facilitators used appropriate resource package
-              (Pretest and post-tests, PowerPoint, video presentation, etc.)</td><td></td><td></td><td></td></tr>
+      $obsRows
     </tbody>
   </table>
 
-  <div style="margin-top:20px;font-size:11pt;">
+  <div style="margin-top:14px;font-size:10pt;">
     <strong>COMMENTS AND RECOMMENDATIONS:</strong><br><br>
     ________________________________________________________________________________________<br><br>
     ________________________________________________________________________________________<br><br>
     ________________________________________________________________________________________<br><br>
     ________________________________________________________________________________________
   </div>
+</div>
 </div>
 
 </body>

@@ -20,8 +20,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _loading = true;
   DateTime _calDate = DateTime.now();
 
+  // Upcoming events grouped by calendar day → dot markers + hover tooltip.
+  Map<DateTime, List<Map<String, dynamic>>> _eventsByDay = {};
+
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() { super.initState(); _load(); _loadEvents(); }
 
   Future<void> _load() async {
     try {
@@ -31,6 +34,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  Future<void> _loadEvents() async {
+    try {
+      final events = await ApiService.getEvents();
+      final map = <DateTime, List<Map<String, dynamic>>>{};
+      for (final e in events) {
+        final status = (e['status'] ?? '').toString();
+        if (status == 'disabled' || status == 'draft') continue;
+        final d = _parseEventDate(e['target_date']?.toString());
+        if (d == null) continue;
+        final key = DateTime(d.year, d.month, d.day);
+        (map[key] ??= []).add(e);
+      }
+      if (mounted) setState(() => _eventsByDay = map);
+    } catch (_) {/* best-effort */}
+  }
+
+  static DateTime? _parseEventDate(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final iso = DateTime.tryParse(raw);
+    if (iso != null) return iso;
+    for (final part in raw.split(RegExp(r'[,&]'))) {
+      final d = DateTime.tryParse(part.trim());
+      if (d != null) return d;
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _eventsFor(int day) =>
+      _eventsByDay[DateTime(_calDate.year, _calDate.month, day)] ?? const [];
+
+  String _eventTooltip(List<Map<String, dynamic>> events) => events.map((e) {
+        final when = (e['target_date'] ?? '').toString().trim();
+        final where = (e['venue'] ?? '').toString().trim();
+        final lines = <String>[(e['title'] ?? 'Event').toString()];
+        if (when.isNotEmpty) lines.add('When: $when');
+        if (where.isNotEmpty) lines.add('Where: $where');
+        return lines.join('\n');
+      }).join('\n\n');
 
   @override
   Widget build(BuildContext context) {
@@ -158,15 +200,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
               try { final d = DateTime.parse(t.endDate!); return d.day == day && d.month == _calDate.month && d.year == _calDate.year; }
               catch (_) { return false; }
             });
-            return Container(
+            final events = _eventsFor(day);
+            Widget cell = Container(
               margin: const EdgeInsets.all(1),
               decoration: BoxDecoration(color: isToday ? AppTheme.darkBanner : Colors.transparent, borderRadius: BorderRadius.circular(5)),
               child: Stack(alignment: Alignment.center, children: [
                 Center(child: Text('$day', style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: isToday ? FontWeight.w700 : FontWeight.w400, color: isToday ? Colors.white : AppTheme.textPrimary))),
-                if (hasDeadline && !isToday)
+                if (events.isNotEmpty)
+                  Positioned(bottom: 2, child: Container(width: 4, height: 4, decoration: const BoxDecoration(color: AppTheme.accentBlue, shape: BoxShape.circle)))
+                else if (hasDeadline && !isToday)
                   Positioned(bottom: 2, child: Container(width: 4, height: 4, decoration: const BoxDecoration(color: AppTheme.greenColor, shape: BoxShape.circle))),
               ]),
             );
+            if (events.isNotEmpty) {
+              cell = Tooltip(
+                message: _eventTooltip(events),
+                waitDuration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.darkBanner,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                textStyle: const TextStyle(color: Colors.white, fontSize: 11.5, height: 1.4),
+                child: cell,
+              );
+            }
+            return cell;
           },
         ),
       ]),

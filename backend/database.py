@@ -1,16 +1,48 @@
 import sqlite3
 import os
+from contextlib import contextmanager
 
 DB_PATH = "tasknet.db"
-SCHEMA_VERSION = 8  # bump when schema changes
+SCHEMA_VERSION = 9  # bump when schema changes (9: events CHECK now allows 'draft')
 
 
-def get_db():
+def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def get_db():
+    """FastAPI dependency. As a generator, FastAPI guarantees the connection is
+    closed after the request completes (even on error) — preventing leaks."""
+    conn = _connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def db_session():
+    """Context manager for manual (non-dependency) use:
+
+        with db_session() as db:
+            db.execute(...)
+
+    Closes the connection on exit, including on exceptions."""
+    conn = _connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def connect_db() -> sqlite3.Connection:
+    """Plain connection for callers that manage their own close()/commit().
+    Prefer `db_session()` (exception-safe) for new code."""
+    return _connect()
 
 
 def _stored_version():
@@ -32,7 +64,7 @@ def init_db():
             os.remove(DB_PATH)
         _save_version(SCHEMA_VERSION)
 
-    conn = get_db()
+    conn = connect_db()
     c = conn.cursor()
     c.executescript("""
     CREATE TABLE IF NOT EXISTS grade_levels (

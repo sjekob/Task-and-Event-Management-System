@@ -3,6 +3,41 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 
+// ── Hover wrapper for custom (non-Material) tappable buttons ──
+// Adds a pointer cursor + subtle scale/dim on hover for web & desktop.
+class HoverScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final double scale;
+  const HoverScale({super.key, required this.child, this.onTap, this.scale = 1.03});
+
+  @override
+  State<HoverScale> createState() => _HoverScaleState();
+}
+
+class _HoverScaleState extends State<HoverScale> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: enabled ? (_) => setState(() => _hovered = true) : null,
+      onExit: enabled ? (_) => setState(() => _hovered = false) : null,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _hovered ? widget.scale : 1.0,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
 // ── TaskNet Logo ──
 class TaskNetLogo extends StatelessWidget {
   final double size;
@@ -11,7 +46,7 @@ class TaskNetLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Image.asset(
-      'assets/images/logo.png',
+      'assets/images/asd (1) 1.png',
       width: size,
       height: size,
       fit: BoxFit.contain,
@@ -515,6 +550,9 @@ class _CommentInputFieldState extends State<CommentInputField> {
               hintText: widget.placeholder,
               hintStyle: AppTheme.bodyMd,
               border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              filled: false,
               contentPadding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
             ),
           ),

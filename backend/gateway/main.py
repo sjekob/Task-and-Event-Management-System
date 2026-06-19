@@ -15,6 +15,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from cors import get_cors_config
+
 AUTH_URL       = os.getenv("AUTH_SERVICE_URL",       "http://localhost:8001")
 PERSONNEL_URL  = os.getenv("PERSONNEL_SERVICE_URL",  "http://localhost:8002")
 TASKS_URL      = os.getenv("TASKS_SERVICE_URL",       "http://localhost:8003")
@@ -46,10 +48,11 @@ app = FastAPI(
     docs_url="/docs",
 )
 
+_cors_origins, _cors_creds = get_cors_config()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_creds,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from database import get_db
+from database import connect_db
 from auth import get_current_user, TASK_CREATORS
 
 router = APIRouter(tags=["Dashboard"])
@@ -7,7 +7,7 @@ router = APIRouter(tags=["Dashboard"])
 
 @router.get("/api/dashboard")
 def dashboard(user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 

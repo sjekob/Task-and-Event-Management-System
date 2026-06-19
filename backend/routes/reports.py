@@ -2,7 +2,7 @@ import datetime
 from fastapi import APIRouter, HTTPException, Depends, UploadFile
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db
+from database import connect_db
 from auth import get_current_user, TASK_CREATORS
 
 router = APIRouter(tags=["Reports"])
@@ -19,7 +19,7 @@ class SubmitReportRequest(BaseModel):
 
 @router.post("/api/tasks/{task_id}/reports")
 def submit_report(task_id: int, req: SubmitReportRequest, user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
 
     assigned = db.execute(
@@ -76,7 +76,7 @@ def submit_report(task_id: int, req: SubmitReportRequest, user=Depends(get_curre
 
 @router.post("/api/tasks/{task_id}/reports/upload")
 async def submit_report_file(task_id: int, file: UploadFile, user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     report = db.execute(
         "SELECT id FROM reports WHERE task_id=? AND personnel_id=?", (task_id, uid)
@@ -100,7 +100,7 @@ async def submit_report_file(task_id: int, file: UploadFile, user=Depends(get_cu
 
 @router.delete("/api/reports/{report_id}")
 def delete_report(report_id: int, user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     row = db.execute("SELECT personnel_id FROM reports WHERE id=?", (report_id,)).fetchone()
     if not row:
@@ -119,7 +119,7 @@ def delete_report(report_id: int, user=Depends(get_current_user)):
 def list_reports(user=Depends(get_current_user),
                  task_id: Optional[int] = None,
                  status: Optional[str] = None):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
@@ -165,7 +165,7 @@ class UpdateReportStatusRequest(BaseModel):
 @router.put("/api/reports/{report_id}/status")
 def update_report_status(report_id: int, req: UpdateReportStatusRequest,
                          user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
@@ -194,7 +194,7 @@ def update_report_status(report_id: int, req: UpdateReportStatusRequest,
 
 @router.get("/api/task-log")
 def get_task_log(user=Depends(get_current_user), task_id: Optional[int] = None):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
@@ -240,7 +240,7 @@ def get_task_log(user=Depends(get_current_user), task_id: Optional[int] = None):
 
 @router.get("/api/submission-log")
 def get_submission_log(user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 

@@ -1,0 +1,540 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="2048" viewBox="0 0 1900 2048" font-family="Helvetica,Arial,sans-serif">
+<rect width="1900" height="2048" fill="#ffffff"/>
+<line x1="438" y1="880" x2="620" y2="670" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="496" y="768" width="66" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="529" y="778" font-size="9" fill="#5a6472" text-anchor="middle">identifies</text>
+<line x1="300" y1="928" x2="240" y2="930" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="237" y="922" width="66" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="270" y="932" font-size="9" fill="#5a6472" text-anchor="middle">identifies</text>
+<line x1="737" y1="168" x2="728" y2="360" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="703" y="257" width="60" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="733" y="267" font-size="9" fill="#5a6472" text-anchor="middle">delegated</text>
+<line x1="640" y1="94" x2="580" y2="94" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="583" y="87" width="54" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="610" y="97" font-size="9" fill="#5a6472" text-anchor="middle">contains</text>
+<line x1="840" y1="88" x2="1000" y2="80" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="887" y="77" width="66" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="920" y="87" font-size="9" fill="#5a6472" text-anchor="middle">associates</text>
+<line x1="1020" y1="388" x2="820" y2="499" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="884" y="436" width="72" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="920" y="446" font-size="9" fill="#5a6472" text-anchor="middle">is assigned</text>
+<line x1="1100" y1="300" x2="1100" y2="108" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1076" y="197" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1100" y="207" font-size="9" fill="#5a6472" text-anchor="middle">handled</text>
+<line x1="1000" y1="525" x2="820" y2="543" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="874" y="527" width="72" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="910" y="537" font-size="9" fill="#5a6472" text-anchor="middle">is assigned</text>
+<line x1="500" y1="485" x2="620" y2="523" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="548" y="497" width="24" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="560" y="507" font-size="9" fill="#5a6472" text-anchor="middle">has</text>
+<line x1="240" y1="645" x2="620" y2="573" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="418" y="602" width="24" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="430" y="612" font-size="9" fill="#5a6472" text-anchor="middle">has</text>
+<line x1="755" y1="1340" x2="729" y2="748" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="718" y="1037" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="742" y="1047" font-size="9" fill="#5a6472" text-anchor="middle">assigns</text>
+<line x1="760" y1="1548" x2="760" y2="1820" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="733" y="1677" width="54" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="760" y="1687" font-size="9" fill="#5a6472" text-anchor="middle">contains</text>
+<line x1="756" y1="1060" x2="734" y2="748" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="727" y="897" width="36" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="745" y="907" font-size="9" fill="#5a6472" text-anchor="middle">holds</text>
+<line x1="760" y1="1168" x2="760" y2="1340" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="742" y="1247" width="36" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="760" y="1257" font-size="9" fill="#5a6472" text-anchor="middle">holds</text>
+<line x1="540" y1="1437" x2="660" y2="1441" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="576" y="1432" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="600" y="1442" font-size="9" fill="#5a6472" text-anchor="middle">receive</text>
+<line x1="440" y1="1700" x2="440" y2="1528" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="416" y="1607" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="440" y="1617" font-size="9" fill="#5a6472" text-anchor="middle">records</text>
+<line x1="457" y1="1700" x2="675" y2="748" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="545" y="1217" width="42" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="566" y="1227" font-size="9" fill="#5a6472" text-anchor="middle">sender</text>
+<line x1="1080" y1="1720" x2="780" y2="748" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="909" y="1227" width="42" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="930" y="1237" font-size="9" fill="#5a6472" text-anchor="middle">writes</text>
+<line x1="1036" y1="1720" x2="860" y2="1544" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="921" y="1625" width="54" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="948" y="1635" font-size="9" fill="#5a6472" text-anchor="middle">contains</text>
+<line x1="1120" y1="1060" x2="1120" y2="928" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1084" y="987" width="72" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1120" y="997" font-size="9" fill="#5a6472" text-anchor="middle">assessed by</text>
+<line x1="1057" y1="1060" x2="820" y2="704" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="900" y="875" width="78" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="939" y="885" font-size="9" fill="#5a6472" text-anchor="middle">evaluated by</text>
+<line x1="1020" y1="764" x2="820" y2="624" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="884" y="687" width="72" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="920" y="697" font-size="9" fill="#5a6472" text-anchor="middle">assigned to</text>
+<line x1="240" y1="1285" x2="660" y2="1413" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="414" y="1342" width="72" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="450" y="1352" font-size="9" fill="#5a6472" text-anchor="middle">attached to</text>
+<line x1="217" y1="1430" x2="620" y2="728" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="385" y="1072" width="66" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="418" y="1082" font-size="9" fill="#5a6472" text-anchor="middle">created by</text>
+<line x1="180" y1="1820" x2="637" y2="748" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="382" y="1277" width="54" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="409" y="1287" font-size="9" fill="#5a6472" text-anchor="middle">notifies</text>
+<line x1="1668" y1="1420" x2="820" y2="645" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1220" y="1026" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1244" y="1036" font-size="9" fill="#5a6472" text-anchor="middle">creates</text>
+<line x1="1160" y1="1476" x2="860" y2="1452" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="980" y="1457" width="60" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1010" y="1467" font-size="9" fill="#5a6472" text-anchor="middle">generates</text>
+<line x1="1211" y1="1400" x2="820" y2="726" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1004" y="1056" width="24" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1016" y="1066" font-size="9" fill="#5a6472" text-anchor="middle">has</text>
+<line x1="1360" y1="710" x2="820" y2="578" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1063" y="637" width="54" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1090" y="647" font-size="9" fill="#5a6472" text-anchor="middle">proposes</text>
+<line x1="1740" y1="128" x2="1540" y2="560" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1622" y="337" width="36" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1640" y="347" font-size="9" fill="#5a6472" text-anchor="middle">lists</text>
+<line x1="1721" y1="308" x2="1560" y2="571" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1616" y="432" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1640" y="442" font-size="9" fill="#5a6472" text-anchor="middle">attends</text>
+<line x1="1694" y1="508" x2="1560" y2="637" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1603" y="566" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1627" y="576" font-size="9" fill="#5a6472" text-anchor="middle">details</text>
+<line x1="1660" y1="681" x2="1560" y2="707" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1580" y="687" width="60" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1610" y="697" font-size="9" fill="#5a6472" text-anchor="middle">schedules</text>
+<line x1="1660" y1="841" x2="1560" y2="787" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1586" y="807" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1610" y="817" font-size="9" fill="#5a6472" text-anchor="middle">budgets</text>
+<line x1="1725" y1="1070" x2="1560" y2="861" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1616" y="958" width="54" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1643" y="968" font-size="9" fill="#5a6472" text-anchor="middle">measures</text>
+<line x1="1720" y1="1210" x2="1555" y2="908" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1619" y="1052" width="36" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1637" y="1062" font-size="9" fill="#5a6472" text-anchor="middle">signs</text>
+<line x1="1460" y1="1080" x2="1460" y2="908" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1430" y="987" width="60" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1460" y="997" font-size="9" fill="#5a6472" text-anchor="middle">organizes</text>
+<line x1="1460" y1="1280" x2="1460" y2="1188" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1433" y="1227" width="54" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1460" y="1237" font-size="9" fill="#5a6472" text-anchor="middle">composes</text>
+<line x1="1383" y1="1280" x2="820" y2="663" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1081" y="965" width="42" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1102" y="975" font-size="9" fill="#5a6472" text-anchor="middle">serves</text>
+<line x1="1085" y1="268" x2="820" y2="476" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="929" y="365" width="48" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="953" y="375" font-size="9" fill="#5a6472" text-anchor="middle">creates</text>
+<line x1="1360" y1="239" x2="1280" y2="219" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1290" y="222" width="60" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1320" y="232" font-size="9" fill="#5a6472" text-anchor="middle">evaluates</text>
+<line x1="1360" y1="303" x2="820" y2="515" stroke="#9aa6b8" stroke-width="1"/>
+<rect x="1051" y="402" width="78" height="13" fill="#ffffff" opacity="0.85"/>
+<text x="1090" y="412" font-size="9" fill="#5a6472" text-anchor="middle">submitted by</text>
+<rect x="40" y="900" width="200" height="68" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="40" y="900" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="140" y="919" font-size="12" font-weight="bold" text-anchor="middle">ROLES</text>
+<text x="48" y="942" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="74" y="942" font-size="10" text-decoration="underline">roles_id</text>
+<text x="74" y="962" font-size="10">roles</text>
+<rect x="300" y="880" width="200" height="88" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="300" y="880" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="400" y="899" font-size="12" font-weight="bold" text-anchor="middle">PERSONNEL_ROLE</text>
+<text x="308" y="922" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="334" y="922" font-size="10" text-decoration="underline">personnel_role_id</text>
+<text x="308" y="942" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="334" y="942" font-size="10">personnel_id</text>
+<text x="308" y="962" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="334" y="962" font-size="10">roles_id</text>
+<rect x="620" y="360" width="200" height="388" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="620" y="360" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="720" y="379" font-size="12" font-weight="bold" text-anchor="middle">PERSONNEL</text>
+<text x="628" y="402" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="654" y="402" font-size="10" text-decoration="underline">personnel_id</text>
+<text x="654" y="422" font-size="10">firstName</text>
+<text x="654" y="442" font-size="10">middleName</text>
+<text x="654" y="462" font-size="10">lastName</text>
+<text x="654" y="482" font-size="10">suffix</text>
+<text x="654" y="502" font-size="10">username</text>
+<text x="654" y="522" font-size="10">password</text>
+<text x="654" y="542" font-size="10">email</text>
+<text x="654" y="562" font-size="10">contactNumber</text>
+<text x="654" y="582" font-size="10">birthdate</text>
+<text x="654" y="602" font-size="10">isActive</text>
+<text x="654" y="622" font-size="10">tinNumber</text>
+<text x="654" y="642" font-size="10">GSISNumber</text>
+<text x="654" y="662" font-size="10">PHICNumber</text>
+<text x="654" y="682" font-size="10">address</text>
+<text x="654" y="702" font-size="10">plantillaNumber</text>
+<text x="654" y="722" font-size="10">date_of_appointment</text>
+<text x="654" y="742" font-size="10">hdmfNumber</text>
+<rect x="380" y="60" width="200" height="68" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="380" y="60" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="480" y="79" font-size="12" font-weight="bold" text-anchor="middle">SUBJECT</text>
+<text x="388" y="102" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="414" y="102" font-size="10" text-decoration="underline">subject_id</text>
+<text x="414" y="122" font-size="10">subject</text>
+<rect x="1000" y="40" width="200" height="68" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1000" y="40" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1100" y="59" font-size="12" font-weight="bold" text-anchor="middle">GRADE_LEVEL</text>
+<text x="1008" y="82" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1034" y="82" font-size="10" text-decoration="underline">grade_level_id</text>
+<text x="1034" y="102" font-size="10">grade_level</text>
+<rect x="640" y="20" width="200" height="148" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="640" y="20" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="740" y="39" font-size="12" font-weight="bold" text-anchor="middle">LOAD_ASSIGNMENT</text>
+<text x="648" y="62" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="674" y="62" font-size="10" text-decoration="underline">load_assign_id</text>
+<text x="648" y="82" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="674" y="82" font-size="10">personnel_id</text>
+<text x="648" y="102" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="674" y="102" font-size="10">subject_id</text>
+<text x="648" y="122" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="674" y="122" font-size="10">grade_level_id</text>
+<text x="674" y="142" font-size="10">createdAt</text>
+<text x="674" y="162" font-size="10">updatedAt</text>
+<rect x="1000" y="300" width="200" height="88" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1000" y="300" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1100" y="319" font-size="12" font-weight="bold" text-anchor="middle">DEAN_ASSIGNMENT</text>
+<text x="1008" y="342" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1034" y="342" font-size="10" text-decoration="underline">dean_assignment_id</text>
+<text x="1008" y="362" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1034" y="362" font-size="10">grade_level_id</text>
+<text x="1008" y="382" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1034" y="382" font-size="10">personnel_id</text>
+<rect x="1000" y="470" width="200" height="88" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1000" y="470" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1100" y="489" font-size="12" font-weight="bold" text-anchor="middle">COORDINATOR_TYPE</text>
+<text x="1008" y="512" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1034" y="512" font-size="10" text-decoration="underline">coordinator_type_id</text>
+<text x="1034" y="532" font-size="10">coordinator_type</text>
+<text x="1008" y="552" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1034" y="552" font-size="10">personnel_id</text>
+<rect x="300" y="360" width="200" height="188" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="300" y="360" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="400" y="379" font-size="12" font-weight="bold" text-anchor="middle">PERFORMANCE_SUMMARY</text>
+<text x="308" y="402" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="334" y="402" font-size="10" text-decoration="underline">summary_id</text>
+<text x="334" y="422" font-size="10">period</text>
+<text x="334" y="442" font-size="10">total_appraisal_points</text>
+<text x="334" y="462" font-size="10">average_event_score</text>
+<text x="334" y="482" font-size="10">average_special_task_score</text>
+<text x="334" y="502" font-size="10">report_timing_points</text>
+<text x="308" y="522" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="334" y="522" font-size="10">personnel_id</text>
+<text x="334" y="542" font-size="10">summary_date</text>
+<rect x="40" y="560" width="200" height="208" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="40" y="560" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="140" y="579" font-size="12" font-weight="bold" text-anchor="middle">APPRAISAL_RECORD</text>
+<text x="48" y="602" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="74" y="602" font-size="10" text-decoration="underline">appraisal_id</text>
+<text x="74" y="622" font-size="10">appraisal_type</text>
+<text x="74" y="642" font-size="10">total_points</text>
+<text x="74" y="662" font-size="10">appraisal_status</text>
+<text x="74" y="682" font-size="10">date_created</text>
+<text x="48" y="702" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="74" y="702" font-size="10">personnel_id</text>
+<text x="74" y="722" font-size="10">star_rating</text>
+<text x="74" y="742" font-size="10">compliance_points</text>
+<text x="74" y="762" font-size="10">source_type</text>
+<rect x="660" y="1820" width="200" height="68" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="660" y="1820" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="760" y="1839" font-size="12" font-weight="bold" text-anchor="middle">TASK_TYPE</text>
+<text x="668" y="1862" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="694" y="1862" font-size="10" text-decoration="underline">task_type_id</text>
+<text x="694" y="1882" font-size="10">task_type</text>
+<rect x="660" y="1340" width="200" height="208" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="660" y="1340" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="760" y="1359" font-size="12" font-weight="bold" text-anchor="middle">TASK</text>
+<text x="668" y="1382" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="694" y="1382" font-size="10" text-decoration="underline">task_id</text>
+<text x="668" y="1402" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="694" y="1402" font-size="10">personnel_id</text>
+<text x="694" y="1422" font-size="10">start_date</text>
+<text x="694" y="1442" font-size="10">end_date</text>
+<text x="694" y="1462" font-size="10">time</text>
+<text x="694" y="1482" font-size="10">instruction</text>
+<text x="694" y="1502" font-size="10">title</text>
+<text x="694" y="1522" font-size="10">disabled</text>
+<text x="668" y="1542" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="694" y="1542" font-size="10">task_type_id</text>
+<rect x="660" y="1060" width="200" height="108" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="660" y="1060" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="760" y="1079" font-size="12" font-weight="bold" text-anchor="middle">TASK_LOG</text>
+<text x="668" y="1102" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="694" y="1102" font-size="10" text-decoration="underline">tasklog_id</text>
+<text x="694" y="1122" font-size="10">submissionDate</text>
+<text x="668" y="1142" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="694" y="1142" font-size="10">personnel_id</text>
+<text x="668" y="1162" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="694" y="1162" font-size="10">task_id</text>
+<rect x="340" y="1340" width="200" height="188" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="340" y="1340" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="440" y="1359" font-size="12" font-weight="bold" text-anchor="middle">REPORTS</text>
+<text x="348" y="1382" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="374" y="1382" font-size="10" text-decoration="underline">report_id</text>
+<text x="374" y="1402" font-size="10">reportDescription</text>
+<text x="374" y="1422" font-size="10">reportTitle</text>
+<text x="374" y="1442" font-size="10">reportType</text>
+<text x="374" y="1462" font-size="10">reportFilePath</text>
+<text x="374" y="1482" font-size="10">reportFileName</text>
+<text x="374" y="1502" font-size="10">reportLinkUrl</text>
+<text x="348" y="1522" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="374" y="1522" font-size="10">task_id</text>
+<rect x="340" y="1700" width="200" height="148" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="340" y="1700" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="440" y="1719" font-size="12" font-weight="bold" text-anchor="middle">SUBMISSION_LOG</text>
+<text x="348" y="1742" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="374" y="1742" font-size="10" text-decoration="underline">submission_log_id</text>
+<text x="374" y="1762" font-size="10">status</text>
+<text x="374" y="1782" font-size="10">dateOfSubmission</text>
+<text x="348" y="1802" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="374" y="1802" font-size="10">sender_personnel_id</text>
+<text x="348" y="1822" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="374" y="1822" font-size="10">report_id</text>
+<text x="348" y="1842" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="374" y="1842" font-size="10">receiver_personnel_id</text>
+<rect x="1000" y="1720" width="200" height="128" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1000" y="1720" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1100" y="1739" font-size="12" font-weight="bold" text-anchor="middle">COMMENT</text>
+<text x="1008" y="1762" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1034" y="1762" font-size="10" text-decoration="underline">comment_id</text>
+<text x="1008" y="1782" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1034" y="1782" font-size="10">personnel_id</text>
+<text x="1008" y="1802" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1034" y="1802" font-size="10">task_id</text>
+<text x="1034" y="1822" font-size="10">comments</text>
+<text x="1034" y="1842" font-size="10">date</text>
+<rect x="1020" y="1060" width="200" height="188" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1020" y="1060" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1120" y="1079" font-size="12" font-weight="bold" text-anchor="middle">SPECIAL_TASK_EVALUATION</text>
+<text x="1028" y="1102" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1054" y="1102" font-size="10" text-decoration="underline">special_eval_id</text>
+<text x="1028" y="1122" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1054" y="1122" font-size="10">special_task_id</text>
+<text x="1028" y="1142" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1054" y="1142" font-size="10">evaluator_id</text>
+<text x="1054" y="1162" font-size="10">completion_quality_score</text>
+<text x="1054" y="1182" font-size="10">timeliness_score</text>
+<text x="1054" y="1202" font-size="10">initiative_score</text>
+<text x="1054" y="1222" font-size="10">weighted_average</text>
+<text x="1054" y="1242" font-size="10">date_submitted</text>
+<rect x="1160" y="1400" width="200" height="168" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1160" y="1400" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1260" y="1419" font-size="12" font-weight="bold" text-anchor="middle">TIMING_POINTS_RECORD</text>
+<text x="1168" y="1442" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1194" y="1442" font-size="10" text-decoration="underline">timing_record_id</text>
+<text x="1194" y="1462" font-size="10">submission_time</text>
+<text x="1194" y="1482" font-size="10">deadline_time</text>
+<text x="1194" y="1502" font-size="10">timing_category</text>
+<text x="1194" y="1522" font-size="10">points_earned</text>
+<text x="1168" y="1542" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1194" y="1542" font-size="10">personnel_id</text>
+<text x="1168" y="1562" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1194" y="1562" font-size="10">task_id</text>
+<rect x="1360" y="560" width="200" height="348" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1360" y="560" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1460" y="579" font-size="12" font-weight="bold" text-anchor="middle">EVENTS</text>
+<text x="1368" y="602" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1394" y="602" font-size="10" text-decoration="underline">event_id</text>
+<text x="1368" y="622" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1394" y="622" font-size="10">created_by</text>
+<text x="1394" y="642" font-size="10">title</text>
+<text x="1394" y="662" font-size="10">nature</text>
+<text x="1394" y="682" font-size="10">target_date</text>
+<text x="1394" y="702" font-size="10">venue</text>
+<text x="1394" y="722" font-size="10">proposed_budget</text>
+<text x="1394" y="742" font-size="10">fund_source</text>
+<text x="1394" y="762" font-size="10">focal_name</text>
+<text x="1394" y="782" font-size="10">focal_role</text>
+<text x="1394" y="802" font-size="10">focal_contact</text>
+<text x="1394" y="822" font-size="10">rationale</text>
+<text x="1394" y="842" font-size="10">objectives</text>
+<text x="1394" y="862" font-size="10">monitoring_criteria</text>
+<text x="1394" y="882" font-size="10">status</text>
+<text x="1394" y="902" font-size="10">created_at</text>
+<rect x="1660" y="40" width="200" height="88" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1660" y="40" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1760" y="59" font-size="12" font-weight="bold" text-anchor="middle">EVENT_OUTPUT</text>
+<text x="1668" y="82" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1694" y="82" font-size="10" text-decoration="underline">output_id</text>
+<text x="1668" y="102" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1694" y="102" font-size="10">event_id</text>
+<text x="1694" y="122" font-size="10">output_text</text>
+<rect x="1660" y="180" width="200" height="128" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1660" y="180" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1760" y="199" font-size="12" font-weight="bold" text-anchor="middle">EVENT_PARTICIPANT</text>
+<text x="1668" y="222" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1694" y="222" font-size="10" text-decoration="underline">participant_id</text>
+<text x="1668" y="242" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1694" y="242" font-size="10">event_id</text>
+<text x="1694" y="262" font-size="10">category</text>
+<text x="1694" y="282" font-size="10">male_count</text>
+<text x="1694" y="302" font-size="10">female_count</text>
+<rect x="1660" y="380" width="200" height="128" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1660" y="380" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1760" y="399" font-size="12" font-weight="bold" text-anchor="middle">EVENT_METHODOLOGY</text>
+<text x="1668" y="422" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1694" y="422" font-size="10" text-decoration="underline">methodology_id</text>
+<text x="1668" y="442" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1694" y="442" font-size="10">event_id</text>
+<text x="1694" y="462" font-size="10">phase_no</text>
+<text x="1694" y="482" font-size="10">stage</text>
+<text x="1694" y="502" font-size="10">activities</text>
+<rect x="1660" y="580" width="200" height="148" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1660" y="580" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1760" y="599" font-size="12" font-weight="bold" text-anchor="middle">EVENT_ACTIVITY</text>
+<text x="1668" y="622" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1694" y="622" font-size="10" text-decoration="underline">activity_id</text>
+<text x="1668" y="642" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1694" y="642" font-size="10">event_id</text>
+<text x="1694" y="662" font-size="10">activity_day</text>
+<text x="1694" y="682" font-size="10">activity_time</text>
+<text x="1694" y="702" font-size="10">activity_name</text>
+<text x="1694" y="722" font-size="10">speaker</text>
+<rect x="1660" y="810" width="200" height="168" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1660" y="810" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1760" y="829" font-size="12" font-weight="bold" text-anchor="middle">EVENT_BUDGET_ITEM</text>
+<text x="1668" y="852" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1694" y="852" font-size="10" text-decoration="underline">budget_item_id</text>
+<text x="1668" y="872" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1694" y="872" font-size="10">event_id</text>
+<text x="1694" y="892" font-size="10">item_category</text>
+<text x="1694" y="912" font-size="10">item_name</text>
+<text x="1694" y="932" font-size="10">quantity</text>
+<text x="1694" y="952" font-size="10">cost_per_unit</text>
+<text x="1694" y="972" font-size="10">total_cost</text>
+<rect x="1660" y="1070" width="200" height="88" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1660" y="1070" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1760" y="1089" font-size="12" font-weight="bold" text-anchor="middle">EVENT_INDICATOR</text>
+<text x="1668" y="1112" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1694" y="1112" font-size="10" text-decoration="underline">indicator_id</text>
+<text x="1668" y="1132" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1694" y="1132" font-size="10">event_id</text>
+<text x="1694" y="1152" font-size="10">label</text>
+<rect x="1660" y="1210" width="200" height="148" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1660" y="1210" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1760" y="1229" font-size="12" font-weight="bold" text-anchor="middle">EVENT_SIGNATORY</text>
+<text x="1668" y="1252" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1694" y="1252" font-size="10" text-decoration="underline">signatory_id</text>
+<text x="1668" y="1272" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1694" y="1272" font-size="10">event_id</text>
+<text x="1694" y="1292" font-size="10">role</text>
+<text x="1694" y="1312" font-size="10">signatory_name</text>
+<text x="1694" y="1332" font-size="10">signatory_title</text>
+<text x="1694" y="1352" font-size="10">sequence</text>
+<rect x="1360" y="1080" width="200" height="108" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1360" y="1080" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1460" y="1099" font-size="12" font-weight="bold" text-anchor="middle">EVENT_COMMITTEE</text>
+<text x="1368" y="1122" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1394" y="1122" font-size="10" text-decoration="underline">event_committee_id</text>
+<text x="1368" y="1142" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1394" y="1142" font-size="10">event_id</text>
+<text x="1394" y="1162" font-size="10">committee_type</text>
+<text x="1394" y="1182" font-size="10">title</text>
+<rect x="1360" y="1280" width="200" height="168" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1360" y="1280" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1460" y="1299" font-size="12" font-weight="bold" text-anchor="middle">COMMITTEE_MEMBER</text>
+<text x="1368" y="1322" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1394" y="1322" font-size="10" text-decoration="underline">member_id</text>
+<text x="1368" y="1342" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1394" y="1342" font-size="10">event_committee_id</text>
+<text x="1368" y="1362" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1394" y="1362" font-size="10">personnel_id</text>
+<text x="1394" y="1382" font-size="10">member_name</text>
+<text x="1394" y="1402" font-size="10">designation</text>
+<text x="1394" y="1422" font-size="10">terms_of_reference</text>
+<text x="1394" y="1442" font-size="10">output</text>
+<rect x="1080" y="120" width="200" height="148" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1080" y="120" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1180" y="139" font-size="12" font-weight="bold" text-anchor="middle">SCHOOL_EVENT</text>
+<text x="1088" y="162" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1114" y="162" font-size="10" text-decoration="underline">school_event_id</text>
+<text x="1114" y="182" font-size="10">title</text>
+<text x="1114" y="202" font-size="10">description</text>
+<text x="1114" y="222" font-size="10">event_date</text>
+<text x="1114" y="242" font-size="10">status</text>
+<text x="1088" y="262" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1114" y="262" font-size="10">created_by</text>
+<rect x="1360" y="120" width="200" height="288" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1360" y="120" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1460" y="139" font-size="12" font-weight="bold" text-anchor="middle">EVENT_EVALUATION</text>
+<text x="1368" y="162" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1394" y="162" font-size="10" text-decoration="underline">evaluation_id</text>
+<text x="1368" y="182" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1394" y="182" font-size="10">event_id</text>
+<text x="1368" y="202" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1394" y="202" font-size="10">evaluator_id</text>
+<text x="1394" y="222" font-size="10">evaluator_name</text>
+<text x="1394" y="242" font-size="10">evaluator_role</text>
+<text x="1394" y="262" font-size="10">planning_score</text>
+<text x="1394" y="282" font-size="10">objectives_score</text>
+<text x="1394" y="302" font-size="10">personnel_score</text>
+<text x="1394" y="322" font-size="10">time_mgmt_score</text>
+<text x="1394" y="342" font-size="10">engagement_score</text>
+<text x="1394" y="362" font-size="10">resource_score</text>
+<text x="1394" y="382" font-size="10">feedback_comments</text>
+<text x="1394" y="402" font-size="10">date_submitted</text>
+<rect x="40" y="1180" width="200" height="148" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="40" y="1180" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="140" y="1199" font-size="12" font-weight="bold" text-anchor="middle">TASK_ATTACHMENTS</text>
+<text x="48" y="1222" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="74" y="1222" font-size="10" text-decoration="underline">attachment_id</text>
+<text x="48" y="1242" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="74" y="1242" font-size="10">task_id</text>
+<text x="74" y="1262" font-size="10">attachment_type</text>
+<text x="74" y="1282" font-size="10">name</text>
+<text x="74" y="1302" font-size="10">url</text>
+<text x="74" y="1322" font-size="10">created_at</text>
+<rect x="40" y="1430" width="200" height="268" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="40" y="1430" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="140" y="1449" font-size="12" font-weight="bold" text-anchor="middle">TASK_TEMPLATES</text>
+<text x="48" y="1472" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="74" y="1472" font-size="10" text-decoration="underline">template_id</text>
+<text x="74" y="1492" font-size="10">title</text>
+<text x="74" y="1512" font-size="10">instructions</text>
+<text x="74" y="1532" font-size="10">start_date</text>
+<text x="74" y="1552" font-size="10">end_date</text>
+<text x="74" y="1572" font-size="10">due_time</text>
+<text x="74" y="1592" font-size="10">points_early</text>
+<text x="74" y="1612" font-size="10">points_ontime</text>
+<text x="74" y="1632" font-size="10">points_late24</text>
+<text x="74" y="1652" font-size="10">points_after24</text>
+<text x="48" y="1672" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="74" y="1672" font-size="10">created_by</text>
+<text x="74" y="1692" font-size="10">created_at</text>
+<rect x="40" y="1820" width="200" height="188" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="40" y="1820" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="140" y="1839" font-size="12" font-weight="bold" text-anchor="middle">NOTIFICATIONS</text>
+<text x="48" y="1862" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="74" y="1862" font-size="10" text-decoration="underline">notification_id</text>
+<text x="48" y="1882" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="74" y="1882" font-size="10">personnel_id</text>
+<text x="74" y="1902" font-size="10">type</text>
+<text x="74" y="1922" font-size="10">title</text>
+<text x="74" y="1942" font-size="10">body</text>
+<text x="74" y="1962" font-size="10">ref_id</text>
+<text x="74" y="1982" font-size="10">is_read</text>
+<text x="74" y="2002" font-size="10">created_at</text>
+<rect x="1020" y="740" width="200" height="188" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1020" y="740" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1120" y="759" font-size="12" font-weight="bold" text-anchor="middle">SPECIAL_TASKS</text>
+<text x="1028" y="782" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1054" y="782" font-size="10" text-decoration="underline">special_task_id</text>
+<text x="1054" y="802" font-size="10">title</text>
+<text x="1054" y="822" font-size="10">description</text>
+<text x="1028" y="842" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1054" y="842" font-size="10">assignee_id</text>
+<text x="1028" y="862" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1054" y="862" font-size="10">assigned_by</text>
+<text x="1054" y="882" font-size="10">due_date</text>
+<text x="1054" y="902" font-size="10">status</text>
+<text x="1054" y="922" font-size="10">created_at</text>
+<rect x="1660" y="1420" width="200" height="168" fill="#ffffff" stroke="#1a1a2e" stroke-width="1.3"/>
+<rect x="1660" y="1420" width="200" height="28" fill="#dce6f5" stroke="#1a1a2e" stroke-width="1.3"/>
+<text x="1760" y="1439" font-size="12" font-weight="bold" text-anchor="middle">ACTIVITY_EVENTS</text>
+<text x="1668" y="1462" font-size="9" font-style="italic" fill="#8a93a3">PK</text>
+<text x="1694" y="1462" font-size="10" text-decoration="underline">activity_event_id</text>
+<text x="1694" y="1482" font-size="10">title</text>
+<text x="1694" y="1502" font-size="10">description</text>
+<text x="1694" y="1522" font-size="10">event_date</text>
+<text x="1694" y="1542" font-size="10">status</text>
+<text x="1668" y="1562" font-size="9" font-style="italic" fill="#8a93a3">FK</text>
+<text x="1694" y="1562" font-size="10">created_by</text>
+<text x="1694" y="1582" font-size="10">created_at</text>
+</svg>

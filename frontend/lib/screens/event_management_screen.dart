@@ -142,9 +142,16 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   List<_CalEvent> _forStatus(_EventStatus s) =>
       _filteredActive.where((e) => e.status == s).toList();
 
-  Set<DateTime> get _eventDays => _activeEvents
-      .map((e) => DateTime(e.date.year, e.date.month, e.date.day))
-      .toSet();
+  // Active events grouped by calendar day — powers the dot markers and the
+  // hover tooltip (title / when / where) on the side calendar.
+  Map<DateTime, List<_CalEvent>> get _eventsByDay {
+    final map = <DateTime, List<_CalEvent>>{};
+    for (final e in _activeEvents) {
+      final key = DateTime(e.date.year, e.date.month, e.date.day);
+      (map[key] ??= []).add(e);
+    }
+    return map;
+  }
 
   Future<void> _disable(_CalEvent event) async {
     if (event.id != null) {
@@ -225,7 +232,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                           child: _SideCalendar(
                             focusedDay: _focusedDay,
                             selectedDay: _selectedDay,
-                            eventDays: _eventDays,
+                            eventsByDay: _eventsByDay,
                             onDaySelected: (sel, foc) => setState(() {
                               _selectedDay = sel; _focusedDay = foc;
                             }),
@@ -241,7 +248,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                     _SideCalendar(
                       focusedDay: _focusedDay,
                       selectedDay: _selectedDay,
-                      eventDays: _eventDays,
+                      eventsByDay: _eventsByDay,
                       onDaySelected: (sel, foc) => setState(() {
                         _selectedDay = sel; _focusedDay = foc;
                       }),
@@ -601,8 +608,12 @@ void _showEventDetail(BuildContext context, _CalEvent event, {
                   _ProposalSection(title: 'VIII. Monitoring & Evaluation', children: [
                     if (_notEmpty(raw['monitoring_criteria']))
                       _PropBody(raw['monitoring_criteria'].toString()),
-                    if (_notEmpty(raw['indicators']))
-                      _PropField('Indicators', raw['indicators']),
+                    if (_notEmpty(raw['indicators'])) ...[
+                      const Text('Indicators',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF718096))),
+                      const SizedBox(height: 4),
+                      _buildIndicators(raw['indicators'].toString()),
+                    ],
                   ]),
 
                 // Comments
@@ -767,33 +778,56 @@ Widget _buildCommitteeList(String raw) {
 
 Widget _buildTwgGroups(String raw) {
   try {
-    final data = jsonDecode(raw) as Map<String, dynamic>;
+    final list = jsonDecode(raw) as List;
     final sections = <Widget>[];
-    data.forEach((groupKey, members) {
-      final label = groupKey.toString()
-          .replaceAll('_', ' ')
-          .split(' ')
-          .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
-          .join(' ');
-      sections.add(Padding(
-        padding: const EdgeInsets.only(top: 6, bottom: 4),
-        child: Text(label,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                color: Color(0xFF718096), letterSpacing: 0.3)),
-      ));
-      if (members is List) {
-        for (final m in members) {
-          final name  = (m as Map<String, dynamic>)['name']?.toString() ?? '';
-          final desig = m['designation']?.toString() ?? '';
-          sections.add(Padding(
-            padding: const EdgeInsets.only(bottom: 3, left: 8),
-            child: Text('• $name${desig.isNotEmpty ? ' — $desig' : ''}',
-                style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568))),
-          ));
-        }
+    for (final group in list) {
+      final g = group as Map<String, dynamic>;
+      final title = g['title']?.toString() ?? '';
+      final members = (g['members'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      if (title.isNotEmpty) {
+        sections.add(Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 4),
+          child: Text(title,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                  color: Color(0xFF718096), letterSpacing: 0.3)),
+        ));
       }
-    });
+      for (final m in members) {
+        final name  = m['name']?.toString() ?? '';
+        final desig = m['designation']?.toString() ?? '';
+        sections.add(Padding(
+          padding: const EdgeInsets.only(bottom: 3, left: 8),
+          child: Text('• $name${desig.isNotEmpty ? ' — $desig' : ''}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568))),
+        ));
+      }
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: sections);
+  } catch (_) {
+    return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
+  }
+}
+
+Widget _buildIndicators(String raw) {
+  try {
+    final list = jsonDecode(raw) as List;
+    final items = list
+        .asMap()
+        .entries
+        .map((e) {
+          final label = (e.value as Map<String, dynamic>)['label']?.toString() ?? '';
+          return '${e.key + 1}. $label';
+        })
+        .where((s) => s.trim().length > 3)
+        .toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items.map((s) => Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Text(s, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568))),
+      )).toList(),
+    );
   } catch (_) {
     return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
   }
@@ -1236,13 +1270,67 @@ class _ConfirmDeleteDialog extends StatelessWidget {
 
 // ─── Side Calendar ────────────────────────────────────────────────────────────
 
+class _Dot extends StatelessWidget {
+  const _Dot();
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 5, height: 5,
+        decoration: const BoxDecoration(color: Color(0xFF48BB78), shape: BoxShape.circle),
+      );
+}
+
 class _SideCalendar extends StatelessWidget {
   final DateTime focusedDay; final DateTime? selectedDay;
-  final Set<DateTime> eventDays;
+  final Map<DateTime, List<_CalEvent>> eventsByDay;
   final Function(DateTime, DateTime) onDaySelected;
   final Function(DateTime) onPageChanged;
   const _SideCalendar({required this.focusedDay, required this.selectedDay,
-      required this.eventDays, required this.onDaySelected, required this.onPageChanged});
+      required this.eventsByDay, required this.onDaySelected, required this.onPageChanged});
+
+  List<_CalEvent> _eventsFor(DateTime day) =>
+      eventsByDay[DateTime(day.year, day.month, day.day)] ?? const [];
+
+  // Hover tooltip text: title · when · where for each event on the day.
+  String _tooltipText(List<_CalEvent> events) => events.map((e) {
+        final when = (e.raw['target_date'] ?? '').toString().trim();
+        final where = (e.raw['venue'] ?? '').toString().trim();
+        final lines = <String>[e.title];
+        if (when.isNotEmpty) lines.add('When: $when');
+        if (where.isNotEmpty) lines.add('Where: $where');
+        return lines.join('\n');
+      }).join('\n\n');
+
+  // A single day cell rendered to match the original calendarStyle, wrapped in
+  // a hover Tooltip when the day has events.
+  Widget _dayCell(DateTime day, {Color? bg, required Color textColor, bool bold = false}) {
+    final events = _eventsFor(day);
+    Widget cell = Container(
+      margin: const EdgeInsets.all(4),
+      alignment: Alignment.center,
+      decoration: bg != null ? BoxDecoration(color: bg, shape: BoxShape.circle) : null,
+      child: Stack(alignment: Alignment.center, children: [
+        Text('${day.day}',
+            style: TextStyle(fontSize: 13, color: textColor,
+                fontWeight: bold ? FontWeight.w600 : FontWeight.w400)),
+        if (events.isNotEmpty)
+          const Positioned(bottom: 1, child: _Dot()),
+      ]),
+    );
+    if (events.isEmpty) return cell;
+    return Tooltip(
+      message: _tooltipText(events),
+      waitDuration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      textStyle: const TextStyle(color: Colors.white, fontSize: 11.5, height: 1.4),
+      child: cell,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1251,9 +1339,16 @@ class _SideCalendar extends StatelessWidget {
       child: TableCalendar(
         firstDay: DateTime(2020), lastDay: DateTime(2030), focusedDay: focusedDay,
         selectedDayPredicate: (day) => isSameDay(selectedDay, day),
-        eventLoader: (day) => eventDays.any((e) => isSameDay(e, day)) ? [Object()] : [],
         onDaySelected: onDaySelected, onPageChanged: onPageChanged,
         availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+        calendarBuilders: CalendarBuilders(
+          defaultBuilder: (_, day, __) =>
+              _dayCell(day, textColor: const Color(0xFF1A1A2E)),
+          todayBuilder: (_, day, __) => _dayCell(day,
+              bg: const Color(0xFFACC2DF), textColor: Colors.white, bold: true),
+          selectedBuilder: (_, day, __) => _dayCell(day,
+              bg: const Color(0xFF1E2126), textColor: Colors.white, bold: true),
+        ),
         calendarStyle: const CalendarStyle(
           todayDecoration: BoxDecoration(color: Color(0xFFACC2DF), shape: BoxShape.circle),
           todayTextStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
@@ -1262,8 +1357,7 @@ class _SideCalendar extends StatelessWidget {
           defaultTextStyle: TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)),
           weekendTextStyle: TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)),
           outsideDaysVisible: false,
-          markerDecoration: BoxDecoration(color: Color(0xFF48BB78), shape: BoxShape.circle),
-          markerSize: 5, markersMaxCount: 1, cellMargin: EdgeInsets.all(4),
+          cellMargin: EdgeInsets.all(4),
         ),
         headerStyle: HeaderStyle(
           formatButtonVisible: false, titleCentered: true,

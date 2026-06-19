@@ -6,6 +6,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from cors import get_cors_config
 from database import init_db
 from routes.auth import router as auth_router
 from routes.users import router as users_router
@@ -19,10 +20,11 @@ app = FastAPI(
     docs_url="/docs",
 )
 
+_cors_origins, _cors_creds = get_cors_config()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_creds,
     allow_methods=["*"],
     allow_headers=["*"],
 )

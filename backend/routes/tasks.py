@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
-from database import get_db, create_notification
+from database import connect_db, create_notification
 from auth import (get_current_user, require_task_creator, require_can_assign,
                   TASK_CREATORS, can_assign)
 
@@ -70,7 +70,7 @@ def _task_row(row, db, current_user_id: int, current_role: str):
 
 @router.get("/api/tasks")
 def list_tasks(user=Depends(get_current_user), search: str = "", assigned: int = 0):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
@@ -111,7 +111,7 @@ def list_tasks(user=Depends(get_current_user), search: str = "", assigned: int =
 
 @router.get("/api/tasks/{task_id}")
 def get_task(task_id: int, user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
@@ -205,7 +205,7 @@ class CreateTaskRequest(BaseModel):
 
 @router.post("/api/tasks")
 def create_task(req: CreateTaskRequest, user=Depends(require_task_creator)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
@@ -266,7 +266,7 @@ class UpdateTaskRequest(BaseModel):
 
 @router.put("/api/tasks/{task_id}")
 def update_task(task_id: int, req: UpdateTaskRequest, user=Depends(require_task_creator)):
-    db = get_db()
+    db = connect_db()
     fields, vals = [], []
     for f, v in [("title", req.title), ("subject", req.subject),
                  ("task_type_id", req.task_type_id), ("start_date", req.start_date),
@@ -285,7 +285,7 @@ def update_task(task_id: int, req: UpdateTaskRequest, user=Depends(require_task_
 
 @router.delete("/api/tasks/{task_id}")
 def delete_task(task_id: int, user=Depends(require_task_creator)):
-    db = get_db()
+    db = connect_db()
     db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
     db.commit()
     db.close()
@@ -300,7 +300,7 @@ class AssignRequest(BaseModel):
 
 @router.post("/api/tasks/{task_id}/assign")
 def assign_task(task_id: int, req: AssignRequest, user=Depends(require_can_assign)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
@@ -353,7 +353,7 @@ def assign_task(task_id: int, req: AssignRequest, user=Depends(require_can_assig
 
 @router.delete("/api/tasks/{task_id}/assign/{user_id}")
 def unassign_task(task_id: int, user_id: int, user=Depends(require_can_assign)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     db.execute(
         "DELETE FROM task_assignments WHERE task_id=? AND user_id=? AND assigned_by=?",

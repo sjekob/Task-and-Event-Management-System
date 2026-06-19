@@ -14,7 +14,11 @@ import '../utils/web_downloader.dart';
 class TaskDetailScreen extends StatefulWidget {
   final int taskId;
   final VoidCallback? onBack;
-  const TaskDetailScreen({super.key, required this.taskId, this.onBack});
+  /// True when opened from "My Tasks" — the viewer is acting as a submitter
+  /// working on their own assigned task, so assign/review UI (which reveals
+  /// who else the task is assigned to) is hidden.
+  final bool ownTaskView;
+  const TaskDetailScreen({super.key, required this.taskId, this.onBack, this.ownTaskView = false});
 
   @override
   State<TaskDetailScreen> createState() => _TaskDetailScreenState();
@@ -142,8 +146,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final user = context.read<AppState>().currentUser;
     if (user == null) return const SizedBox.shrink();
 
-    final canAssign = user.canAssign;
-    final canReview = user.canReviewSubmissions;
+    // Separation of duties is route-based: in Task Manager (/tasks) the assigner
+    // sees who is assigned and team submissions; in My Tasks (/my-tasks,
+    // ownTaskView) those are hidden so the user only sees their own work.
+    final canAssign = user.canAssign && !widget.ownTaskView;
+    final canReview = user.canReviewSubmissions && !widget.ownTaskView;
     final canSubmit = user.isTeacher || user.isRegistrar || user.isDean;
     final isReviewOnly = canReview && !canSubmit; // principal/admin/coordinator
 
@@ -200,29 +207,85 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Widget _buildMobileLayout(User user, bool canAssign, bool canReview, bool canSubmit, bool isReviewOnly) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _BackButton(onBack: widget.onBack),
-                _buildMainContent(user, canAssign, canReview,
-                    canManage: user.isAdmin || user.isPrincipal),
-              ],
-            ),
+    final t = _task!;
+    final deadlineText = (t.endDate ?? '').isEmpty
+        ? 'No due date'
+        : 'Due ${_fmtDate(t.endDate!)}, ${t.dueTime ?? '11:59 PM'}';
+
+    return Stack(
+      children: [
+        // ── Base: task details (scrolls behind the sheet) ──
+        SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 300),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _BackButton(onBack: widget.onBack),
+              _buildMainContent(user, canAssign, canReview,
+                  canManage: user.isAdmin || user.isPrincipal),
+            ],
           ),
-          const Divider(height: 1, color: AppTheme.borderColor),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: isReviewOnly
-                ? _buildReviewSidebar()
-                : _buildSubmitSidebar(user),
-          ),
-        ],
-      ),
+        ),
+
+        // ── Draggable "Your work" sheet ──
+        DraggableScrollableSheet(
+          initialChildSize: 0.42,
+          minChildSize: 0.14,
+          maxChildSize: 0.92,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: AppTheme.bgColor,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                boxShadow: [
+                  BoxShadow(color: Color(0x22000000), blurRadius: 16, offset: Offset(0, -4)),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Drag handle
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 8),
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: AppTheme.borderColor,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // Header: "Your work" + due date
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                    child: Row(
+                      children: [
+                        Text('Your work', style: AppTheme.heading3),
+                        const Spacer(),
+                        Flexible(
+                          child: Text(deadlineText,
+                              style: AppTheme.bodyMd,
+                              textAlign: TextAlign.right,
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: AppTheme.borderColor),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                      child: isReviewOnly
+                          ? _buildReviewSidebar()
+                          : _buildSubmitSidebar(user, showHeader: false),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -253,7 +316,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(t.title, style: AppTheme.heading2),
-                  Text(_fmtDate(t.startDate ?? ''), style: AppTheme.bodyMd),
+                  if ((t.startDate ?? '').isNotEmpty)
+                    Text('Start: ${_fmtDate(t.startDate!)}', style: AppTheme.bodyMd),
+                  Text(
+                    'Deadline: ${_fmtDate(t.endDate ?? '')}, ${t.dueTime ?? '11:59 PM'}',
+                    style: AppTheme.bodyMd.copyWith(
+                        fontWeight: FontWeight.w600, color: AppTheme.accentBlue),
+                  ),
                 ],
               ),
             ),
@@ -305,11 +374,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
         if (t.instructions != null)
           Text(t.instructions!, style: AppTheme.bodyMd.copyWith(height: 1.75)),
-        const SizedBox(height: 14),
-
-        _DeadlineBox(date: t.endDate ?? '', time: t.dueTime ?? '11:59 PM'),
-        const SizedBox(height: 8),
-        _PointsBox(task: t),
         const SizedBox(height: 16),
 
         // Assign Users section
@@ -457,17 +521,18 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   // Sidebar for submitters (teacher/registrar/dean)
-  Widget _buildSubmitSidebar(User user) {
+  Widget _buildSubmitSidebar(User user, {bool showHeader = true}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 14),
-          child: Text('Your Submission',
-              style: GoogleFonts.plusJakartaSans(
-                  fontSize: 16, fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary)),
-        ),
+        if (showHeader)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 14),
+            child: Text('Your Submission',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16, fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary)),
+          ),
         // ── Points preview (only when not yet submitted) ──
         if (_task!.myReport == null)
           _PointsPreviewCard(task: _task!),
@@ -1545,60 +1610,6 @@ class _BackButton extends StatelessWidget {
       );
 }
 
-class _DeadlineBox extends StatelessWidget {
-  final String date;
-  final String time;
-  const _DeadlineBox({required this.date, required this.time});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppTheme.cardColor,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppTheme.borderColor),
-        ),
-        child: Row(children: [
-          const Text('📅', style: TextStyle(fontSize: 16)),
-          const SizedBox(width: 8),
-          Text('Deadline: $date, $time',
-              style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.accentBlue)),
-        ]),
-      );
-}
-
-class _PointsBox extends StatelessWidget {
-  final Task task;
-  const _PointsBox({required this.task});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppTheme.cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.borderColor),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Text('⚡', style: TextStyle(fontSize: 16)),
-            const SizedBox(width: 8),
-            Text('Points System', style: AppTheme.heading3),
-          ]),
-          const SizedBox(height: 10),
-          PointsRow(label: 'Early Submission', value: '+${task.pointsEarly}',
-              bgColor: AppTheme.greenBg, valueColor: const Color(0xFF15803D)),
-          PointsRow(label: 'On Time', value: '+${task.pointsOntime}',
-              bgColor: AppTheme.blueBg, valueColor: const Color(0xFF1D4ED8)),
-          PointsRow(label: 'Late (within 24h)', value: '+${task.pointsLate24}',
-              bgColor: AppTheme.amberBg, valueColor: const Color(0xFF92400E)),
-          PointsRow(label: 'Late (after 24h)', value: '${task.pointsAfter24}',
-              bgColor: AppTheme.redBg, valueColor: AppTheme.redColor),
-        ]),
-      );
-}
-
 class _OptionRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1646,48 +1657,78 @@ class _InlineCommentInputState extends State<_InlineCommentInput> {
 
   @override
   Widget build(BuildContext context) {
+    const double h = 40;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       child: Row(children: [
         CircleAvatar(
-          radius: 16,
+          radius: h / 2,
           backgroundColor: AppTheme.sidebarActive,
           child: Text(widget.userInitials,
               style: const TextStyle(
-                  color: Colors.white, fontSize: 11,
+                  color: Colors.white, fontSize: 12,
                   fontWeight: FontWeight.w700)),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: Container(
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            height: h,
+            padding: const EdgeInsets.only(left: 2, right: 5),
             decoration: BoxDecoration(
-              color: AppTheme.bgColor,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppTheme.borderColor),
+              color: const Color(0xFFF1F3F7),
+              borderRadius: BorderRadius.circular(h / 2),
             ),
-            child: TextField(
-              controller: _ctrl,
-              style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12, color: AppTheme.textPrimary),
-              textAlignVertical: TextAlignVertical.center,
-              decoration: InputDecoration(
-                hintText: 'Add a private comment...',
-                hintStyle: AppTheme.bodySm,
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
+            child: Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _ctrl,
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12.5, color: AppTheme.textPrimary),
+                  textAlignVertical: TextAlignVertical.center,
+                  cursorColor: AppTheme.accentBlue,
+                  decoration: InputDecoration(
+                    hintText: 'Add a private comment…',
+                    hintStyle: GoogleFonts.plusJakartaSans(
+                        fontSize: 12.5, color: AppTheme.textLight),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    isCollapsed: true,
+                  ),
+                  onSubmitted: (_) => _send(),
+                ),
               ),
-              onSubmitted: (_) => _send(),
-            ),
+              const SizedBox(width: 6),
+              // Send button — fills with accent once there's text to send.
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _ctrl,
+                builder: (_, value, __) {
+                  final active = value.text.trim().isNotEmpty;
+                  return Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: active ? _send : null,
+                      customBorder: const CircleBorder(),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: active
+                              ? AppTheme.accentBlue
+                              : const Color(0xFFD7DBE3),
+                        ),
+                        child: const Icon(Icons.arrow_upward_rounded,
+                            size: 17, color: Colors.white),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ]),
           ),
-        ),
-        const SizedBox(width: 8),
-        GestureDetector(
-          onTap: _send,
-          child: const Icon(Icons.send_rounded,
-              size: 20, color: AppTheme.textMuted),
         ),
       ]),
     );

@@ -92,6 +92,30 @@ class _LoginScreenState extends State<LoginScreen> {
                           color: AppTheme.textPrimary)),
                   const SizedBox(height: 28),
 
+                  // Session-expired notice (your work was auto-saved as a draft)
+                  if (context.watch<AppState>().sessionExpired) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.amberBg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(children: [
+                        const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Your session expired. Any in-progress event was saved as a draft.',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12, color: const Color(0xFFB45309)),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Username
                   _InputBox(
                     controller: _userCtrl,
@@ -216,6 +240,10 @@ class _InputBox extends StatelessWidget {
                 hintStyle: GoogleFonts.plusJakartaSans(
                     fontSize: 15, color: AppTheme.textLight),
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
                 isDense: true,
                 contentPadding:
                     const EdgeInsets.symmetric(vertical: 12),

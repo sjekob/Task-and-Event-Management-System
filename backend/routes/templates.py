@@ -2,7 +2,7 @@ import datetime
 from fastapi import APIRouter, HTTPException, Depends, UploadFile
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db
+from database import connect_db
 from auth import get_current_user, require_admin_or_principal
 
 router = APIRouter(tags=["Templates"])
@@ -22,7 +22,7 @@ class TemplateCreate(BaseModel):
 
 @router.post("/api/templates")
 def create_template(req: TemplateCreate, user=Depends(require_admin_or_principal)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     db.execute(
         """INSERT INTO task_templates
@@ -40,7 +40,7 @@ def create_template(req: TemplateCreate, user=Depends(require_admin_or_principal
 
 @router.get("/api/templates")
 def get_templates(user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     rows = db.execute(
         """SELECT t.*, u.full_name as created_by_name
            FROM task_templates t
@@ -53,7 +53,7 @@ def get_templates(user=Depends(get_current_user)):
 
 @router.delete("/api/templates/{template_id}")
 def delete_template(template_id: int, user=Depends(require_admin_or_principal)):
-    db = get_db()
+    db = connect_db()
     db.execute("DELETE FROM task_templates WHERE id=?", (template_id,))
     db.commit()
     db.close()

@@ -57,6 +57,35 @@ class AppTheme {
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        ).copyWith(
+          // Visible hover/press feedback on web & desktop (covers all Material buttons).
+          mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+          overlayColor: WidgetStateProperty.resolveWith((s) =>
+              s.contains(WidgetState.pressed) ? Colors.white.withValues(alpha: 0.22)
+              : s.contains(WidgetState.hovered) ? Colors.white.withValues(alpha: 0.14)
+              : null),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          textStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        ).copyWith(
+          mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+          overlayColor: WidgetStateProperty.resolveWith((s) =>
+              s.contains(WidgetState.pressed) ? accentBlue.withValues(alpha: 0.16)
+              : s.contains(WidgetState.hovered) ? accentBlue.withValues(alpha: 0.08)
+              : null),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          textStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        ).copyWith(
+          mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+          overlayColor: WidgetStateProperty.resolveWith((s) =>
+              s.contains(WidgetState.pressed) ? accentBlue.withValues(alpha: 0.16)
+              : s.contains(WidgetState.hovered) ? accentBlue.withValues(alpha: 0.08)
+              : null),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(

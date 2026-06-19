@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db
+from database import connect_db
 from auth import get_current_user
 
 router = APIRouter(tags=["Comments"])
@@ -15,7 +15,7 @@ class CommentRequest(BaseModel):
 
 @router.post("/api/tasks/{task_id}/comments")
 def add_comment(task_id: int, req: CommentRequest, user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     db.execute(
         "INSERT INTO comments (task_id, user_id, report_id, comment_type, content) VALUES (?,?,?,?,?)",
@@ -32,7 +32,7 @@ class CommentUpdateRequest(BaseModel):
 
 @router.put("/api/comments/{comment_id}")
 def edit_comment(comment_id: int, req: CommentUpdateRequest, user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     row = db.execute("SELECT user_id FROM comments WHERE id=?", (comment_id,)).fetchone()
     if not row:
@@ -49,7 +49,7 @@ def edit_comment(comment_id: int, req: CommentUpdateRequest, user=Depends(get_cu
 
 @router.delete("/api/comments/{comment_id}")
 def delete_comment(comment_id: int, user=Depends(get_current_user)):
-    db = get_db()
+    db = connect_db()
     uid = int(user["sub"])
     row = db.execute("SELECT user_id FROM comments WHERE id=?", (comment_id,)).fetchone()
     if not row:

@@ -105,10 +105,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   void _openAssignPicker() async {
     if (_loadingUsers || _allAssignable.isEmpty) return;
-    await showModalBottomSheet(
+    await showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
       builder: (_) => _AssignPickerSheet(
         users: _allAssignable,
         selected: _selectedIds,
@@ -873,62 +871,67 @@ class _AssignPickerSheetState extends State<_AssignPickerSheet> {
       : widget.users.where((u) => u.fullName.toLowerCase().contains(_search.toLowerCase())).toList();
 
   @override
-  Widget build(BuildContext context) => DraggableScrollableSheet(
-    initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.4,
-    builder: (_, ctrl) => Container(
-      decoration: const BoxDecoration(color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      child: Column(children: [
-        Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(color: AppTheme.borderColor, borderRadius: BorderRadius.circular(2))),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(children: [
-            Text('Select Personnel', style: AppTheme.heading3),
-            const Spacer(),
-            TextButton(
-              onPressed: () { widget.onChanged(_local); Navigator.pop(context); },
-              child: Text('Done (${_local.length})',
-                  style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600,
-                      color: AppTheme.accentBlue, fontSize: 14)),
-            ),
-          ]),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-          child: TextField(
-            onChanged: (v) => setState(() => _search = v),
-            decoration: InputDecoration(hintText: 'Search by name...', hintStyle: AppTheme.bodyMd,
-                prefixIcon: const Icon(Icons.search, size: 18, color: AppTheme.textMuted),
-                filled: true, fillColor: AppTheme.bgColor,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final w = size.width < 520 ? size.width - 48 : 460.0;
+    final h = (size.height * 0.7).clamp(360.0, 600.0);
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: SizedBox(
+        width: w,
+        height: h,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: Row(children: [
+              Text('Select Personnel', style: AppTheme.heading3),
+              const Spacer(),
+              TextButton(
+                onPressed: () { widget.onChanged(_local); Navigator.pop(context); },
+                child: Text('Done (${_local.length})',
+                    style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600,
+                        color: AppTheme.accentBlue, fontSize: 14)),
+              ),
+            ]),
           ),
-        ),
-        const Divider(height: 1, color: AppTheme.borderColor),
-        Expanded(
-          child: _filtered.isEmpty
-              ? Center(child: Text('No personnel found', style: AppTheme.bodyMd))
-              : ListView.builder(
-                  controller: ctrl, itemCount: _filtered.length,
-                  itemBuilder: (_, i) {
-                    final u = _filtered[i];
-                    final checked = _local.contains(u.id);
-                    return CheckboxListTile(
-                      value: checked,
-                      onChanged: (_) => setState(() => checked ? _local.remove(u.id) : _local.add(u.id)),
-                      title: Text(u.fullName, style: AppTheme.labelMd),
-                      subtitle: Text('${u.roleLabel}${u.gradeLevel != null ? ' · ${u.gradeLevel}' : ''}',
-                          style: AppTheme.bodySm),
-                      secondary: CircleAvatar(radius: 18, backgroundColor: AppTheme.sidebarActive,
-                          child: Text(u.initials, style: const TextStyle(color: Colors.white,
-                              fontSize: 13, fontWeight: FontWeight.w700))),
-                      activeColor: AppTheme.accentBlue,
-                      controlAffinity: ListTileControlAffinity.trailing,
-                    );
-                  }),
-        ),
-      ]),
-    ),
-  );
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: TextField(
+              onChanged: (v) => setState(() => _search = v),
+              decoration: InputDecoration(hintText: 'Search by name...', hintStyle: AppTheme.bodyMd,
+                  prefixIcon: const Icon(Icons.search, size: 18, color: AppTheme.textMuted),
+                  filled: true, fillColor: AppTheme.bgColor,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+            ),
+          ),
+          const Divider(height: 1, color: AppTheme.borderColor),
+          Expanded(
+            child: _filtered.isEmpty
+                ? Center(child: Text('No personnel found', style: AppTheme.bodyMd))
+                : ListView.builder(
+                    itemCount: _filtered.length,
+                    itemBuilder: (_, i) {
+                      final u = _filtered[i];
+                      final checked = _local.contains(u.id);
+                      return CheckboxListTile(
+                        value: checked,
+                        onChanged: (_) => setState(() => checked ? _local.remove(u.id) : _local.add(u.id)),
+                        title: Text(u.fullName, style: AppTheme.labelMd),
+                        subtitle: Text('${u.roleLabel}${u.gradeLevel != null ? ' · ${u.gradeLevel}' : ''}',
+                            style: AppTheme.bodySm),
+                        secondary: CircleAvatar(radius: 18, backgroundColor: AppTheme.sidebarActive,
+                            child: Text(u.initials, style: const TextStyle(color: Colors.white,
+                                fontSize: 13, fontWeight: FontWeight.w700))),
+                        activeColor: AppTheme.accentBlue,
+                        controlAffinity: ListTileControlAffinity.trailing,
+                      );
+                    }),
+          ),
+        ]),
+      ),
+    );
+  }
 }

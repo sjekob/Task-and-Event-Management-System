@@ -7,8 +7,9 @@ import '../services/api_service.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import 'task_detail_screen.dart';
 
-enum _AppraisalTab { specialTasks, events, analytics }
+enum _AppraisalTab { personalDashboard, specialTasks, events, analytics }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shell
@@ -31,18 +32,31 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   String? _taskError;
   String? _eventError;
 
+  DashboardData? _dashboard;
+  bool _loadingDashboard = true;
+
   @override
   void initState() {
     super.initState();
     final role = context.read<AppState>().userRole;
     if (role == 'dean') {
-      _availableTabs = [_AppraisalTab.specialTasks, _AppraisalTab.events];
+      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.specialTasks, _AppraisalTab.events];
     } else {
-      _availableTabs = [_AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
+      _availableTabs = [_AppraisalTab.personalDashboard, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
     }
     _activeTab = _availableTabs.first;
+    _loadDashboard();
     _loadTasks();
     _loadEvents();
+  }
+
+  Future<void> _loadDashboard() async {
+    setState(() => _loadingDashboard = true);
+    try {
+      final d = await ApiService.getDashboard();
+      if (mounted) setState(() => _dashboard = d);
+    } catch (_) {/* dashboard is best-effort */}
+    if (mounted) setState(() => _loadingDashboard = false);
   }
 
   Future<void> _loadTasks() async {
@@ -68,12 +82,14 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   }
 
   String _tabLabel(_AppraisalTab t) => switch (t) {
+    _AppraisalTab.personalDashboard => 'Personal Dashboard',
     _AppraisalTab.specialTasks => 'Special Tasks',
     _AppraisalTab.events => 'Events',
     _AppraisalTab.analytics => 'Analytics',
   };
 
   IconData _tabIcon(_AppraisalTab t) => switch (t) {
+    _AppraisalTab.personalDashboard => Icons.space_dashboard_outlined,
     _AppraisalTab.specialTasks => Icons.assignment_outlined,
     _AppraisalTab.events => Icons.calendar_month_outlined,
     _AppraisalTab.analytics => Icons.bar_chart_outlined,
@@ -141,6 +157,8 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   }
 
   Widget _buildBody() => switch (_activeTab) {
+    _AppraisalTab.personalDashboard => _PersonalDashboardTab(
+        data: _dashboard, loading: _loadingDashboard, onRefresh: _loadDashboard),
     _AppraisalTab.specialTasks => _SpecialTasksTab(
         tasks: _tasks, loading: _loadingTasks, error: _taskError,
         onRefresh: _loadTasks,
@@ -151,6 +169,135 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         onEvaluated: (u) { setState(() { final i = _events.indexWhere((e) => e.id == u.id); if (i >= 0) _events[i] = u; }); }),
     _AppraisalTab.analytics => _AnalyticsTab(tasks: _tasks, events: _events),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Personal Dashboard Tab  (ported from feature/appraisal---Lok, wired to real data)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PersonalDashboardTab extends StatelessWidget {
+  final DashboardData? data;
+  final bool loading;
+  final Future<void> Function() onRefresh;
+  const _PersonalDashboardTab({required this.data, required this.loading, required this.onRefresh});
+
+  static String _firstLine(String? s) {
+    if (s == null || s.trim().isEmpty) return '';
+    final line = s.replaceAll('\n', ' ').trim();
+    return line.length > 70 ? '${line.substring(0, 70)}…' : line;
+  }
+
+  void _openTask(BuildContext context, int id) => Navigator.of(context)
+      .push(MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: id)));
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading && data == null) {
+      return const Center(child: CircularProgressIndicator(color: AppTheme.accentBlue));
+    }
+    final d = data;
+    final role = context.read<AppState>().userRole;
+    final isPrincipal = role == 'principal';
+    final isMobile = MediaQuery.of(context).size.width < 768;
+
+    final panels = <Widget>[
+      _ApPanel(
+        title: 'TASK MANAGER',
+        items: (d?.taskManagerTasks ?? []).take(4)
+            .map((t) => _ApItem(title: t.title, subtitle: _firstLine(t.instructions), onTap: () => _openTask(context, t.id)))
+            .toList(),
+      ),
+      if (!isPrincipal)
+        _ApPanel(
+          title: 'MY TASKS',
+          items: (d?.myTasks ?? []).take(4)
+              .map((t) => _ApItem(title: t.title, subtitle: '', onTap: () => _openTask(context, t.id)))
+              .toList(),
+        ),
+      _ApPanel(
+        title: 'PENDING APPROVAL',
+        items: (d?.events ?? [])
+            .map((e) => _ApItem(title: (e['title'] ?? '').toString(), subtitle: (e['event_date'] ?? '').toString(), onTap: () {}))
+            .toList(),
+      ),
+    ];
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Expanded(child: StatCard(count: '${d?.pending ?? 0}', label: 'Pending', iconBg: const Color(0xFFEFF6FF), iconColor: const Color(0xFF60A5FA), icon: Icons.notifications_outlined)),
+            const SizedBox(width: 12),
+            Expanded(child: StatCard(count: '${d?.submitted ?? 0}', label: 'Submitted', iconBg: AppTheme.greenBg, iconColor: AppTheme.greenColor, icon: Icons.check_circle_outline)),
+            const SizedBox(width: 12),
+            Expanded(child: StatCard(count: '${d?.missing ?? 0}', label: 'Missing', iconBg: AppTheme.redBg, iconColor: AppTheme.redColor, icon: Icons.cancel_outlined)),
+          ]),
+          const SizedBox(height: 16),
+          if (isMobile)
+            for (final p in panels) Padding(padding: const EdgeInsets.only(bottom: 14), child: p)
+          else
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                for (int i = 0; i < panels.length; i += 2)
+                  Padding(padding: const EdgeInsets.only(bottom: 14), child: panels[i]),
+              ])),
+              const SizedBox(width: 16),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                for (int i = 1; i < panels.length; i += 2)
+                  Padding(padding: const EdgeInsets.only(bottom: 14), child: panels[i]),
+              ])),
+            ]),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ApPanel extends StatelessWidget {
+  final String title;
+  final List<Widget> items;
+  const _ApPanel({required this.title, required this.items});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(color: AppTheme.cardColor, borderRadius: BorderRadius.circular(12), boxShadow: AppTheme.cardShadow),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title, style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textMuted, letterSpacing: 0.6)),
+      const SizedBox(height: 8),
+      if (items.isEmpty)
+        Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text('Nothing here yet.', style: AppTheme.bodyMd))
+      else
+        ...items,
+    ]),
+  );
+}
+
+class _ApItem extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _ApItem({required this.title, required this.subtitle, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppTheme.borderColor))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+        if (subtitle.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(subtitle, style: AppTheme.bodyMd, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ],
+      ]),
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

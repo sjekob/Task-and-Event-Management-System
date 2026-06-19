@@ -73,45 +73,42 @@ class _TaskNetAppState extends State<TaskNetApp> {
               builder: (context, state) => TaskManagerScreen(
                 onSelectTask: (id) => context.go('/tasks/$id'),
               ),
-              routes: [
-                GoRoute(
-                  path: 'new',
-                  builder: (context, state) => CreateTaskScreen(
-                    onBack: () => context.go('/tasks'),
-                    onCreated: () => context.go('/tasks'),
-                  ),
-                ),
-                GoRoute(
-                  path: 'template',
-                  builder: (context, state) => CreateTaskScreen(
-                    isTemplate: true,
-                    onBack: () => context.go('/tasks'),
-                    onCreated: () => context.go('/tasks'),
-                  ),
-                ),
-                GoRoute(
-                  path: ':id',
-                  builder: (context, state) => TaskDetailScreen(
-                    taskId: int.parse(state.pathParameters['id']!),
-                    onBack: () => context.go('/tasks'),
-                  ),
-                ),
-              ],
+            ),
+            GoRoute(
+              path: '/tasks/new',
+              builder: (context, state) => CreateTaskScreen(
+                onBack: () => context.go('/tasks'),
+                onCreated: () => context.go('/tasks'),
+              ),
+            ),
+            GoRoute(
+              path: '/tasks/template',
+              builder: (context, state) => CreateTaskScreen(
+                isTemplate: true,
+                onBack: () => context.go('/tasks'),
+                onCreated: () => context.go('/tasks'),
+              ),
+            ),
+            GoRoute(
+              path: '/tasks/:id',
+              builder: (context, state) => TaskDetailScreen(
+                taskId: int.parse(state.pathParameters['id']!),
+                onBack: () => context.go('/tasks'),
+              ),
             ),
             GoRoute(
               path: '/my-tasks',
               builder: (context, state) => MyTasksScreen(
                 onSelectTask: (id) => context.go('/my-tasks/$id'),
               ),
-              routes: [
-                GoRoute(
-                  path: ':id',
-                  builder: (context, state) => TaskDetailScreen(
-                    taskId: int.parse(state.pathParameters['id']!),
-                    onBack: () => context.go('/my-tasks'),
-                  ),
-                ),
-              ],
+            ),
+            GoRoute(
+              path: '/my-tasks/:id',
+              builder: (context, state) => TaskDetailScreen(
+                taskId: int.parse(state.pathParameters['id']!),
+                onBack: () => context.go('/my-tasks'),
+                ownTaskView: true,
+              ),
             ),
             GoRoute(
               path: '/activity',
@@ -130,23 +127,21 @@ class _TaskNetAppState extends State<TaskNetApp> {
               builder: (context, state) => EventManagementScreen(
                 onAddEvent: () => context.go('/events/new'),
               ),
-              routes: [
-                GoRoute(
-                  path: 'new',
-                  builder: (context, state) => AddEventScreen(
-                    onBack: () => context.go('/events'),
-                    onCreated: () => context.go('/events'),
-                  ),
-                ),
-                GoRoute(
-                  path: ':id/edit',
-                  builder: (context, state) => AddEventScreen(
-                    onBack: () => context.go('/events'),
-                    onCreated: () => context.go('/events'),
-                    existingEvent: state.extra as Map<String, dynamic>?,
-                  ),
-                ),
-              ],
+            ),
+            GoRoute(
+              path: '/events/new',
+              builder: (context, state) => AddEventScreen(
+                onBack: () => context.go('/events'),
+                onCreated: () => context.go('/events'),
+              ),
+            ),
+            GoRoute(
+              path: '/events/:id/edit',
+              builder: (context, state) => AddEventScreen(
+                onBack: () => context.go('/events'),
+                onCreated: () => context.go('/events'),
+                existingEvent: state.extra as Map<String, dynamic>?,
+              ),
             ),
             GoRoute(
               path: '/profile',

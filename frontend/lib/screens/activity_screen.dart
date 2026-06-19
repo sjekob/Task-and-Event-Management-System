@@ -400,9 +400,12 @@ class _EventDetailDialog extends StatelessWidget {
                           const Icon(Icons.person_outline, size: 14, color: AppTheme.textLight),
                           const SizedBox(width: 6),
                           Text('Created by ', style: AppTheme.caption),
-                          Text(
-                            '${event['creator_name']}${_hasVal(event['creator_role']) ? ' (${event['creator_role']})' : ''}',
-                            style: AppTheme.captionMd,
+                          Flexible(
+                            child: Text(
+                              '${event['creator_name']}${_hasVal(event['creator_role']) ? ' (${event['creator_role']})' : ''}',
+                              style: AppTheme.captionMd,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           if (_hasVal(event['created_at'])) ...[
                             Text('  ·  ', style: AppTheme.caption),

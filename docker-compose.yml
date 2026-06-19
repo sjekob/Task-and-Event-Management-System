@@ -22,9 +22,32 @@ x-backend-common: &backend-common
     - tasknet_uploads:/app/uploads
   environment:
     SECRET_KEY: ${SECRET_KEY:-tasknet-dev-secret-change-in-prod}
+    # Data layer. Defaults to the shared sqlite file during the SQLAlchemy
+    # migration. Final cutover = set DATABASE_URL to the Postgres URL below:
+    #   postgresql+psycopg2://tasknet:tasknet@postgres:5432/tasknet
+    DATABASE_URL: ${DATABASE_URL:-sqlite:///./tasknet.db}
   restart: unless-stopped
 
 services:
+
+  # ── PostgreSQL (migration target) ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: tasknet_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tasknet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tasknet}
+      POSTGRES_DB: ${POSTGRES_DB:-tasknet}
+    ports:
+      - "5432:5432"
+    volumes:
+      - tasknet_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tasknet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   # ── API Gateway ──────────────────────────────────────────────────────────────
   gateway:
@@ -41,6 +64,7 @@ services:
       - appraisal
     environment:
       SECRET_KEY: ${SECRET_KEY:-tasknet-dev-secret-change-in-prod}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./tasknet.db}
       AUTH_SERVICE_URL:      http://auth:8001
       PERSONNEL_SERVICE_URL: http://personnel:8002
       TASKS_SERVICE_URL:     http://tasks:8003
@@ -89,3 +113,4 @@ services:
 
 volumes:
   tasknet_uploads:
+  tasknet_pgdata:

@@ -232,7 +232,7 @@ class _AppSidebarState extends State<AppSidebar> {
         border: Border(top: BorderSide(color: _kDivider)),
       ),
       child: _collapsed
-          ? GestureDetector(
+          ? HoverScale(
               onTap: widget.onLogout,
               child: const Center(
                 child: Icon(Icons.logout_rounded, color: _kMuted, size: 18),
@@ -312,7 +312,7 @@ class _AppSidebarState extends State<AppSidebar> {
                   const SizedBox(width: 8),
                   // Logout
                   Expanded(
-                    child: GestureDetector(
+                    child: HoverScale(
                       onTap: widget.onLogout,
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -616,7 +616,7 @@ class MobileNavDrawer extends StatelessWidget {
                     ),
                   ]),
                   const SizedBox(height: 10),
-                  GestureDetector(
+                  HoverScale(
                     onTap: () {
                       Navigator.of(context).pop();
                       onLogout();
