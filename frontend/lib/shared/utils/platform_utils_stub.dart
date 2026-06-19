@@ -1,7 +1,2 @@
-import 'package:flutter/foundation.dart';
+// No platform utilities needed at this time.
 
-/// Fallback implementation of platform specific redirection utilities.
-void redirectToAdmin() {
-  // Stub implementation for non-web platforms.
-  debugPrint('Redirecting to Admin Console...');
-}

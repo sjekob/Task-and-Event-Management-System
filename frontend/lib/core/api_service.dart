@@ -37,6 +37,23 @@ class AuthApi {
 }
 
 
+class ReportsApi {
+  final Dio _dio = ApiService().dio;
+
+  Future<List<dynamic>> listSubmissions({int? personnelId}) async {
+    final params = <String, dynamic>{};
+    if (personnelId != null) params['personnel_id'] = personnelId;
+    final res = await _dio.get('/report-submissions', queryParameters: params);
+    return res.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> submitReport(Map<String, dynamic> payload) async {
+    final res = await _dio.post('/report-submissions', data: payload);
+    return res.data as Map<String, dynamic>;
+  }
+}
+
+
 class SpecialTasksApi {
   final Dio _dio = ApiService().dio;
 
@@ -76,6 +93,36 @@ class EventsApi {
 
   Future<Map<String, dynamic>> getEventResults(String id) async {
     final res = await _dio.get('/events/$id/results');
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createEvent(Map<String, dynamic> payload) async {
+    final res = await _dio.post('/events', data: payload);
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateEvent(String id, Map<String, dynamic> payload) async {
+    final res = await _dio.put('/events/$id', data: payload);
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> deleteEvent(String id) async {
+    final res = await _dio.delete('/events/$id');
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> approveEvent(String id) async {
+    final res = await _dio.post('/events/$id/approve');
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> rejectEvent(String id, String comment) async {
+    final res = await _dio.post('/events/$id/reject', data: {'comment': comment});
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> requestRevision(String id, String comment) async {
+    final res = await _dio.post('/events/$id/request-revision', data: {'comment': comment});
     return res.data as Map<String, dynamic>;
   }
 }

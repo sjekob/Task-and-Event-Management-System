@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../appraisal/appraisal_screen.dart';
-import '../../shared/utils/platform_utils.dart';
 import '../../core/api_service.dart';
 import 'package:dio/dio.dart';
 
@@ -33,57 +32,47 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Intercept root administrator credentials
-    if (username == 'admin') {
-      if (password != 'password') {
+    String? role;
+    String? prefix;
+
+    if (username.startsWith('principal.')) {
+      role = 'principal';
+      prefix = 'principal.';
+    } else if (username.startsWith('coord.')) {
+      role = 'coordinator';
+      prefix = 'coord.';
+    } else if (username.startsWith('dean.')) {
+      role = 'dean';
+      prefix = 'dean.';
+    } else if (username.startsWith('teacher.')) {
+      role = 'teacher';
+      prefix = 'teacher.';
+    } else if (username.startsWith('registrar.')) {
+      role = 'registrar';
+      prefix = 'registrar.';
+    }
+
+    if (role == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Access Denied: Only Principal, Coordinator, Dean, Teacher, and Registrar accounts are allowed.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    // Validate that a non-empty name follows the role prefix
+    if (prefix != null) {
+      final namePart = username.substring(prefix.length).trim();
+      if (namePart.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Access Denied: Invalid administrator credentials.'),
+            content: Text('Access Denied: Please provide a name after the prefix (e.g., coord.username).'),
             backgroundColor: Colors.redAccent,
           ),
         );
         return;
-      }
-    } else {
-      String? role;
-      String? prefix;
-
-      if (username.startsWith('principal.')) {
-        role = 'principal';
-        prefix = 'principal.';
-      } else if (username.startsWith('coord.')) {
-        role = 'coordinator';
-        prefix = 'coord.';
-      } else if (username.startsWith('dean.')) {
-        role = 'dean';
-        prefix = 'dean.';
-      } else if (username.startsWith('teacher.')) {
-        role = 'teacher';
-        prefix = 'teacher.';
-      }
-
-      if (role == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Access Denied: Only Principal, Coordinator, Dean, and Teacher accounts are allowed.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-
-      // Validate that a non-empty name follows the role prefix
-      if (prefix != null) {
-        final namePart = username.substring(prefix.length).trim();
-        if (namePart.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Access Denied: Please provide a name after the prefix (e.g., coord.username).'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-          return;
-        }
       }
     }
 
@@ -99,22 +88,18 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       ApiService.jwtToken = token;
 
-      if (username == 'admin') {
-        redirectToAdmin();
-      } else {
-        final backendRole = response['role'] as String?;
-        final backendUsername = response['username'] as String?;
-        
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => AppraisalScreen(
-              username: backendUsername ?? _usernameController.text.trim(),
-              role: backendRole,
-            ),
+      final backendRole = response['role'] as String?;
+      final backendUsername = response['username'] as String?;
+      
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => AppraisalScreen(
+            username: backendUsername ?? _usernameController.text.trim(),
+            role: backendRole,
           ),
-        );
-      }
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       String errorMessage = 'Failed to connect to authentication server.';
@@ -385,157 +370,162 @@ class _LoginScreenState extends State<LoginScreen> {
 
             // Login Card
             Center(
-              child: Container(
-                width: 400,
-                padding: const EdgeInsets.all(40),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2EAF4), // Light bluish-white card background
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Sign in',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    
-                    // Username Field
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Username',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _usernameController,
-                          decoration: InputDecoration(
-                            hintText: 'Username',
-                            hintStyle: const TextStyle(color: Colors.black38),
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide.none,
-                            ),
-                            suffixIcon: const Icon(Icons.account_circle, color: Colors.black54),
-                          ),
-                          onSubmitted: (_) => _handleLogin(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Container(
+                    padding: const EdgeInsets.all(40),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2EAF4), // Light bluish-white card background
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
-                    
-                    // Password Field
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
-                          'Password',
+                          'Sign in',
                           style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
                             color: Colors.black87,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          decoration: InputDecoration(
-                            hintText: 'Password',
-                            hintStyle: const TextStyle(color: Colors.black38),
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide.none,
-                            ),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword ? Icons.visibility : Icons.visibility_off,
-                                color: Colors.black54,
+                        const SizedBox(height: 32),
+                        
+                        // Username Field
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Username',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
                               ),
-                              onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: _usernameController,
+                              decoration: InputDecoration(
+                                hintText: 'Username',
+                                hintStyle: const TextStyle(color: Colors.black38),
+                                filled: true,
+                                fillColor: Colors.white,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide.none,
+                                ),
+                                suffixIcon: const Icon(Icons.account_circle, color: Colors.black54),
+                              ),
+                              onSubmitted: (_) => _handleLogin(),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // Password Field
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Password',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: _passwordController,
+                              obscureText: _obscurePassword,
+                              decoration: InputDecoration(
+                                hintText: 'Password',
+                                hintStyle: const TextStyle(color: Colors.black38),
+                                filled: true,
+                                fillColor: Colors.white,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide.none,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                                    color: Colors.black54,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
+                                ),
+                              ),
+                              onSubmitted: (_) => _handleLogin(),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        
+                        // Login Button
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _handleLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2C2C2C),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                : const Text(
+                                    'Log In',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        
+                        // Forgot password link
+                        TextButton(
+                          onPressed: _showForgotPasswordDialog,
+                          child: const Text(
+                            'Forgot password?',
+                            style: TextStyle(
+                              color: Colors.black87,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                          onSubmitted: (_) => _handleLogin(),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 24),
-                    
-                    // Login Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2C2C2C),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : const Text(
-                                'Log In',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    
-                    // Forgot password link
-                    TextButton(
-                      onPressed: _showForgotPasswordDialog,
-                      child: const Text(
-                        'Forgot password?',
-                        style: TextStyle(
-                          color: Colors.black87,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

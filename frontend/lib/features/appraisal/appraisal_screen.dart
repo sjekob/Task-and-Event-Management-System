@@ -5,10 +5,11 @@ import 'special_tasks_tab.dart';
 import 'events_tab.dart';
 import 'analytics_tab.dart';
 import 'personal_dashboard_tab.dart';
+import 'timing_points_tab.dart';
 import 'models/appraisal_models.dart';
 import '../../core/api_service.dart';
 
-enum _AppraisalTab { specialTasks, events, analytics, personalDashboard }
+enum _AppraisalTab { timingPoints, specialTasks, events, analytics, personalDashboard }
 
 class AppraisalScreen extends StatefulWidget {
   final String? username;
@@ -29,6 +30,8 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   // detect the reference change in didUpdateWidget and rebuild.
   var _taskEvaluations = <String, Map<String, dynamic>>{};
   var _eventRatings = <String, List<AttendeeRating>>{};
+  List<SchoolEvent> _backendEvents = [];
+  bool _eventsLoading = false;
 
   bool _matchesName(String nameA, String nameB) {
     String clean(String s) {
@@ -79,8 +82,8 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   }
 
   int get _pendingEventsCount {
-    final List<SchoolEvent> base = sampleEvents;
-    final events = base.map((e) {
+    final events = _backendEvents.isNotEmpty ? _backendEvents : sampleEvents;
+    final enriched = events.map((e) {
       final extra = _eventRatings[e.id] ?? [];
       if (extra.isEmpty) return e;
       final newRatings = [...e.ratings, ...extra];
@@ -92,13 +95,14 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
       return SchoolEvent(
         id: e.id, name: e.name, date: e.date,
         organizer: e.organizer, department: e.department,
-        attendees: e.attendees,
-        ratings: newRatings,
+        attendees: e.attendees, ratings: newRatings,
         status: newStatus,
+        approvalStatus: e.approvalStatus,
+        revisionComment: e.revisionComment,
+        assignedPersonnel: e.assignedPersonnel,
       );
     }).toList();
-
-    return events.where((e) => e.status == EventStatus.awaitingRatings).length;
+    return enriched.where((e) => e.status == EventStatus.awaitingRatings).length;
   }
 
   @override
@@ -111,19 +115,21 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   void _initializeTabs() {
     final role = widget.role ?? 'coordinator';
     if (role == 'teacher') {
-      _availableTabs = [_AppraisalTab.events, _AppraisalTab.analytics];
+      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
     } else if (role == 'dean') {
-      _availableTabs = [_AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
-    } else if (role == 'principal') {
-      _availableTabs = [_AppraisalTab.analytics, _AppraisalTab.specialTasks, _AppraisalTab.events];
+      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
+    } else if (role == 'principal' || role == 'registrar') {
+      _availableTabs = [_AppraisalTab.analytics, _AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events];
     } else {
       // coordinator
-      _availableTabs = [_AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
+      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
     }
     _activeTab = _availableTabs.first;
   }
 
   Future<void> _loadBackendData() async {
+    if (_eventsLoading) return;
+    _eventsLoading = true;
     try {
       final taskApi = SpecialTasksApi();
       final eventApi = EventsApi();
@@ -131,6 +137,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
       // Build fresh local maps — assign atomically so reference always changes
       final newTaskEvals = <String, Map<String, dynamic>>{};
       final newEventRatings = <String, List<AttendeeRating>>{};
+      final newBackendEvents = <SchoolEvent>[];
 
       // 1. Fetch tasks
       final tasks = await taskApi.listTasks();
@@ -155,38 +162,44 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         }
       }
 
-      // 2. Fetch events
+      // 2. Fetch events from backend
       final events = await eventApi.listEvents();
       for (final e in events) {
         final id = e['id'] as String;
         final details = await eventApi.getEventDetails(id);
         final evals = details['evaluations'] as List<dynamic>? ?? [];
-        if (evals.isNotEmpty) {
-          newEventRatings[id] = evals.map((ev) => AttendeeRating(
-            name: ev['evaluator_name'] ?? '',
-            role: _parseEvaluatorRole(ev['evaluator_role']),
-            scores: EventRubricScores(
-              planning: (ev['planning_score'] ?? 0).toDouble(),
-              objectives: (ev['objectives_score'] ?? 0).toDouble(),
-              personnel: (ev['personnel_score'] ?? 0).toDouble(),
-              timeMgmt: (ev['time_mgmt_score'] ?? 0).toDouble(),
-              engagement: (ev['engagement_score'] ?? 0).toDouble(),
-              resource: (ev['resource_score'] ?? 0).toDouble(),
-            ),
-            comments: ev['feedback_comments'],
-            dateSubmitted: ev['date_submitted'] ?? '',
-          )).toList();
+        final ratings = evals.map((ev) => AttendeeRating(
+          name: ev['evaluator_name'] ?? '',
+          role: _parseEvaluatorRole(ev['evaluator_role']),
+          scores: EventRubricScores(
+            planning: (ev['planning_score'] ?? 0).toDouble(),
+            objectives: (ev['objectives_score'] ?? 0).toDouble(),
+            personnel: (ev['personnel_score'] ?? 0).toDouble(),
+            timeMgmt: (ev['time_mgmt_score'] ?? 0).toDouble(),
+            engagement: (ev['engagement_score'] ?? 0).toDouble(),
+            resource: (ev['resource_score'] ?? 0).toDouble(),
+          ),
+          comments: ev['feedback_comments'],
+          dateSubmitted: ev['date_submitted'] ?? '',
+        )).toList();
+
+        if (ratings.isNotEmpty) {
+          newEventRatings[id] = ratings;
         }
+        newBackendEvents.add(SchoolEvent.fromJson(e, ratings: ratings));
       }
 
       if (mounted) {
         setState(() {
           _taskEvaluations = newTaskEvals;
           _eventRatings = newEventRatings;
+          _backendEvents = newBackendEvents;
         });
       }
     } catch (e) {
       debugPrint('Error loading backend data: $e');
+    } finally {
+      _eventsLoading = false;
     }
   }
 
@@ -212,29 +225,56 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   Widget _buildHeader() => _PageHeader(
         activeTab: _activeTab,
         availableTabs: _availableTabs,
-        onTabChanged: (t) => setState(() => _activeTab = t),
+        onTabChanged: (t) {
+          setState(() => _activeTab = t);
+          _loadBackendData();
+        },
         pendingTasksCount: _pendingTasksCount,
         pendingEventsCount: _pendingEventsCount,
       );
 
   @override
   Widget build(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isMobile = screenWidth < 640;
+
+    final sidebar = AppSidebar(
+      activeIndex: _activeSidebarIndex, 
+      onNavTap: (index) {
+        setState(() {
+          _activeSidebarIndex = index;
+        });
+        if (isMobile && Navigator.canPop(context)) {
+          Navigator.pop(context); // Close the drawer on menu selection
+        }
+      },
+      username: widget.username ?? 'Guest User',
+      role: widget.role ?? 'coordinator',
+    );
+
     return Scaffold(
       backgroundColor: AppColors.pageBg,
+      appBar: isMobile
+          ? AppBar(
+              title: const Text(
+                'TaskNet',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              backgroundColor: AppColors.sidebarBg,
+              foregroundColor: Colors.white,
+              elevation: 0,
+            )
+          : null,
+      drawer: isMobile ? Drawer(child: sidebar) : null,
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Sidebar — never scrolls ──────────────────────────────────────
-          AppSidebar(
-            activeIndex: _activeSidebarIndex, 
-            onNavTap: (index) {
-              setState(() {
-                _activeSidebarIndex = index;
-              });
-            },
-            username: widget.username ?? 'Guest User',
-            role: widget.role ?? 'coordinator',
-          ),
+          // ── Sidebar — never scrolls (hidden on mobile, drawer is used instead) ──
+          if (!isMobile) sidebar,
 
           // ── Content area — fully scrollable ─────────────────────────────
           Expanded(child: _mainBodyContent()),
@@ -335,6 +375,11 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         child: KeyedSubtree(
         key: ValueKey(_activeTab),
         child: switch (_activeTab) {
+          _AppraisalTab.timingPoints => TimingPointsTab(
+              pageHeader: header,
+              username: widget.username ?? '',
+              role: widget.role ?? 'teacher',
+            ),
           _AppraisalTab.personalDashboard => PersonalDashboardTab(
               pageHeader: header,
               username: widget.username ?? '',
@@ -356,6 +401,8 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
               username: widget.username ?? '',
               role: widget.role ?? 'teacher',
               newRatings: _eventRatings,
+              backendEvents: _backendEvents,
+              onRefresh: _loadBackendData,
               onSubmitRating: (id, rating) async {
                 try {
                   final api = EventsApi();
@@ -381,6 +428,8 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
                   final updated = List<AttendeeRating>.from(_eventRatings[id] ?? [])..add(rating);
                   _eventRatings = {..._eventRatings, id: updated};
                 });
+                // Refresh backend events to reflect any status changes
+                await _loadBackendData();
               },
             ),
           _AppraisalTab.analytics => AnalyticsTab(
@@ -419,6 +468,8 @@ class _PageHeader extends StatelessWidget {
 
   String _getTabLabel(_AppraisalTab tab) {
     switch (tab) {
+      case _AppraisalTab.timingPoints:
+        return 'Timing Points';
       case _AppraisalTab.personalDashboard:
         return 'Dashboard';
       case _AppraisalTab.specialTasks:
@@ -432,6 +483,8 @@ class _PageHeader extends StatelessWidget {
 
   IconData _getTabIcon(_AppraisalTab tab) {
     switch (tab) {
+      case _AppraisalTab.timingPoints:
+        return Icons.timer_outlined;
       case _AppraisalTab.personalDashboard:
         return Icons.person_outline;
       case _AppraisalTab.specialTasks:
@@ -482,21 +535,24 @@ class _PageHeader extends StatelessWidget {
           const SizedBox(height: 16),
 
           // ── Pill-style tab bar ───────────────────────────────────────────
-          Row(
-            children: availableTabs.map((tab) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: _PillTab(
-                  icon: _getTabIcon(tab),
-                  label: _getTabLabel(tab),
-                  badge: tab == _AppraisalTab.specialTasks
-                      ? pendingTasksCount
-                      : (tab == _AppraisalTab.events ? pendingEventsCount : 0),
-                  active: activeTab == tab,
-                  onTap: () => onTabChanged(tab),
-                ),
-              );
-            }).toList(),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: availableTabs.map((tab) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: _PillTab(
+                    icon: _getTabIcon(tab),
+                    label: _getTabLabel(tab),
+                    badge: tab == _AppraisalTab.specialTasks
+                        ? pendingTasksCount
+                        : (tab == _AppraisalTab.events ? pendingEventsCount : 0),
+                    active: activeTab == tab,
+                    onTap: () => onTabChanged(tab),
+                  ),
+                );
+              }).toList(),
+            ),
           ),
         ],
       ),

@@ -46,6 +46,8 @@ from .models import (
     EventEvaluationIn,
     EventEvaluationOut,
     EventOut,
+    EventCreate,
+    EventUpdate,
     PerformanceSummary,
     PerformanceSummaryOut,
     ReportSubmission,
@@ -238,8 +240,70 @@ def on_startup():
         _seed_users(db)
         _seed_special_tasks(db)
         _seed_events(db)
+        _seed_reports(db)
     finally:
         db.close()
+
+
+def _seed_reports(db: Session):
+    if db.query(ReportSubmission).count() > 0:
+        return
+    users = {u.name: u.id for u in db.query(User).all()}
+    john_id = users.get("John Smith")
+    sarah_id = users.get("Sarah Johnson")
+    mike_id = users.get("Mike Chen")
+    alice_id = users.get("Alice Brown")
+    david_id = users.get("David Lee")
+
+    subs = [
+        ReportSubmission(
+            report_id=101, personnel_id=john_id,
+            deadline="2025-04-15 17:00:00", submitted_at="2025-04-14 09:30:00",
+            timing_status="Early", timing_points=150,
+            content_quality_score=5, format_compliance_score=5, completeness_score=4
+        ),
+        ReportSubmission(
+            report_id=102, personnel_id=sarah_id,
+            deadline="2025-04-10 17:00:00", submitted_at="2025-04-10 16:45:00",
+            timing_status="On Time", timing_points=100,
+            content_quality_score=4, format_compliance_score=4, completeness_score=4
+        ),
+        ReportSubmission(
+            report_id=103, personnel_id=mike_id,
+            deadline="2025-04-05 17:00:00", submitted_at="2025-04-06 12:00:00",
+            timing_status="Late within 24 hours", timing_points=50,
+            content_quality_score=5, format_compliance_score=5, completeness_score=5
+        ),
+        ReportSubmission(
+            report_id=104, personnel_id=alice_id,
+            deadline="2025-03-30 17:00:00", submitted_at="2025-04-01 10:00:00",
+            timing_status="Late after 24 hours", timing_points=0,
+            content_quality_score=3, format_compliance_score=2, completeness_score=3
+        ),
+        ReportSubmission(
+            report_id=105, personnel_id=david_id,
+            deadline="2025-04-20 17:00:00", submitted_at="2025-04-19 14:00:00",
+            timing_status="Early", timing_points=150,
+            content_quality_score=5, format_compliance_score=4, completeness_score=5
+        ),
+    ]
+    db.add_all(subs)
+    db.flush()
+
+    for s in subs:
+        rubric_avg = (s.content_quality_score + s.format_compliance_score + s.completeness_score) / 3.0
+        rubric_pts = (rubric_avg / 5.0) * 70
+        timing_pct = (s.timing_points / 150.0) * 30
+        total_points = round(rubric_pts + timing_pct, 2)
+
+        _upsert_appraisal_record(
+            db,
+            personnel_id=s.personnel_id,
+            appraisal_type="Report",
+            reference_id=s.submission_id,
+            total_points=total_points
+        )
+    db.commit()
 
 
 def _seed_users(db: Session):
@@ -260,6 +324,7 @@ def _seed_users(db: Session):
         User(name="Student A",     role="Student",     department=None),
         User(name="Student B",     role="Student",     department=None),
         User(name="Prof. Garcia",  role="Teacher",     department="Sciences"),
+        User(name="Registrar Office", role="Registrar",   department=None),
     ]
     db.add_all(users)
     db.commit()
@@ -451,20 +516,6 @@ def _log_audit(
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     username = payload.username.strip().lower()
     password = payload.password
-    
-    # Intercept root administrator credentials
-    if username == "admin":
-        if not password or password != "password":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Access Denied: Invalid administrator credentials."
-            )
-        claims = {"sub": "admin", "role": "admin"}
-        token = create_access_token(claims)
-        _log_audit(db, "admin", "LOGIN", None, {"role": "admin"})
-        db.commit()
-        return {"access_token": token, "token_type": "bearer", "role": "admin", "username": "admin"}
-        
     role = None
     prefix = None
     
@@ -480,6 +531,9 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     elif username.startswith("teacher."):
         role = "teacher"
         prefix = "teacher."
+    elif username.startswith("registrar."):
+        role = "registrar"
+        prefix = "registrar."
         
     if not role or not prefix:
         raise HTTPException(
@@ -542,7 +596,7 @@ def get_public_key():
 @app.get("/api/admin/audit-logs", tags=["Admin System"])
 def get_audit_logs(
     db: Session = Depends(get_db),
-    claims: dict = Depends(RoleChecker(["admin", "principal"])),
+    claims: dict = Depends(RoleChecker(["principal"])),
 ):
     """Retrieve all append-only audit log records for administrative forensic compliance."""
     return db.query(AuditLog).order_by(AuditLog.id.desc()).all()
@@ -582,7 +636,7 @@ def evaluate_special_task(
     task_id: str,
     payload: SpecialTaskEvaluationIn,
     db: Session = Depends(get_db),
-    claims: dict = Depends(RoleChecker(["coordinator", "admin"])),
+    claims: dict = Depends(RoleChecker(["coordinator"])),
 ):
     """
     UC003 — Coordinator evaluates a special task assigned to Dean.
@@ -780,7 +834,7 @@ def evaluate_event(
     event_id: str,
     payload: EventEvaluationIn,
     db: Session = Depends(get_db),
-    claims: dict = Depends(RoleChecker(["teacher", "student", "coordinator", "dean", "principal", "admin"])),
+    claims: dict = Depends(RoleChecker(["teacher", "student", "coordinator", "dean", "principal"])),
 ):
     """
     UC002 — Attendee submits event evaluation form.
@@ -790,6 +844,12 @@ def evaluate_event(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+
+    if event.approval_status != "Approved":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Categorically rejected: Cannot evaluate an event proposal that is not Approved."
+        )
 
     # Create evaluation record
     eval_obj = EventEvaluation(
@@ -862,6 +922,169 @@ def evaluate_event(
     }
 
 
+class EventCommentRequest(BaseModel):
+    comment: str
+
+
+@app.post("/events", response_model=EventOut, status_code=210, tags=["Events"])
+def create_event(
+    payload: EventCreate,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["coordinator"])),
+):
+    """Create a new event proposal. Initial approval_status is 'Pending'."""
+    existing = db.query(Event).filter(Event.id == payload.id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Event ID already exists")
+
+    event = Event(
+        id=payload.id,
+        name=payload.name,
+        date=payload.date,
+        organizer=payload.organizer,
+        department=payload.department,
+        attendees=payload.attendees,
+        status="awaitingRatings",
+        approval_status="Pending",
+        assigned_personnel=payload.assigned_personnel,
+    )
+    db.add(event)
+    _log_audit(db, claims.get("sub"), "CREATE_EVENT", None, payload.model_dump())
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@app.put("/events/{event_id}", response_model=EventOut, tags=["Events"])
+def update_event(
+    event_id: str,
+    payload: EventUpdate,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["coordinator"])),
+):
+    """Update event proposal."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    before_state = {
+        "name": event.name,
+        "date": event.date,
+        "organizer": event.organizer,
+        "department": event.department,
+        "attendees": event.attendees,
+        "assigned_personnel": event.assigned_personnel,
+    }
+
+    if payload.name is not None:
+        event.name = payload.name
+    if payload.date is not None:
+        event.date = payload.date
+    if payload.organizer is not None:
+        event.organizer = payload.organizer
+    if payload.department is not None:
+        event.department = payload.department
+    if payload.attendees is not None:
+        event.attendees = payload.attendees
+    if payload.assigned_personnel is not None:
+        event.assigned_personnel = payload.assigned_personnel
+
+    # Reset comment when coordinator updates it
+    event.approval_status = "Pending"
+    event.revision_comment = None
+
+    db.add(event)
+    _log_audit(db, claims.get("sub"), "UPDATE_EVENT", before_state, payload.model_dump(exclude_unset=True))
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@app.delete("/events/{event_id}", tags=["Events"])
+def delete_event(
+    event_id: str,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["coordinator"])),
+):
+    """Delete event proposal."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    db.delete(event)
+    _log_audit(db, claims.get("sub"), "DELETE_EVENT", {"id": event_id, "name": event.name}, None)
+    db.commit()
+    return {"message": "Event deleted successfully"}
+
+
+@app.post("/events/{event_id}/approve", response_model=EventOut, tags=["Events"])
+def approve_event(
+    event_id: str,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["principal"])),
+):
+    """Principal approves event proposal."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    event.approval_status = "Approved"
+    event.revision_comment = None
+    db.add(event)
+    _log_audit(db, claims.get("sub"), "APPROVE_EVENT", None, {"id": event_id, "status": "Approved"})
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@app.post("/events/{event_id}/reject", response_model=EventOut, tags=["Events"])
+def reject_event(
+    event_id: str,
+    payload: EventCommentRequest,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["principal"])),
+):
+    """Principal rejects event proposal with mandatory comment."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    if not payload.comment.strip():
+        raise HTTPException(status_code=400, detail="Rejection comment is mandatory")
+
+    event.approval_status = "Rejected"
+    event.revision_comment = payload.comment
+    db.add(event)
+    _log_audit(db, claims.get("sub"), "REJECT_EVENT", None, {"id": event_id, "comment": payload.comment})
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@app.post("/events/{event_id}/request-revision", response_model=EventOut, tags=["Events"])
+def request_revision_event(
+    event_id: str,
+    payload: EventCommentRequest,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(RoleChecker(["principal"])),
+):
+    """Principal requests revision of event proposal with mandatory comment."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    if not payload.comment.strip():
+        raise HTTPException(status_code=400, detail="Revision request comment is mandatory")
+
+    event.approval_status = "Revision Requested"
+    event.revision_comment = payload.comment
+    db.add(event)
+    _log_audit(db, claims.get("sub"), "REQUEST_REVISION_EVENT", None, {"id": event_id, "comment": payload.comment})
+    db.commit()
+    db.refresh(event)
+    return event
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Routes — Report Submissions  (UC001)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -870,7 +1093,7 @@ def evaluate_event(
 def submit_report(
     payload: ReportSubmissionIn,
     db: Session = Depends(get_db),
-    claims: dict = Depends(RoleChecker(["teacher", "dean", "admin"])),
+    claims: dict = Depends(RoleChecker(["teacher", "dean"])),
 ):
     """
     UC001 — System computes timing points using server time vs deadline.
@@ -941,6 +1164,17 @@ def get_report_submission(submission_id: int, db: Session = Depends(get_db)):
     return sub
 
 
+@app.get("/report-submissions", response_model=List[ReportSubmissionOut], tags=["Reports"])
+def list_report_submissions(
+    personnel_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    q = db.query(ReportSubmission)
+    if personnel_id:
+        q = q.filter(ReportSubmission.personnel_id == personnel_id)
+    return q.all()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Routes — Appraisal Records
 # ─────────────────────────────────────────────────────────────────────────────
@@ -974,7 +1208,7 @@ def get_appraisal_record(appraisal_id: int, db: Session = Depends(get_db)):
 def lock_appraisal(
     appraisal_id: int,
     db: Session = Depends(get_db),
-    claims: dict = Depends(RoleChecker(["coordinator", "principal", "admin"])),
+    claims: dict = Depends(RoleChecker(["coordinator", "principal"])),
 ):
     """Lock an appraisal record — locked records cannot be modified."""
     rec = db.query(AppraisalRecord).filter(
@@ -1008,7 +1242,7 @@ def lock_appraisal(
 def archive_appraisal(
     appraisal_id: int,
     db: Session = Depends(get_db),
-    claims: dict = Depends(RoleChecker(["coordinator", "principal", "admin"])),
+    claims: dict = Depends(RoleChecker(["coordinator", "principal"])),
 ):
     """Archive an appraisal record — moves it to historical records."""
     rec = db.query(AppraisalRecord).filter(

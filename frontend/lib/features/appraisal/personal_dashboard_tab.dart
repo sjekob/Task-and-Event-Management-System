@@ -156,33 +156,31 @@ class PersonalDashboardTab extends StatelessWidget {
       roleTasks = sampleTasks;
     }
 
-    int pendingCount = 0;
-    int submittedCount = 0;
-    int missingCount = 0;
+    final List<SpecialTask> teacherTasks = roleTasks.where((t) => t.targetRole == 'teacher').toList();
+    final List<SpecialTask> adminTasks = roleTasks.where((t) => t.targetRole != 'teacher').toList();
 
-    for (final t in roleTasks) {
-      final eval = evaluations[t.id];
-      if (eval != null) {
-        submittedCount++;
-      } else if (t.status == TaskStatus.evaluated || t.status == TaskStatus.flagged) {
-        submittedCount++;
-      } else if (t.status == TaskStatus.notSubmitted) {
-        missingCount++;
-      } else if (t.status == TaskStatus.pending) {
-        pendingCount++;
-      }
+    final List<Widget> leftColumnWidgets = [];
+
+    final showPersonnel = activeRole == 'coordinator' || activeRole == 'principal';
+
+    if (teacherTasks.isNotEmpty) {
+      leftColumnWidgets.addAll(_buildAppraisalSection(
+        sectionTitle: '🏫 Teacher Appraisal Records',
+        tasks: teacherTasks,
+        showPersonnel: showPersonnel,
+      ));
     }
 
-    final toDoTracker = ToDoTrackerRow(
-      pendingCount: pendingCount,
-      submittedCount: submittedCount,
-      missingCount: missingCount,
-    );
+    if (adminTasks.isNotEmpty) {
+      leftColumnWidgets.addAll(_buildAppraisalSection(
+        sectionTitle: '👔 Admin / Leadership Appraisal Records (Dean/Coord/Registrar)',
+        tasks: adminTasks,
+        showPersonnel: showPersonnel,
+      ));
+    }
 
     if (role == 'coordinator') {
-      return [
-        toDoTracker,
-        const SizedBox(height: 24),
+      leftColumnWidgets.addAll([
         const TaskCardList(
           title: 'Task Manager',
           items: [
@@ -219,11 +217,9 @@ class PersonalDashboardTab extends StatelessWidget {
             TaskListItem(title: 'Science and Math Fair', subtitle: '2024-03-25', isLast: true),
           ],
         ),
-      ];
+      ]);
     } else if (role == 'teacher') {
-      return [
-        toDoTracker,
-        const SizedBox(height: 24),
+      leftColumnWidgets.addAll([
         const TaskCardList(
           title: 'My Task',
           items: [
@@ -234,11 +230,9 @@ class PersonalDashboardTab extends StatelessWidget {
             TaskListItem(title: 'Professional Development', isLast: true),
           ],
         ),
-      ];
+      ]);
     } else if (role == 'dean') {
-      return [
-        toDoTracker,
-        const SizedBox(height: 24),
+      leftColumnWidgets.addAll([
         const TaskCardList(
           title: 'Task Manager',
           items: [
@@ -266,10 +260,10 @@ class PersonalDashboardTab extends StatelessWidget {
             TaskListItem(title: 'Faculty Workshop Coordination', isLast: true),
           ],
         ),
-      ];
+      ]);
     } else {
       // principal
-      return [
+      leftColumnWidgets.addAll([
         const TaskCardList(
           title: 'Task Tracker',
           items: [
@@ -301,8 +295,133 @@ class PersonalDashboardTab extends StatelessWidget {
             ),
           ],
         ),
-      ];
+      ]);
     }
+
+    return leftColumnWidgets;
+  }
+
+  List<Widget> _buildAppraisalSection({
+    required String sectionTitle,
+    required List<SpecialTask> tasks,
+    required bool showPersonnel,
+  }) {
+    int pendingCount = 0;
+    int submittedCount = 0;
+    int missingCount = 0;
+
+    for (final t in tasks) {
+      final eval = evaluations[t.id];
+      if (eval != null) {
+        submittedCount++;
+      } else if (t.status == TaskStatus.evaluated || t.status == TaskStatus.flagged) {
+        submittedCount++;
+      } else if (t.status == TaskStatus.notSubmitted) {
+        missingCount++;
+      } else if (t.status == TaskStatus.pending) {
+        pendingCount++;
+      }
+    }
+
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 12),
+        child: Text(
+          sectionTitle,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF1E293B),
+            letterSpacing: -0.3,
+          ),
+        ),
+      ),
+      ToDoTrackerRow(
+        pendingCount: pendingCount,
+        submittedCount: submittedCount,
+        missingCount: missingCount,
+      ),
+      const SizedBox(height: 16),
+      _buildSpecialTaskList(
+        'Special Appraisal Tasks',
+        tasks,
+        showPersonnel,
+      ),
+      const SizedBox(height: 24),
+    ];
+  }
+
+  Widget _buildSpecialTaskList(String title, List<SpecialTask> tasks, bool showPersonnel) {
+    return TaskCardList(
+      title: title,
+      items: List.generate(tasks.length, (index) {
+        final t = tasks[index];
+        String subtitle = 'Due: ${t.dueDate}';
+        if (showPersonnel) {
+          subtitle += ' | Assigned to: ${t.personnel}';
+        } else {
+          subtitle += ' | Assigned by: ${t.assignedBy}';
+        }
+        
+        Widget? trailing;
+        if (t.status == TaskStatus.evaluated) {
+          trailing = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFECFDF5),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              'Score: ${t.score ?? t.evaluation?.getCompliancePoints() ?? 0}',
+              style: const TextStyle(color: Color(0xFF10B981), fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          );
+        } else if (t.status == TaskStatus.flagged) {
+          trailing = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              'Flagged (${t.score ?? 0})',
+              style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          );
+        } else if (t.status == TaskStatus.pending) {
+          trailing = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              'Pending',
+              style: TextStyle(color: Color(0xFF3B82F6), fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          );
+        } else {
+          trailing = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              'Missing',
+              style: TextStyle(color: Color(0xFFEF4444), fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          );
+        }
+
+        return TaskListItem(
+          title: t.task,
+          subtitle: subtitle,
+          trailing: trailing,
+          isLast: index == tasks.length - 1,
+        );
+      }),
+    );
   }
 
   // ── Helper method to build dynamic right-hand side views ────────────────────

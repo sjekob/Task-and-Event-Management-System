@@ -31,7 +31,9 @@ class EventsTab extends StatefulWidget {
   final String username;
   final String role;
   final Map<String, List<AttendeeRating>> newRatings;
+  final List<SchoolEvent> backendEvents;
   final void Function(String id, AttendeeRating rating) onSubmitRating;
+  final Future<void> Function()? onRefresh;
 
   const EventsTab({
     super.key,
@@ -39,7 +41,9 @@ class EventsTab extends StatefulWidget {
     required this.username,
     required this.role,
     required this.newRatings,
+    this.backendEvents = const [],
     required this.onSubmitRating,
+    this.onRefresh,
   });
 
   @override
@@ -85,7 +89,8 @@ class _EventsTabState extends State<EventsTab> {
   }
 
   List<SchoolEvent> get _filtered {
-    final all = _eventsWithNewRatings(sampleEvents);
+    final baseEvents = widget.backendEvents.isNotEmpty ? widget.backendEvents : sampleEvents;
+    final all = _eventsWithNewRatings(baseEvents);
     if (_filterMode == 'event' && _selectedEvent != null) {
       return all.where((e) => e.name == _selectedEvent).toList();
     }
@@ -94,7 +99,6 @@ class _EventsTabState extends State<EventsTab> {
 
   int get _pendingCount  => _filtered.where((e) => e.status == EventStatus.awaitingRatings).length;
   int get _ratedCount    => _filtered.where((e) => e.status == EventStatus.rated).length;
-  int get _lowCount      => _filtered.where((e) => e.avgRating != null && e.avgRating! < 3.0).length;
   int get _flaggedAlertsCount => _filtered.where((e) => e.status == EventStatus.flagged).length;
   String get _avgRating {
     final s = _filtered.where((e) => e.avgRating != null).map((e) => e.avgRating!);
@@ -102,7 +106,10 @@ class _EventsTabState extends State<EventsTab> {
     return '${(s.reduce((a, b) => a + b) / s.length).toStringAsFixed(1)}/5';
   }
 
-  List<String> get _eventNames => sampleEvents.map((e) => e.name).toSet().toList()..sort();
+  List<String> get _eventNames {
+    final baseEvents = widget.backendEvents.isNotEmpty ? widget.backendEvents : sampleEvents;
+    return baseEvents.map((e) => e.name).toSet().toList()..sort();
+  }
 
   void _openViewResults(BuildContext ctx, SchoolEvent event) {
     showDialog<void>(
@@ -147,19 +154,77 @@ class _EventsTabState extends State<EventsTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Stat cards ──────────────────────────────────────────────
-                Row(children: [
-                  Expanded(child: _StatCard(label: 'Pending Review', value: '$_pendingCount',
-                      valueColor: AppColors.warning, icon: Icons.assignment_outlined, iconColor: AppColors.warning)),
-                  const SizedBox(width: 14),
-                  Expanded(child: _StatCard(label: 'Evaluated', value: '$_ratedCount',
-                      valueColor: AppColors.success, icon: Icons.star_border_outlined, iconColor: AppColors.success)),
-                  const SizedBox(width: 14),
-                  Expanded(child: _StatCard(label: 'Low Rating', value: '$_lowCount',
-                      valueColor: AppColors.danger, icon: Icons.warning_amber_outlined, iconColor: AppColors.danger)),
-                  const SizedBox(width: 14),
-                  Expanded(child: _StatCard(label: 'Avg Rating', value: _avgRating,
-                      valueColor: AppColors.amber, icon: Icons.star_border_outlined, iconColor: AppColors.amber)),
-                ]),
+                 // ── Stat cards ──────────────────────────────────────────────
+                Builder(
+                  builder: (context) {
+                    final bool isMobile = MediaQuery.of(context).size.width < 640;
+                    if (isMobile) {
+                      return Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(child: _StatCard(
+                                label: 'Total Events',
+                                value: '${_filtered.length}',
+                                valueColor: AppColors.textPrimary,
+                                icon: Icons.event_note,
+                                iconColor: AppColors.textSecondary,
+                                subtitle: '${_filtered.length} total · $_pendingCount awaiting ratings',
+                              )),
+                              const SizedBox(width: 12),
+                              Expanded(child: _StatCard(
+                                label: 'Rated Events', 
+                                value: '$_ratedCount',
+                                valueColor: AppColors.success, 
+                                icon: Icons.star_border_outlined, 
+                                iconColor: AppColors.success,
+                              )),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(child: _StatCard(
+                                label: 'Flagged Events', 
+                                value: '$_flaggedAlertsCount',
+                                valueColor: AppColors.danger, 
+                                icon: Icons.warning_amber_outlined, 
+                                iconColor: AppColors.danger,
+                              )),
+                              const SizedBox(width: 12),
+                              Expanded(child: _StatCard(
+                                label: 'Avg Rating', 
+                                value: _avgRating,
+                                valueColor: AppColors.amber, 
+                                icon: Icons.star_border_outlined, 
+                                iconColor: AppColors.amber,
+                              )),
+                            ],
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(children: [
+                      Expanded(child: _StatCard(
+                        label: 'Total Events',
+                        value: '${_filtered.length}',
+                        valueColor: AppColors.textPrimary,
+                        icon: Icons.event_note,
+                        iconColor: AppColors.textSecondary,
+                        subtitle: '${_filtered.length} total · $_pendingCount awaiting ratings',
+                      )),
+                      const SizedBox(width: 14),
+                      Expanded(child: _StatCard(label: 'Rated Events', value: '$_ratedCount',
+                          valueColor: AppColors.success, icon: Icons.star_border_outlined, iconColor: AppColors.success)),
+                      const SizedBox(width: 14),
+                      Expanded(child: _StatCard(label: 'Flagged Events', value: '$_flaggedAlertsCount',
+                          valueColor: AppColors.danger, icon: Icons.warning_amber_outlined, iconColor: AppColors.danger)),
+                      const SizedBox(width: 14),
+                      Expanded(child: _StatCard(label: 'Avg Rating', value: _avgRating,
+                          valueColor: AppColors.amber, icon: Icons.star_border_outlined, iconColor: AppColors.amber)),
+                    ]);
+                  }
+                ),
 
                 const SizedBox(height: 18),
 
@@ -219,29 +284,66 @@ class _EventsTabState extends State<EventsTab> {
                       // Header row
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
-                        child: Row(
-                          children: [
-                            const Text('Event Evaluations', style: AppTextStyles.sectionTitle),
-                            const Spacer(),
-                            _StyledDropdown(
-                              value: _filterMode,
-                              leadingIcon: Icons.tune_rounded,
-                              items: const [
-                                _DropItem(value: 'all',   label: 'Show All'),
-                                _DropItem(value: 'event', label: 'By Event'),
+                        child: Builder(
+                          builder: (context) {
+                            final isMobile = MediaQuery.of(context).size.width < 640;
+                            if (isMobile) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Event Evaluations', style: AppTextStyles.sectionTitle),
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      _StyledDropdown(
+                                        value: _filterMode,
+                                        leadingIcon: Icons.tune_rounded,
+                                        items: const [
+                                          _DropItem(value: 'all',   label: 'Show All'),
+                                          _DropItem(value: 'event', label: 'By Event'),
+                                        ],
+                                        onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
+                                      ),
+                                      if (_filterMode == 'event')
+                                        _StyledDropdown(
+                                          value: _selectedEvent,
+                                          hint: 'All Events',
+                                          items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
+                                          onChanged: (v) => setState(() => _selectedEvent = v),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              );
+                            }
+                            return Row(
+                              children: [
+                                const Text('Event Evaluations', style: AppTextStyles.sectionTitle),
+                                const Spacer(),
+                                _StyledDropdown(
+                                  value: _filterMode,
+                                  leadingIcon: Icons.tune_rounded,
+                                  items: const [
+                                    _DropItem(value: 'all',   label: 'Show All'),
+                                    _DropItem(value: 'event', label: 'By Event'),
+                                  ],
+                                  onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
+                                ),
+                                if (_filterMode == 'event') ...[
+                                  const SizedBox(width: 8),
+                                  _StyledDropdown(
+                                    value: _selectedEvent,
+                                    hint: 'All Events',
+                                    items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
+                                    onChanged: (v) => setState(() => _selectedEvent = v),
+                                  ),
+                                ],
                               ],
-                              onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
-                            ),
-                            if (_filterMode == 'event') ...[
-                              const SizedBox(width: 8),
-                              _StyledDropdown(
-                                value: _selectedEvent,
-                                hint: 'All Events',
-                                items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
-                                onChanged: (v) => setState(() => _selectedEvent = v),
-                              ),
-                            ],
-                          ],
+                            );
+                          }
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -274,15 +376,55 @@ class _EventsTabState extends State<EventsTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Stat cards
-              Row(children: [
-                Expanded(child: _CoordinatorStatCard(label: 'Pending Review', value: '$_pendingCount', valueColor: const Color(0xFFF59E0B), icon: Icons.calendar_today_outlined, iconColor: const Color(0xFFF59E0B))),
-                const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Evaluated', value: '$_ratedCount', valueColor: const Color(0xFF10B981), icon: Icons.star_border_outlined, iconColor: const Color(0xFF10B981))),
-                const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Flagged Alerts', value: '$_flaggedAlertsCount', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
-                const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Avg Rating', value: _avgRating, valueColor: const Color(0xFF475569), icon: Icons.star_border_outlined, iconColor: const Color(0xFF94A3B8))),
-              ]),
+              Builder(
+                builder: (context) {
+                  final bool isMobile = MediaQuery.of(context).size.width < 640;
+                  if (isMobile) {
+                    return Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: _CoordinatorStatCard(
+                              label: 'Total Events',
+                              value: '${_filtered.length}',
+                              valueColor: const Color(0xFF475569),
+                              icon: Icons.event_note,
+                              iconColor: const Color(0xFF94A3B8),
+                              subtitle: '${_filtered.length} total · $_pendingCount awaiting ratings',
+                            )),
+                            const SizedBox(width: 12),
+                            Expanded(child: _CoordinatorStatCard(label: 'Rated Events', value: '$_ratedCount', valueColor: const Color(0xFF10B981), icon: Icons.star_border_outlined, iconColor: const Color(0xFF10B981))),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(child: _CoordinatorStatCard(label: 'Flagged Events', value: '$_flaggedAlertsCount', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                            const SizedBox(width: 12),
+                            Expanded(child: _CoordinatorStatCard(label: 'Avg Rating', value: _avgRating, valueColor: const Color(0xFFF59E0B), icon: Icons.star_border_outlined, iconColor: const Color(0xFFF59E0B))),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(children: [
+                    Expanded(child: _CoordinatorStatCard(
+                      label: 'Total Events',
+                      value: '${_filtered.length}',
+                      valueColor: const Color(0xFF475569),
+                      icon: Icons.event_note,
+                      iconColor: const Color(0xFF94A3B8),
+                      subtitle: '${_filtered.length} total · $_pendingCount awaiting ratings',
+                    )),
+                    const SizedBox(width: 14),
+                    Expanded(child: _CoordinatorStatCard(label: 'Rated Events', value: '$_ratedCount', valueColor: const Color(0xFF10B981), icon: Icons.star_border_outlined, iconColor: const Color(0xFF10B981))),
+                    const SizedBox(width: 14),
+                    Expanded(child: _CoordinatorStatCard(label: 'Flagged Events', value: '$_flaggedAlertsCount', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                    const SizedBox(width: 14),
+                    Expanded(child: _CoordinatorStatCard(label: 'Avg Rating', value: _avgRating, valueColor: const Color(0xFFF59E0B), icon: Icons.star_border_outlined, iconColor: const Color(0xFFF59E0B))),
+                  ]);
+                }
+              ),
               const SizedBox(height: 18),
               
               // Rubric breakdown card
@@ -318,43 +460,107 @@ class _EventsTabState extends State<EventsTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Event Evaluation Rubric (5-Point Scale)',
+            'Event Evaluation Rubric (5-Point Scale — Equal Weight)',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(child: _buildRubricMetricItem(
-                icon: Icons.calendar_today_outlined,
-                iconColor: const Color(0xFF10B981),
-                title: 'Organization',
-                weight: '20%',
-              )),
-              Expanded(child: _buildRubricMetricItem(
-                icon: Icons.group_outlined,
-                iconColor: const Color(0xFFF59E0B),
-                title: 'Engagement',
-                weight: '25%',
-              )),
-              Expanded(child: _buildRubricMetricItem(
-                icon: Icons.check_circle_outline,
-                iconColor: const Color(0xFF8B5CF6),
-                title: 'Content Quality',
-                weight: '30%',
-              )),
-              Expanded(child: _buildRubricMetricItem(
-                icon: Icons.schedule_outlined,
-                iconColor: const Color(0xFFEC4899),
-                title: 'Time Management',
-                weight: '15%',
-              )),
-              Expanded(child: _buildRubricMetricItem(
-                icon: Icons.sentiment_satisfied_alt_outlined,
-                iconColor: const Color(0xFF3B82F6),
-                title: 'Overall Experience',
-                weight: '10%',
-              )),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final double availableWidth = constraints.maxWidth;
+              final isMobile = availableWidth < 600;
+              if (isMobile) {
+                // Return a Wrap with 2 items per row based on actual container width
+                final double itemWidth = (availableWidth - 12) / 2;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 16,
+                  children: [
+                    _buildRubricMetricItemMobile(
+                      icon: Icons.event_note_outlined,
+                      iconColor: const Color(0xFF10B981),
+                      title: 'Planning & Org',
+                      weight: 'Equal Weight',
+                      width: itemWidth,
+                    ),
+                    _buildRubricMetricItemMobile(
+                      icon: Icons.flag_outlined,
+                      iconColor: const Color(0xFF8B5CF6),
+                      title: 'Objectives',
+                      weight: 'Equal Weight',
+                      width: itemWidth,
+                    ),
+                    _buildRubricMetricItemMobile(
+                      icon: Icons.person_outline,
+                      iconColor: const Color(0xFF3B82F6),
+                      title: 'Personnel Perf',
+                      weight: 'Equal Weight',
+                      width: itemWidth,
+                    ),
+                    _buildRubricMetricItemMobile(
+                      icon: Icons.schedule_outlined,
+                      iconColor: const Color(0xFFEC4899),
+                      title: 'Time Mgmt',
+                      weight: 'Equal Weight',
+                      width: itemWidth,
+                    ),
+                    _buildRubricMetricItemMobile(
+                      icon: Icons.group_outlined,
+                      iconColor: const Color(0xFFF59E0B),
+                      title: 'Engagement',
+                      weight: 'Equal Weight',
+                      width: itemWidth,
+                    ),
+                    _buildRubricMetricItemMobile(
+                      icon: Icons.inventory_2_outlined,
+                      iconColor: const Color(0xFF64748B),
+                      title: 'Resource Mgmt',
+                      weight: 'Equal Weight',
+                      width: itemWidth,
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: _buildRubricMetricItem(
+                    icon: Icons.event_note_outlined,
+                    iconColor: const Color(0xFF10B981),
+                    title: 'Planning & Organization',
+                    weight: 'Equal Weight',
+                  )),
+                  Expanded(child: _buildRubricMetricItem(
+                    icon: Icons.flag_outlined,
+                    iconColor: const Color(0xFF8B5CF6),
+                    title: 'Achievement of Objectives',
+                    weight: 'Equal Weight',
+                  )),
+                  Expanded(child: _buildRubricMetricItem(
+                    icon: Icons.person_outline,
+                    iconColor: const Color(0xFF3B82F6),
+                    title: 'Personnel Performance',
+                    weight: 'Equal Weight',
+                  )),
+                  Expanded(child: _buildRubricMetricItem(
+                    icon: Icons.schedule_outlined,
+                    iconColor: const Color(0xFFEC4899),
+                    title: 'Time Management',
+                    weight: 'Equal Weight',
+                  )),
+                  Expanded(child: _buildRubricMetricItem(
+                    icon: Icons.group_outlined,
+                    iconColor: const Color(0xFFF59E0B),
+                    title: 'Participant Engagement',
+                    weight: 'Equal Weight',
+                  )),
+                  Expanded(child: _buildRubricMetricItem(
+                    icon: Icons.inventory_2_outlined,
+                    iconColor: const Color(0xFF64748B),
+                    title: 'Resource Management',
+                    weight: 'Equal Weight',
+                  )),
+                ],
+              );
+            }
           ),
           const SizedBox(height: 20),
           // Blue banner below
@@ -425,6 +631,51 @@ class _EventsTabState extends State<EventsTab> {
     );
   }
 
+  Widget _buildRubricMetricItemMobile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String weight,
+    required double width,
+  }) {
+    return SizedBox(
+      width: width,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 24),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            weight,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: iconColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSchoolWideEventsTable(BuildContext context) {
     return Container(
       width: double.infinity,
@@ -443,66 +694,147 @@ class _EventsTabState extends State<EventsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Text(
-              'School-Wide Events',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
+            child: Builder(
+              builder: (context) {
+                final isMobile = MediaQuery.of(context).size.width < 640;
+                if (isMobile) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'School-Wide Events',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _StyledDropdown(
+                            value: _filterMode,
+                            leadingIcon: Icons.tune_rounded,
+                            items: const [
+                              _DropItem(value: 'all',   label: 'Show All'),
+                              _DropItem(value: 'event', label: 'By Event'),
+                            ],
+                            onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
+                          ),
+                          if (_filterMode == 'event')
+                            _StyledDropdown(
+                              value: _selectedEvent,
+                              hint: 'All Events',
+                              items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
+                              onChanged: (v) => setState(() => _selectedEvent = v),
+                            ),
+                        ],
+                      ),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    const Text(
+                      'School-Wide Events',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    ),
+                    const Spacer(),
+                    _StyledDropdown(
+                      value: _filterMode,
+                      leadingIcon: Icons.tune_rounded,
+                      items: const [
+                        _DropItem(value: 'all',   label: 'Show All'),
+                        _DropItem(value: 'event', label: 'By Event'),
+                      ],
+                      onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
+                    ),
+                    if (_filterMode == 'event') ...[
+                      const SizedBox(width: 8),
+                      _StyledDropdown(
+                        value: _selectedEvent,
+                        hint: 'All Events',
+                        items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
+                        onChanged: (v) => setState(() => _selectedEvent = v),
+                      ),
+                    ],
+                  ],
+                );
+              }
             ),
           ),
+          const SizedBox(height: 14),
           const Divider(height: 1),
-          // Table Columns Header
-          Container(
-            color: const Color(0xFFF8FAFC),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: const Row(
-              children: [
-                Expanded(flex: 3, child: Text('EVENT NAME', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                Expanded(flex: 2, child: Text('DATE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                Expanded(flex: 2, child: Text('DEPARTMENT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                Expanded(flex: 2, child: Text('ORGANIZER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                Expanded(flex: 2, child: Text('RESPONSES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                Expanded(flex: 2, child: Text('AVG RATING', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                Expanded(flex: 2, child: Text('STATUS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                Expanded(flex: 2, child: Text('ACTION', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-              ],
-            ),
-          ),
-          // Rows
-          ..._filtered.map((e) {
-            final avg = e.avgRating;
-            final String ratingStr = avg != null ? '★ ${avg.toStringAsFixed(1)}/5' : '—';
-            final String responsesStr = '${e.responses} / ${e.attendees}';
-            
-            String statusStr = 'Pending';
-            Color statusColor = const Color(0xFFF59E0B);
-            Color statusBg = const Color(0xFFFEF3C7);
-            
-            if (e.status == EventStatus.rated) {
-              statusStr = 'Completed';
-              statusColor = const Color(0xFF16A34A);
-              statusBg = const Color(0xFFDCFCE7);
-            } else if (e.status == EventStatus.flagged) {
-              statusStr = 'Flagged';
-              statusColor = const Color(0xFFEF4444);
-              statusBg = const Color(0xFFFEE2E2);
+          // Table Columns Header + Rows inside horizontal scroll view
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final double tableWidth = constraints.maxWidth > 900 ? constraints.maxWidth : 900;
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: tableWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Table Columns Header
+                      Container(
+                        color: const Color(0xFFF8FAFC),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        child: const Row(
+                          children: [
+                            Expanded(flex: 3, child: Text('EVENT NAME', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                            Expanded(flex: 2, child: Text('DATE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                            Expanded(flex: 2, child: Text('DEPARTMENT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                            Expanded(flex: 2, child: Text('ORGANIZER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                            Expanded(flex: 2, child: Text('RESPONSES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                            Expanded(flex: 2, child: Text('AVG RATING', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                            Expanded(flex: 2, child: Text('STATUS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                            Expanded(flex: 2, child: Text('ACTION', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                          ],
+                        ),
+                      ),
+                      // Rows
+                      ..._filtered.map((e) {
+                        final avg = e.avgRating;
+                        final String ratingStr = avg != null ? '★ ${avg.toStringAsFixed(1)}/5' : '—';
+                        final String responsesStr = '${e.responses} / ${e.attendees}';
+                        
+                        String statusStr = 'Awaiting Ratings';
+                        Color statusColor = const Color(0xFFF59E0B);
+                        Color statusBg = const Color(0xFFFEF3C7);
+                        
+                        if (e.status == EventStatus.rated) {
+                          statusStr = 'Completed';
+                          statusColor = const Color(0xFF16A34A);
+                          statusBg = const Color(0xFFDCFCE7);
+                        } else if (e.status == EventStatus.flagged) {
+                          statusStr = 'Flagged';
+                          statusColor = const Color(0xFFEF4444);
+                          statusBg = const Color(0xFFFEE2E2);
+                        }
+                        
+                        final bool hasData = e.responses > 0;
+                        return _buildEventTableRow(
+                          context,
+                          e.name,
+                          e.date,
+                          e.department,
+                          e.organizer,
+                          responsesStr,
+                          ratingStr,
+                          statusStr,
+                          statusColor,
+                          statusBg,
+                          hasData,
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              );
             }
-            
-            final bool hasData = e.responses > 0;
-            return _buildEventTableRow(
-              context,
-              e.name,
-              e.date,
-              e.department,
-              e.organizer,
-              responsesStr,
-              ratingStr,
-              statusStr,
-              statusColor,
-              statusBg,
-              hasData,
-            );
-          }),
+          ),
         ],
       ),
     );
@@ -675,6 +1007,7 @@ class _EventsTabState extends State<EventsTab> {
 class _CoordinatorStatCard extends StatelessWidget {
   final String label;
   final String value;
+  final String? subtitle;
   final Color valueColor;
   final IconData icon;
   final Color iconColor;
@@ -682,6 +1015,7 @@ class _CoordinatorStatCard extends StatelessWidget {
   const _CoordinatorStatCard({
     required this.label,
     required this.value,
+    this.subtitle,
     required this.valueColor,
     required this.icon,
     required this.iconColor,
@@ -728,6 +1062,49 @@ class _CoordinatorStatCard extends StatelessWidget {
                     color: Color(0xFF64748B),
                   ),
                 ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 4),
+                  Builder(
+                    builder: (context) {
+                      if (subtitle!.contains('awaiting ratings')) {
+                        final parts = subtitle!.split(' · ');
+                        if (parts.length == 2) {
+                          final totalPart = parts[0];
+                          final awaitingPart = parts[1];
+                          final hasPending = !awaitingPart.startsWith('0');
+                          return RichText(
+                            text: TextSpan(
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF94A3B8),
+                                fontFamily: 'Inter',
+                              ),
+                              children: [
+                                TextSpan(text: '$totalPart · '),
+                                TextSpan(
+                                  text: awaitingPart,
+                                  style: TextStyle(
+                                    color: hasPending ? const Color(0xFFEA580C) : const Color(0xFF94A3B8),
+                                    fontWeight: hasPending ? FontWeight.w700 : FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                      }
+                      return Text(
+                        subtitle!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF94A3B8),
+                        ),
+                      );
+                    }
+                  ),
+                ],
               ],
             ),
           ),
@@ -1451,7 +1828,7 @@ class _EventRow extends StatelessWidget {
 
     switch (event.status) {
       case EventStatus.awaitingRatings:
-        statusChip  = _pill('Pending', AppColors.statusAmberBg, AppColors.statusAmberFg);
+        statusChip  = _pill('Awaiting Ratings', AppColors.statusAmberBg, AppColors.statusAmberFg);
         if (role == 'principal') {
           // Principals can only view, never rate
           actionLabel = 'View Results';
@@ -1465,7 +1842,7 @@ class _EventRow extends StatelessWidget {
           onAction    = () => onViewResults(event);
         }
       case EventStatus.rated:
-        statusChip  = _pill('Completed', AppColors.statusGreenBg, AppColors.statusGreenFg);
+        statusChip  = _pill('Rated', AppColors.statusGreenBg, AppColors.statusGreenFg);
         actionLabel = 'View Results';
         onAction    = () => onViewResults(event);
       case EventStatus.flagged:
@@ -1520,9 +1897,10 @@ class _EventRow extends StatelessWidget {
 
 class _StatCard extends StatelessWidget {
   final String label, value;
+  final String? subtitle;
   final Color valueColor, iconColor;
   final IconData icon;
-  const _StatCard({required this.label, required this.value, required this.valueColor, required this.icon, required this.iconColor});
+  const _StatCard({required this.label, required this.value, required this.valueColor, required this.icon, required this.iconColor, this.subtitle});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -1533,6 +1911,49 @@ class _StatCard extends StatelessWidget {
         Text(label, style: AppTextStyles.statLabel),
         const SizedBox(height: 10),
         Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: valueColor, letterSpacing: -0.3)),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Builder(
+            builder: (context) {
+              if (subtitle!.contains('awaiting ratings')) {
+                final parts = subtitle!.split(' · ');
+                if (parts.length == 2) {
+                  final totalPart = parts[0];
+                  final awaitingPart = parts[1];
+                  final hasPending = !awaitingPart.startsWith('0');
+                  return RichText(
+                    text: TextSpan(
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                        fontFamily: 'Inter',
+                      ),
+                      children: [
+                        TextSpan(text: '$totalPart · '),
+                        TextSpan(
+                          text: awaitingPart,
+                          style: TextStyle(
+                            color: hasPending ? const Color(0xFFEA580C) : AppColors.textSecondary,
+                            fontWeight: hasPending ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              }
+              return Text(
+                subtitle!,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+              );
+            }
+          ),
+        ],
       ])),
       Icon(icon, color: iconColor, size: 22),
     ]),
@@ -1582,31 +2003,84 @@ class _StyledDropdown extends StatelessWidget {
       final m = items.where((i) => i.value == value);
       if (m.isNotEmpty) display = m.first.label;
     }
-    return PopupMenuButton<String?>(
-      onSelected: onChanged,
-      offset: const Offset(0, 42),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.cardBorder.withOpacity(0.8), width: 0.8)),
-      color: Colors.white, elevation: 8,
-      constraints: const BoxConstraints(minWidth: 180, maxWidth: 280),
-      itemBuilder: (_) => items.map((item) => PopupMenuItem<String?>(
-        value: item.value, height: 38,
-        child: Row(children: [
-          if (item.value == value) ...[
-            const Icon(Icons.check_rounded, size: 14, color: AppColors.tabActive),
-            const SizedBox(width: 6),
-          ] else const SizedBox(width: 20),
-          Text(item.label, style: TextStyle(fontSize: 13, color: item.value == value ? AppColors.tabActive : AppColors.textPrimary, fontWeight: item.value == value ? FontWeight.w600 : FontWeight.w400)),
-        ]),
-      )).toList(),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: border, width: 1)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (leadingIcon != null) ...[Icon(leadingIcon, size: 14, color: ic), const SizedBox(width: 6)],
-          Text(display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: fg)),
-          const SizedBox(width: 6),
-          Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: ic),
-        ]),
+    return GestureDetector(
+      onTap: () {
+        final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+        if (renderBox == null) return;
+
+        final size = renderBox.size;
+        final position = renderBox.localToGlobal(Offset.zero);
+
+        const double menuWidth = 200;
+        final double x = position.dx + (size.width - menuWidth) / 2;
+        final double y = position.dy + size.height + 4;
+ 
+        showMenu<String?>(
+          context: context,
+          position: RelativeRect.fromLTRB(x, y, x + menuWidth, y + 300),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: AppColors.cardBorder.withOpacity(0.8), width: 0.8),
+          ),
+          color: Colors.white,
+          elevation: 8,
+          shadowColor: Colors.black.withOpacity(0.08),
+          constraints: const BoxConstraints(minWidth: menuWidth, maxWidth: 340),
+          items: items.map((item) => PopupMenuItem<String?>(
+            value: item.value,
+            height: 38,
+            child: Row(children: [
+              if (item.value == value) ...[
+                const Icon(Icons.check_rounded, size: 14, color: AppColors.tabActive),
+                const SizedBox(width: 6),
+              ] else
+                const SizedBox(width: 20),
+              Expanded(
+                child: Text(
+                  item.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: item.value == value ? AppColors.tabActive : AppColors.textPrimary,
+                    fontWeight: item.value == value ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ]),
+          )).toList(),
+        ).then((selectedValue) {
+          if (selectedValue != null) {
+            onChanged(selectedValue);
+          }
+        });
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: border, width: 1),
+            boxShadow: isDark
+                ? [BoxShadow(color: AppColors.tabActive.withOpacity(0.15), blurRadius: 6, offset: const Offset(0, 2))]
+                : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (leadingIcon != null) ...[
+                Icon(leadingIcon, size: 14, color: ic),
+                const SizedBox(width: 6),
+              ],
+              Text(display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: fg)),
+              const SizedBox(width: 6),
+              Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: ic),
+            ],
+          ),
+        ),
       ),
     );
   }

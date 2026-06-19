@@ -569,15 +569,41 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Stat cards ──────────────────────────────────────────────
-                Row(children: [
-                  Expanded(child: _StatCard(label: 'Pending Review', value: '$_pendingCount', valueColor: AppColors.warning, icon: Icons.assignment_outlined, iconColor: AppColors.warning)),
-                  const SizedBox(width: 14),
-                  Expanded(child: _StatCard(label: 'Evaluated', value: '$_evaluatedCount', valueColor: AppColors.success, icon: Icons.check_circle_outline, iconColor: AppColors.success)),
-                  const SizedBox(width: 14),
-                  Expanded(child: _StatCard(label: 'Flagged', value: '$_flaggedCount', valueColor: AppColors.danger, icon: Icons.flag, iconColor: AppColors.danger)),
-                  const SizedBox(width: 14),
-                  Expanded(child: _StatCard(label: 'Avg Score', value: _avgScore, valueColor: AppColors.amber, icon: Icons.bar_chart, iconColor: AppColors.amber)),
-                ]),
+                Builder(
+                  builder: (context) {
+                    final bool isMobile = MediaQuery.of(context).size.width < 640;
+                    if (isMobile) {
+                      return Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(child: _StatCard(label: 'Pending Review', value: '$_pendingCount', valueColor: AppColors.warning, icon: Icons.assignment_outlined, iconColor: AppColors.warning)),
+                              const SizedBox(width: 12),
+                              Expanded(child: _StatCard(label: 'Evaluated', value: '$_evaluatedCount', valueColor: AppColors.success, icon: Icons.check_circle_outline, iconColor: AppColors.success)),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(child: _StatCard(label: 'Flagged', value: '$_flaggedCount', valueColor: AppColors.danger, icon: Icons.flag, iconColor: AppColors.danger)),
+                              const SizedBox(width: 12),
+                              Expanded(child: _StatCard(label: 'Avg Score', value: _avgScore, valueColor: AppColors.amber, icon: Icons.bar_chart, iconColor: AppColors.amber)),
+                            ],
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(children: [
+                      Expanded(child: _StatCard(label: 'Pending Review', value: '$_pendingCount', valueColor: AppColors.warning, icon: Icons.assignment_outlined, iconColor: AppColors.warning)),
+                      const SizedBox(width: 14),
+                      Expanded(child: _StatCard(label: 'Evaluated', value: '$_evaluatedCount', valueColor: AppColors.success, icon: Icons.check_circle_outline, iconColor: AppColors.success)),
+                      const SizedBox(width: 14),
+                      Expanded(child: _StatCard(label: 'Flagged', value: '$_flaggedCount', valueColor: AppColors.danger, icon: Icons.flag, iconColor: AppColors.danger)),
+                      const SizedBox(width: 14),
+                      Expanded(child: _StatCard(label: 'Avg Score', value: _avgScore, valueColor: AppColors.amber, icon: Icons.bar_chart, iconColor: AppColors.amber)),
+                    ]);
+                  }
+                ),
                 const SizedBox(height: 18),
 
                 // ── Weighted scoring breakdown ───────────────────────────────
@@ -653,63 +679,116 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Card header with improved dropdowns
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
-                        child: Row(
-                          children: [
-                            const Text('Special Task Evaluations',
-                                style: AppTextStyles.sectionTitle),
-                            const Spacer(),
-
-                            // ── Filter mode ──────────────────────────────────
-                            _StyledDropdown(
-                              value: _filterModeValue,
-                              leadingIcon: Icons.tune_rounded,
-                              items: const [
-                                _DropItem(value: 'all',       label: 'Show All'),
-                                _DropItem(value: 'personnel', label: 'By Personnel'),
-                                _DropItem(value: 'task',      label: 'By Task'),
+                        child: Builder(
+                          builder: (context) {
+                            final isMobile = MediaQuery.of(context).size.width < 640;
+                            if (isMobile) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Special Task Evaluations',
+                                      style: AppTextStyles.sectionTitle),
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      _StyledDropdown(
+                                        value: _filterModeValue,
+                                        leadingIcon: Icons.tune_rounded,
+                                        items: const [
+                                          _DropItem(value: 'all',       label: 'Show All'),
+                                          _DropItem(value: 'personnel', label: 'By Personnel'),
+                                          _DropItem(value: 'task',      label: 'By Task'),
+                                        ],
+                                        onChanged: (v) => setState(() {
+                                          _filterMode = v == 'personnel'
+                                              ? _FilterMode.byPersonnel
+                                              : v == 'task'
+                                                  ? _FilterMode.byTask
+                                                  : _FilterMode.all;
+                                          _selectedPersonnel = null;
+                                          _selectedTask = null;
+                                        }),
+                                      ),
+                                      if (_filterMode == _FilterMode.byPersonnel)
+                                        _StyledDropdown(
+                                          value: _selectedPersonnel,
+                                          hint: 'All Personnel',
+                                          items: _personnelList
+                                              .map((p) => _DropItem(value: p, label: p))
+                                              .toList(),
+                                          onChanged: (v) =>
+                                              setState(() => _selectedPersonnel = v),
+                                        ),
+                                      if (_filterMode == _FilterMode.byTask)
+                                        _StyledDropdown(
+                                          value: _selectedTask,
+                                          hint: 'All Tasks',
+                                          items: _taskList
+                                              .map((t) => _DropItem(value: t, label: t))
+                                              .toList(),
+                                          onChanged: (v) =>
+                                              setState(() => _selectedTask = v),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              );
+                            }
+                            return Row(
+                              children: [
+                                const Text('Special Task Evaluations',
+                                    style: AppTextStyles.sectionTitle),
+                                const Spacer(),
+                                _StyledDropdown(
+                                  value: _filterModeValue,
+                                  leadingIcon: Icons.tune_rounded,
+                                  items: const [
+                                    _DropItem(value: 'all',       label: 'Show All'),
+                                    _DropItem(value: 'personnel', label: 'By Personnel'),
+                                    _DropItem(value: 'task',      label: 'By Task'),
+                                  ],
+                                  onChanged: (v) => setState(() {
+                                    _filterMode = v == 'personnel'
+                                        ? _FilterMode.byPersonnel
+                                        : v == 'task'
+                                            ? _FilterMode.byTask
+                                            : _FilterMode.all;
+                                    _selectedPersonnel = null;
+                                    _selectedTask = null;
+                                  }),
+                                ),
+                                if (_filterMode == _FilterMode.byPersonnel) ...[
+                                  const SizedBox(width: 8),
+                                  _StyledDropdown(
+                                    value: _selectedPersonnel,
+                                    hint: 'All Personnel',
+                                    items: _personnelList
+                                        .map((p) => _DropItem(value: p, label: p))
+                                        .toList(),
+                                    onChanged: (v) =>
+                                        setState(() => _selectedPersonnel = v),
+                                  ),
+                                ],
+                                if (_filterMode == _FilterMode.byTask) ...[
+                                  const SizedBox(width: 8),
+                                  _StyledDropdown(
+                                    value: _selectedTask,
+                                    hint: 'All Tasks',
+                                    items: _taskList
+                                        .map((t) => _DropItem(value: t, label: t))
+                                        .toList(),
+                                    onChanged: (v) =>
+                                        setState(() => _selectedTask = v),
+                                  ),
+                                ],
                               ],
-                              onChanged: (v) => setState(() {
-                                _filterMode = v == 'personnel'
-                                    ? _FilterMode.byPersonnel
-                                    : v == 'task'
-                                        ? _FilterMode.byTask
-                                        : _FilterMode.all;
-                                _selectedPersonnel = null;
-                                _selectedTask = null;
-                              }),
-                            ),
-
-                            // ── Personnel picker ─────────────────────────────
-                            if (_filterMode == _FilterMode.byPersonnel) ...[
-                              const SizedBox(width: 8),
-                              _StyledDropdown(
-                                value: _selectedPersonnel,
-                                hint: 'All Personnel',
-                                items: _personnelList
-                                    .map((p) => _DropItem(value: p, label: p))
-                                    .toList(),
-                                onChanged: (v) =>
-                                    setState(() => _selectedPersonnel = v),
-                              ),
-                            ],
-
-                            // ── Task picker ──────────────────────────────────
-                            if (_filterMode == _FilterMode.byTask) ...[
-                              const SizedBox(width: 8),
-                              _StyledDropdown(
-                                value: _selectedTask,
-                                hint: 'All Tasks',
-                                items: _taskList
-                                    .map((t) => _DropItem(value: t, label: t))
-                                    .toList(),
-                                onChanged: (v) =>
-                                    setState(() => _selectedTask = v),
-                              ),
-                            ],
-                          ],
+                            );
+                          }
                         ),
                       ),
 
@@ -762,15 +841,41 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Stat cards
-              Row(children: [
-                Expanded(child: _CoordinatorStatCard(label: 'Total Faculty Evaluated', value: '$_coordinatorTotalFacultyEvaluated', valueColor: const Color(0xFF10B981), icon: Icons.check_circle_outline, iconColor: const Color(0xFF10B981))),
-                const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Flagged Personnel', value: '$_coordinatorFlaggedPersonnel', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
-                const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'Departments Monitored', value: '$_coordinatorDepartmentsMonitored', valueColor: const Color(0xFF8B5CF6), icon: Icons.group_outlined, iconColor: const Color(0xFF8B5CF6))),
-                const SizedBox(width: 14),
-                Expanded(child: _CoordinatorStatCard(label: 'School Avg Compliance / 100', value: _coordinatorSchoolAvgCompliance, valueColor: const Color(0xFF475569), icon: Icons.emoji_events_outlined, iconColor: const Color(0xFF94A3B8))),
-              ]),
+              Builder(
+                builder: (context) {
+                  final isMobile = MediaQuery.of(context).size.width < 640;
+                  if (isMobile) {
+                    return Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: _CoordinatorStatCard(label: 'Total Faculty Evaluated', value: '$_coordinatorTotalFacultyEvaluated', valueColor: const Color(0xFF10B981), icon: Icons.check_circle_outline, iconColor: const Color(0xFF10B981))),
+                            const SizedBox(width: 12),
+                            Expanded(child: _CoordinatorStatCard(label: 'Flagged Personnel', value: '$_coordinatorFlaggedPersonnel', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(child: _CoordinatorStatCard(label: 'Departments Monitored', value: '$_coordinatorDepartmentsMonitored', valueColor: const Color(0xFF8B5CF6), icon: Icons.group_outlined, iconColor: const Color(0xFF8B5CF6))),
+                            const SizedBox(width: 12),
+                            Expanded(child: _CoordinatorStatCard(label: 'School Avg Compliance', value: _coordinatorSchoolAvgCompliance, valueColor: const Color(0xFF475569), icon: Icons.emoji_events_outlined, iconColor: const Color(0xFF94A3B8))),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(children: [
+                    Expanded(child: _CoordinatorStatCard(label: 'Total Faculty Evaluated', value: '$_coordinatorTotalFacultyEvaluated', valueColor: const Color(0xFF10B981), icon: Icons.check_circle_outline, iconColor: const Color(0xFF10B981))),
+                    const SizedBox(width: 14),
+                    Expanded(child: _CoordinatorStatCard(label: 'Flagged Personnel', value: '$_coordinatorFlaggedPersonnel', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                    const SizedBox(width: 14),
+                    Expanded(child: _CoordinatorStatCard(label: 'Departments Monitored', value: '$_coordinatorDepartmentsMonitored', valueColor: const Color(0xFF8B5CF6), icon: Icons.group_outlined, iconColor: const Color(0xFF8B5CF6))),
+                    const SizedBox(width: 14),
+                    Expanded(child: _CoordinatorStatCard(label: 'School Avg Compliance / 100', value: _coordinatorSchoolAvgCompliance, valueColor: const Color(0xFF475569), icon: Icons.emoji_events_outlined, iconColor: const Color(0xFF94A3B8))),
+                  ]);
+                }
+              ),
               const SizedBox(height: 18),
               
               // Appraisal Coverage breakdown
@@ -791,50 +896,100 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                     // Card header with improved dropdowns
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
-                      child: Row(
-                        children: [
-                          const Text('Dean Special Task Submissions', style: AppTextStyles.sectionTitle),
-                          const Spacer(),
-                          // ── Filter mode ──────────────────────────────────
-                          _StyledDropdown(
-                            value: _filterModeValue,
-                            leadingIcon: Icons.tune_rounded,
-                            items: const [
-                              _DropItem(value: 'all',       label: 'Show All'),
-                              _DropItem(value: 'personnel', label: 'By Personnel'),
-                              _DropItem(value: 'task',      label: 'By Task'),
+                      child: Builder(
+                        builder: (context) {
+                          final isMobile = MediaQuery.of(context).size.width < 640;
+                          if (isMobile) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Dean Special Task Submissions', style: AppTextStyles.sectionTitle),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    _StyledDropdown(
+                                      value: _filterModeValue,
+                                      leadingIcon: Icons.tune_rounded,
+                                      items: const [
+                                        _DropItem(value: 'all',       label: 'Show All'),
+                                        _DropItem(value: 'personnel', label: 'By Personnel'),
+                                        _DropItem(value: 'task',      label: 'By Task'),
+                                      ],
+                                      onChanged: (v) => setState(() {
+                                        _filterMode = v == 'personnel'
+                                            ? _FilterMode.byPersonnel
+                                            : v == 'task'
+                                                ? _FilterMode.byTask
+                                                : _FilterMode.all;
+                                        _selectedPersonnel = null;
+                                        _selectedTask = null;
+                                      }),
+                                    ),
+                                    if (_filterMode == _FilterMode.byPersonnel)
+                                      _StyledDropdown(
+                                        value: _selectedPersonnel,
+                                        hint: 'All Personnel',
+                                        items: _personnelList.map((p) => _DropItem(value: p, label: p)).toList(),
+                                        onChanged: (v) => setState(() => _selectedPersonnel = v),
+                                      ),
+                                    if (_filterMode == _FilterMode.byTask)
+                                      _StyledDropdown(
+                                        value: _selectedTask,
+                                        hint: 'All Tasks',
+                                        items: _taskList.map((t) => _DropItem(value: t, label: t)).toList(),
+                                        onChanged: (v) => setState(() => _selectedTask = v),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          }
+                          return Row(
+                            children: [
+                              const Text('Dean Special Task Submissions', style: AppTextStyles.sectionTitle),
+                              const Spacer(),
+                              _StyledDropdown(
+                                value: _filterModeValue,
+                                leadingIcon: Icons.tune_rounded,
+                                items: const [
+                                  _DropItem(value: 'all',       label: 'Show All'),
+                                  _DropItem(value: 'personnel', label: 'By Personnel'),
+                                  _DropItem(value: 'task',      label: 'By Task'),
+                                ],
+                                onChanged: (v) => setState(() {
+                                  _filterMode = v == 'personnel'
+                                      ? _FilterMode.byPersonnel
+                                      : v == 'task'
+                                          ? _FilterMode.byTask
+                                          : _FilterMode.all;
+                                  _selectedPersonnel = null;
+                                  _selectedTask = null;
+                                }),
+                              ),
+                              if (_filterMode == _FilterMode.byPersonnel) ...[
+                                const SizedBox(width: 8),
+                                _StyledDropdown(
+                                  value: _selectedPersonnel,
+                                  hint: 'All Personnel',
+                                  items: _personnelList.map((p) => _DropItem(value: p, label: p)).toList(),
+                                  onChanged: (v) => setState(() => _selectedPersonnel = v),
+                                ),
+                              ],
+                              if (_filterMode == _FilterMode.byTask) ...[
+                                const SizedBox(width: 8),
+                                _StyledDropdown(
+                                  value: _selectedTask,
+                                  hint: 'All Tasks',
+                                  items: _taskList.map((t) => _DropItem(value: t, label: t)).toList(),
+                                  onChanged: (v) => setState(() => _selectedTask = v),
+                                ),
+                              ],
                             ],
-                            onChanged: (v) => setState(() {
-                              _filterMode = v == 'personnel'
-                                  ? _FilterMode.byPersonnel
-                                  : v == 'task'
-                                      ? _FilterMode.byTask
-                                      : _FilterMode.all;
-                              _selectedPersonnel = null;
-                              _selectedTask = null;
-                            }),
-                          ),
-                          // ── Personnel picker ─────────────────────────────
-                          if (_filterMode == _FilterMode.byPersonnel) ...[
-                            const SizedBox(width: 8),
-                            _StyledDropdown(
-                              value: _selectedPersonnel,
-                              hint: 'All Personnel',
-                              items: _personnelList.map((p) => _DropItem(value: p, label: p)).toList(),
-                              onChanged: (v) => setState(() => _selectedPersonnel = v),
-                            ),
-                          ],
-                          // ── Task picker ──────────────────────────────────
-                          if (_filterMode == _FilterMode.byTask) ...[
-                            const SizedBox(width: 8),
-                            _StyledDropdown(
-                              value: _selectedTask,
-                              hint: 'All Tasks',
-                              items: _taskList.map((t) => _DropItem(value: t, label: t)).toList(),
-                              onChanged: (v) => setState(() => _selectedTask = v),
-                            ),
-                          ],
-                        ],
+                          );
+                        }
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -902,33 +1057,71 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(child: _buildCoverageItem(
-                icon: Icons.description_outlined,
-                iconColor: const Color(0xFF2563EB),
-                title: 'Special Task Timing',
-                subtitle: 'Task completion and timeline',
-              )),
-              Expanded(child: _buildCoverageItem(
-                icon: Icons.calendar_today_outlined,
-                iconColor: const Color(0xFF10B981),
-                title: 'Event Evaluation',
-                subtitle: 'Multi-stakeholder',
-              )),
-              Expanded(child: _buildCoverageItem(
-                icon: Icons.assignment_outlined,
-                iconColor: const Color(0xFF8B5CF6),
-                title: 'Special Task Ratings',
-                subtitle: 'Weighted rubric',
-              )),
-              Expanded(child: _buildCoverageItem(
-                icon: Icons.error_outline_outlined,
-                iconColor: const Color(0xFFEF4444),
-                title: 'Escalation Threshold',
-                subtitle: 'Below 3 stars auto-flags',
-              )),
-            ],
+          Builder(
+            builder: (context) {
+              final isMobile = MediaQuery.of(context).size.width < 640;
+              if (isMobile) {
+                return Column(
+                  children: [
+                    _buildCoverageItem(
+                      icon: Icons.description_outlined,
+                      iconColor: const Color(0xFF2563EB),
+                      title: 'Special Task Timing',
+                      subtitle: 'Task completion and timeline',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildCoverageItem(
+                      icon: Icons.calendar_today_outlined,
+                      iconColor: const Color(0xFF10B981),
+                      title: 'Event Evaluation',
+                      subtitle: 'Multi-stakeholder',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildCoverageItem(
+                      icon: Icons.assignment_outlined,
+                      iconColor: const Color(0xFF8B5CF6),
+                      title: 'Special Task Ratings',
+                      subtitle: 'Weighted rubric',
+                    ),
+                    const SizedBox(height: 16),
+                    _buildCoverageItem(
+                      icon: Icons.error_outline_outlined,
+                      iconColor: const Color(0xFFEF4444),
+                      title: 'Escalation Threshold',
+                      subtitle: 'Below 3 stars auto-flags',
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: _buildCoverageItem(
+                    icon: Icons.description_outlined,
+                    iconColor: const Color(0xFF2563EB),
+                    title: 'Special Task Timing',
+                    subtitle: 'Task completion and timeline',
+                  )),
+                  Expanded(child: _buildCoverageItem(
+                    icon: Icons.calendar_today_outlined,
+                    iconColor: const Color(0xFF10B981),
+                    title: 'Event Evaluation',
+                    subtitle: 'Multi-stakeholder',
+                  )),
+                  Expanded(child: _buildCoverageItem(
+                    icon: Icons.assignment_outlined,
+                    iconColor: const Color(0xFF8B5CF6),
+                    title: 'Special Task Ratings',
+                    subtitle: 'Weighted rubric',
+                  )),
+                  Expanded(child: _buildCoverageItem(
+                    icon: Icons.error_outline_outlined,
+                    iconColor: const Color(0xFFEF4444),
+                    title: 'Escalation Threshold',
+                    subtitle: 'Below 3 stars auto-flags',
+                  )),
+                ],
+              );
+            }
           ),
           const SizedBox(height: 20),
           // Red warning banner
@@ -1016,10 +1209,11 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFBFDBFE), width: 0.8),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
+      child: Builder(
+        builder: (context) {
+          final isMobile = MediaQuery.of(context).size.width < 640;
+          if (isMobile) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
@@ -1031,35 +1225,81 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                   'Aggregated from all event and special task appraisals. Ready for DepEd Annual Faculty Performance Evaluation.',
                   style: TextStyle(fontSize: 12.5, color: Color(0xFF1E40AF)),
                 ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Performance Summary exported successfully!')),
+                      );
+                    },
+                    icon: const Icon(Icons.download, size: 16, color: Colors.white),
+                    label: const Text('Export Performance Summary', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E3A8A),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Last exported: March 15, 2025',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF60A5FA)),
+                  ),
+                ),
               ],
-            ),
-          ),
-          const SizedBox(width: 24),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            );
+          }
+          return Row(
             children: [
-              ElevatedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Performance Summary exported successfully!')),
-                  );
-                },
-                icon: const Icon(Icons.download, size: 16, color: Colors.white),
-                label: const Text('Export Performance Summary', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E3A8A),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Annual Faculty Performance Summary',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1E3A8A)),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Aggregated from all event and special task appraisals. Ready for DepEd Annual Faculty Performance Evaluation.',
+                      style: TextStyle(fontSize: 12.5, color: Color(0xFF1E40AF)),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'Last exported: March 15, 2025',
-                style: TextStyle(fontSize: 11, color: Color(0xFF60A5FA)),
+              const SizedBox(width: 24),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Performance Summary exported successfully!')),
+                      );
+                    },
+                    icon: const Icon(Icons.download, size: 16, color: Colors.white),
+                    label: const Text('Export Performance Summary', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E3A8A),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Last exported: March 15, 2025',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF60A5FA)),
+                  ),
+                ],
               ),
             ],
-          ),
-        ],
+          );
+        }
       ),
     );
   }

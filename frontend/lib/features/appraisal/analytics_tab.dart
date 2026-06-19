@@ -200,14 +200,38 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             children: [
               const Text('My Personal Analytics', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
               const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(child: StatCard(label: 'Compliance Points', value: '${myFaculty.overallScore}%', valueColor: AppColors.success, icon: const Icon(Icons.star_rounded, color: AppColors.success, size: 20))),
-                  const SizedBox(width: 12),
-                  Expanded(child: StatCard(label: 'Tasks Completed', value: '$completedTasksCount', valueColor: AppColors.textPrimary, icon: const Icon(Icons.assignment_turned_in, color: AppColors.info, size: 20))),
-                  const SizedBox(width: 12),
-                  Expanded(child: StatCard(label: 'Performance Standing', value: myFaculty.overallScore >= 60 ? 'Good' : 'Flagged', valueColor: myFaculty.overallScore >= 60 ? AppColors.success : AppColors.danger, icon: const Icon(Icons.verified_user, color: AppColors.success, size: 20))),
-                ],
+              Builder(
+                builder: (context) {
+                  final bool isMobile = MediaQuery.of(context).size.width < 640;
+                  if (isMobile) {
+                    return Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: StatCard(label: 'Compliance Points', value: '${myFaculty.overallScore}%', valueColor: AppColors.success, icon: const Icon(Icons.star_rounded, color: AppColors.success, size: 20))),
+                            const SizedBox(width: 12),
+                            Expanded(child: StatCard(label: 'Tasks Completed', value: '$completedTasksCount', valueColor: AppColors.textPrimary, icon: const Icon(Icons.assignment_turned_in, color: AppColors.info, size: 20))),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(child: StatCard(label: 'Performance Standing', value: myFaculty.overallScore >= 60 ? 'Good' : 'Flagged', valueColor: myFaculty.overallScore >= 60 ? AppColors.success : AppColors.danger, icon: const Icon(Icons.verified_user, color: AppColors.success, size: 20))),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: StatCard(label: 'Compliance Points', value: '${myFaculty.overallScore}%', valueColor: AppColors.success, icon: const Icon(Icons.star_rounded, color: AppColors.success, size: 20))),
+                      const SizedBox(width: 12),
+                      Expanded(child: StatCard(label: 'Tasks Completed', value: '$completedTasksCount', valueColor: AppColors.textPrimary, icon: const Icon(Icons.assignment_turned_in, color: AppColors.info, size: 20))),
+                      const SizedBox(width: 12),
+                      Expanded(child: StatCard(label: 'Performance Standing', value: myFaculty.overallScore >= 60 ? 'Good' : 'Flagged', valueColor: myFaculty.overallScore >= 60 ? AppColors.success : AppColors.danger, icon: const Icon(Icons.verified_user, color: AppColors.success, size: 20))),
+                    ],
+                  );
+                }
               ),
               const SizedBox(height: 24),
               SectionCard(
@@ -246,14 +270,38 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             children: [
               const Text('Dean Analytics Dashboard', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
               const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(child: StatCard(label: 'My Compliance Points', value: '${myFaculty.overallScore}%', valueColor: AppColors.success, icon: const Icon(Icons.star_rounded, color: AppColors.success, size: 20))),
-                  const SizedBox(width: 12),
-                  Expanded(child: StatCard(label: 'My Standing', value: myFaculty.overallScore >= 60 ? 'Good' : 'Flagged', valueColor: myFaculty.overallScore >= 60 ? AppColors.success : AppColors.danger, icon: const Icon(Icons.flag, color: AppColors.success, size: 20))),
-                  const SizedBox(width: 12),
-                  Expanded(child: StatCard(label: 'Teachers Under Supervision', value: '${myDeptFaculty.length}', valueColor: AppColors.textPrimary, icon: const Icon(Icons.people, color: AppColors.info, size: 20))),
-                ],
+              Builder(
+                builder: (context) {
+                  final bool isMobile = MediaQuery.of(context).size.width < 640;
+                  if (isMobile) {
+                    return Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: StatCard(label: 'My Compliance Points', value: '${myFaculty.overallScore}%', valueColor: AppColors.success, icon: const Icon(Icons.star_rounded, color: AppColors.success, size: 20))),
+                            const SizedBox(width: 12),
+                            Expanded(child: StatCard(label: 'My Standing', value: myFaculty.overallScore >= 60 ? 'Good' : 'Flagged', valueColor: myFaculty.overallScore >= 60 ? AppColors.success : AppColors.danger, icon: const Icon(Icons.flag, color: AppColors.success, size: 20))),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(child: StatCard(label: 'Teachers Under Supervision', value: '${myDeptFaculty.length}', valueColor: AppColors.textPrimary, icon: const Icon(Icons.people, color: AppColors.info, size: 20))),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: StatCard(label: 'My Compliance Points', value: '${myFaculty.overallScore}%', valueColor: AppColors.success, icon: const Icon(Icons.star_rounded, color: AppColors.success, size: 20))),
+                      const SizedBox(width: 12),
+                      Expanded(child: StatCard(label: 'My Standing', value: myFaculty.overallScore >= 60 ? 'Good' : 'Flagged', valueColor: myFaculty.overallScore >= 60 ? AppColors.success : AppColors.danger, icon: const Icon(Icons.flag, color: AppColors.success, size: 20))),
+                      const SizedBox(width: 12),
+                      Expanded(child: StatCard(label: 'Teachers Under Supervision', value: '${myDeptFaculty.length}', valueColor: AppColors.textPrimary, icon: const Icon(Icons.people, color: AppColors.info, size: 20))),
+                    ],
+                  );
+                }
               ),
               const SizedBox(height: 24),
               Row(
@@ -280,9 +328,9 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Department Compliance Averages', style: AppTextStyles.sectionTitle),
+                          const Text('Department Teacher compliance', style: AppTextStyles.sectionTitle),
                           const SizedBox(height: 16),
-                          _DepartmentPerformance(faculty: myDeptFaculty),
+                          _DeanTeacherList(faculty: myDeptFaculty),
                         ],
                       ),
                     ),
@@ -404,39 +452,92 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 ],
 
                 // ── Summary stat cards ─────────────────────────────────────
-                Row(children: [
-                  Expanded(
-                      child: StatCard(
-                    label: 'School-Wide Performance',
-                    value: '$avgPerformance%',
-                    valueColor: AppColors.success,
-                    icon: const Icon(Icons.trending_up, color: AppColors.success, size: 20),
-                  )),
-                  const SizedBox(width: 12),
-                  Expanded(
-                      child: StatCard(
-                    label: 'Total Personnel',
-                    value: '${realTimeFaculty.length}',
-                    valueColor: AppColors.textPrimary,
-                    icon: const Icon(Icons.people, color: AppColors.info, size: 20),
-                  )),
-                  const SizedBox(width: 12),
-                  Expanded(
-                      child: StatCard(
-                    label: 'Tasks Completed',
-                    value: '$tasksCompleted',
-                    valueColor: AppColors.amber,
-                    icon: const Icon(Icons.assignment, color: AppColors.amber, size: 20),
-                  )),
-                  const SizedBox(width: 12),
-                  Expanded(
-                      child: StatCard(
-                    label: 'Flagged Personnel',
-                    value: '${flagged.length}',
-                    valueColor: flagged.isNotEmpty ? AppColors.danger : AppColors.success,
-                    icon: Icon(Icons.flag, color: flagged.isNotEmpty ? AppColors.danger : AppColors.success, size: 20),
-                  )),
-                ]),
+                Builder(
+                  builder: (context) {
+                    final bool isMobile = MediaQuery.of(context).size.width < 640;
+                    if (isMobile) {
+                      return Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: StatCard(
+                                  label: 'School-Wide Performance',
+                                  value: '$avgPerformance%',
+                                  valueColor: AppColors.success,
+                                  icon: const Icon(Icons.trending_up, color: AppColors.success, size: 20),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: StatCard(
+                                  label: 'Total Personnel',
+                                  value: '${realTimeFaculty.length}',
+                                  valueColor: AppColors.textPrimary,
+                                  icon: const Icon(Icons.people, color: AppColors.info, size: 20),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: StatCard(
+                                  label: 'Tasks Completed',
+                                  value: '$tasksCompleted',
+                                  valueColor: AppColors.amber,
+                                  icon: const Icon(Icons.assignment, color: AppColors.amber, size: 20),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                  child: StatCard(
+                                label: 'Flagged Personnel',
+                                value: '${flagged.length}',
+                                valueColor: flagged.isNotEmpty ? AppColors.danger : AppColors.success,
+                                icon: Icon(Icons.flag, color: flagged.isNotEmpty ? AppColors.danger : AppColors.success, size: 20),
+                              )),
+                            ],
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(children: [
+                      Expanded(
+                          child: StatCard(
+                        label: 'School-Wide Performance',
+                        value: '$avgPerformance%',
+                        valueColor: AppColors.success,
+                        icon: const Icon(Icons.trending_up, color: AppColors.success, size: 20),
+                      )),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: StatCard(
+                        label: 'Total Personnel',
+                        value: '${realTimeFaculty.length}',
+                        valueColor: AppColors.textPrimary,
+                        icon: const Icon(Icons.people, color: AppColors.info, size: 20),
+                      )),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: StatCard(
+                        label: 'Tasks Completed',
+                        value: '$tasksCompleted',
+                        valueColor: AppColors.amber,
+                        icon: const Icon(Icons.assignment, color: AppColors.amber, size: 20),
+                      )),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: StatCard(
+                        label: 'Flagged Personnel',
+                        value: '${flagged.length}',
+                        valueColor: flagged.isNotEmpty ? AppColors.danger : AppColors.success,
+                        icon: Icon(Icons.flag, color: flagged.isNotEmpty ? AppColors.danger : AppColors.success, size: 20),
+                      )),
+                    ]);
+                  }
+                ),
 
                 const SizedBox(height: 20),
 
@@ -459,40 +560,77 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 const SizedBox(height: 20),
 
                 // Department Performance & Top Performers
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: SectionCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Department Performance',
-                              style: AppTextStyles.sectionTitle,
+                Builder(
+                  builder: (context) {
+                    final isMobile = MediaQuery.of(context).size.width < 640;
+                    if (isMobile) {
+                      return Column(
+                        children: [
+                          SectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Department Performance',
+                                  style: AppTextStyles.sectionTitle,
+                                ),
+                                const SizedBox(height: 16),
+                                _DepartmentPerformance(faculty: realTimeFaculty),
+                              ],
                             ),
-                            const SizedBox(height: 16),
-                            _DepartmentPerformance(faculty: realTimeFaculty),
-                          ],
+                          ),
+                          const SizedBox(height: 20),
+                          SectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Top Performers', style: AppTextStyles.sectionTitle),
+                                const SizedBox(height: 16),
+                                _TopPerformers(faculty: realTimeFaculty),
+                                const SizedBox(height: 20),
+                                _buildRequiresAttentionCard(flagged),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: SectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Department Performance',
+                                  style: AppTextStyles.sectionTitle,
+                                ),
+                                const SizedBox(height: 16),
+                                _DepartmentPerformance(faculty: realTimeFaculty),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: SectionCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Top Performers', style: AppTextStyles.sectionTitle),
-                            const SizedBox(height: 16),
-                            _TopPerformers(faculty: realTimeFaculty),
-                            const SizedBox(height: 20),
-                            _buildRequiresAttentionCard(flagged),
-                          ],
+                        const SizedBox(width: 20),
+                        Expanded(
+                          child: SectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Top Performers', style: AppTextStyles.sectionTitle),
+                                const SizedBox(height: 16),
+                                _TopPerformers(faculty: realTimeFaculty),
+                                const SizedBox(height: 20),
+                                _buildRequiresAttentionCard(flagged),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
+                      ],
+                    );
+                  }
                 ),
 
                 // Export button — Principal only
@@ -549,56 +687,122 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Stat Cards
-              Row(
-                children: [
-                  Expanded(
-                    child: _AnalyticsStatCard(
-                      label: 'Overall Performance',
-                      value: '$avgPerformance%',
-                      icon: Icons.workspace_premium_outlined,
-                      iconColor: const Color(0xFF10B981),
-                      subWidget: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        runSpacing: 4,
-                        children: [
-                          const Icon(Icons.trending_up, color: Color(0xFF10B981), size: 14),
-                          const SizedBox(width: 4),
-                          const Text('Real-time avg', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                        ],
+              Builder(
+                builder: (context) {
+                  final bool isMobile = MediaQuery.of(context).size.width < 640;
+                  if (isMobile) {
+                    return Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _AnalyticsStatCard(
+                                label: 'Overall Performance',
+                                value: '$avgPerformance%',
+                                icon: Icons.workspace_premium_outlined,
+                                iconColor: const Color(0xFF10B981),
+                                subWidget: Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  runSpacing: 4,
+                                  children: [
+                                    const Icon(Icons.trending_up, color: Color(0xFF10B981), size: 14),
+                                    const SizedBox(width: 4),
+                                    const Text('Real-time avg', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _AnalyticsStatCard(
+                                label: 'Total Personnel',
+                                value: '${realTimeFaculty.length}',
+                                icon: Icons.group_outlined,
+                                iconColor: const Color(0xFF3B82F6),
+                                subWidget: const Text('In your scope', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _AnalyticsStatCard(
+                                label: 'Special Tasks',
+                                value: '$tasksCompleted',
+                                icon: Icons.assignment_outlined,
+                                iconColor: const Color(0xFFF59E0B),
+                                subWidget: const Text('Evaluated tasks', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _AnalyticsStatCard(
+                                label: 'Events Evaluated',
+                                value: '$eventsCount',
+                                icon: Icons.calendar_today_outlined,
+                                iconColor: const Color(0xFF8B5CF6),
+                                subWidget: const Text('Real-time count', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _AnalyticsStatCard(
+                          label: 'Overall Performance',
+                          value: '$avgPerformance%',
+                          icon: Icons.workspace_premium_outlined,
+                          iconColor: const Color(0xFF10B981),
+                          subWidget: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            runSpacing: 4,
+                            children: [
+                              const Icon(Icons.trending_up, color: Color(0xFF10B981), size: 14),
+                              const SizedBox(width: 4),
+                              const Text('Real-time avg', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _AnalyticsStatCard(
-                      label: 'Total Personnel',
-                      value: '${realTimeFaculty.length}',
-                      icon: Icons.group_outlined,
-                      iconColor: const Color(0xFF3B82F6),
-                      subWidget: const Text('In your scope', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _AnalyticsStatCard(
-                      label: 'Special Tasks',
-                      value: '$tasksCompleted',
-                      icon: Icons.assignment_outlined,
-                      iconColor: const Color(0xFFF59E0B),
-                      subWidget: const Text('Evaluated tasks', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _AnalyticsStatCard(
-                      label: 'Events Evaluated',
-                      value: '$eventsCount',
-                      icon: Icons.calendar_today_outlined,
-                      iconColor: const Color(0xFF8B5CF6),
-                      subWidget: const Text('Real-time count', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
-                    ),
-                  ),
-                ],
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _AnalyticsStatCard(
+                          label: 'Total Personnel',
+                          value: '${realTimeFaculty.length}',
+                          icon: Icons.group_outlined,
+                          iconColor: const Color(0xFF3B82F6),
+                          subWidget: const Text('In your scope', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _AnalyticsStatCard(
+                          label: 'Special Tasks',
+                          value: '$tasksCompleted',
+                          icon: Icons.assignment_outlined,
+                          iconColor: const Color(0xFFF59E0B),
+                          subWidget: const Text('Evaluated tasks', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _AnalyticsStatCard(
+                          label: 'Events Evaluated',
+                          value: '$eventsCount',
+                          icon: Icons.calendar_today_outlined,
+                          iconColor: const Color(0xFF8B5CF6),
+                          subWidget: const Text('Real-time count', style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B))),
+                        ),
+                      ),
+                    ],
+                  );
+                }
               ),
               const SizedBox(height: 18),
 
@@ -607,23 +811,39 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
               const SizedBox(height: 18),
 
               // Dual Columns: Left (Department Performance) & Right (Top Performers & Requires Attention)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(flex: 1, child: _buildDepartmentPerformanceCard()),
-                  const SizedBox(width: 18),
-                  Expanded(
-                    flex: 1,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              Builder(
+                builder: (context) {
+                  final isMobile = MediaQuery.of(context).size.width < 640;
+                  if (isMobile) {
+                    return Column(
                       children: [
+                        _buildDepartmentPerformanceCard(),
+                        const SizedBox(height: 18),
                         _buildTopPerformersCard(),
                         const SizedBox(height: 18),
                         _buildRequiresAttentionCard(_flaggedPersonnel),
                       ],
-                    ),
-                  ),
-                ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 1, child: _buildDepartmentPerformanceCard()),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        flex: 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildTopPerformersCard(),
+                            const SizedBox(height: 18),
+                            _buildRequiresAttentionCard(_flaggedPersonnel),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
               ),
               const SizedBox(height: 18),
 
@@ -821,14 +1041,22 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
-                  const SizedBox(height: 2),
-                  Text(sub, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Row(
                 children: [
                   if (trendUp != null) ...[
@@ -1069,11 +1297,10 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   Widget _buildPerformanceDistributionCard() {
-    final dispExcellent = _faculty.where((f) => f.overallScore >= 90).length;
-    final dispVeryGood = _faculty.where((f) => f.overallScore >= 80 && f.overallScore < 90).length;
-    final dispGood = _faculty.where((f) => f.overallScore >= 70 && f.overallScore < 80).length;
-    final dispFair = _faculty.where((f) => f.overallScore >= 60 && f.overallScore < 70).length;
-    final dispNeedsImp = _faculty.where((f) => f.overallScore < 60).length;
+    final dispOutstanding = _faculty.where((f) => f.overallScore >= 90).length;
+    final dispVerySatisfactory = _faculty.where((f) => f.overallScore >= 75 && f.overallScore < 90).length;
+    final dispSatisfactory = _faculty.where((f) => f.overallScore >= 60 && f.overallScore < 75).length;
+    final dispUnsatisfactory = _faculty.where((f) => f.overallScore < 60).length;
 
     return Container(
       width: double.infinity,
@@ -1091,15 +1318,38 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
           ),
           const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildDistributionPill('$dispExcellent', 'Excellent', '90-100%', const Color(0xFF16A34A), const Color(0xFFDCFCE7)),
-              _buildDistributionPill('$dispVeryGood', 'Very Good', '80-89%', const Color(0xFF2563EB), const Color(0xFFDBEAFE)),
-              _buildDistributionPill('$dispGood', 'Good', '70-79%', const Color(0xFFD97706), const Color(0xFFFEF3C7)),
-              _buildDistributionPill('$dispFair', 'Fair', '60-69%', const Color(0xFFEA580C), const Color(0xFFFFEDD5)),
-              _buildDistributionPill('$dispNeedsImp', 'Needs Imp.', '<60%', const Color(0xFFEF4444), const Color(0xFFFEE2E2)),
-            ],
+          Builder(
+            builder: (context) {
+              final isMobile = MediaQuery.of(context).size.width < 640;
+              if (isMobile) {
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        _buildDistributionPill('$dispOutstanding', 'Outstanding', '≥ 90%', const Color(0xFF16A34A), const Color(0xFFDCFCE7)),
+                        _buildDistributionPill('$dispVerySatisfactory', 'Very Satisfactory', '75-89%', const Color(0xFF2563EB), const Color(0xFFDBEAFE)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _buildDistributionPill('$dispSatisfactory', 'Satisfactory', '60-74%', const Color(0xFFD97706), const Color(0xFFFEF3C7)),
+                        _buildDistributionPill('$dispUnsatisfactory', 'Unsatisfactory', '< 60%', const Color(0xFFEF4444), const Color(0xFFFEE2E2)),
+                      ],
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildDistributionPill('$dispOutstanding', 'Outstanding', '≥ 90%', const Color(0xFF16A34A), const Color(0xFFDCFCE7)),
+                  _buildDistributionPill('$dispVerySatisfactory', 'Very Satisfactory', '75-89%', const Color(0xFF2563EB), const Color(0xFFDBEAFE)),
+                  _buildDistributionPill('$dispSatisfactory', 'Satisfactory', '60-74%', const Color(0xFFD97706), const Color(0xFFFEF3C7)),
+                  _buildDistributionPill('$dispUnsatisfactory', 'Unsatisfactory', '< 60%', const Color(0xFFEF4444), const Color(0xFFFEE2E2)),
+                ],
+              );
+            }
           ),
         ],
       ),
@@ -1246,6 +1496,62 @@ class _DepartmentPerformance extends StatelessWidget {
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: color)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: score / 100,
+                minHeight: 6,
+                backgroundColor: const Color(0xFFE5E7EB),
+                valueColor: AlwaysStoppedAnimation(color),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _DeanTeacherList extends StatelessWidget {
+  final List<FacultyPerformance> faculty;
+
+  const _DeanTeacherList({required this.faculty});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: faculty.map((f) {
+        final score = f.overallScore;
+        final color = score >= 80
+            ? AppColors.success
+            : (score >= 70 ? AppColors.info : AppColors.danger);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  f.name,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  '$score%',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 6),

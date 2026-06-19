@@ -121,14 +121,17 @@ class Event(Base):
     """
     __tablename__ = "event"
 
-    id         = Column(String(20),  primary_key=True, index=True)
-    name       = Column(String(255), nullable=False)
-    date       = Column(String(20),  nullable=False)   # YYYY-MM-DD
-    organizer  = Column(String(120), nullable=False)
-    department = Column(String(100), nullable=False)
-    attendees  = Column(Integer,     nullable=False, default=0)
-    status     = Column(String(25),  nullable=False, default="awaitingRatings")
+    id                 = Column(String(20),  primary_key=True, index=True)
+    name               = Column(String(255), nullable=False)
+    date               = Column(String(20),  nullable=False)   # YYYY-MM-DD
+    organizer          = Column(String(120), nullable=False)
+    department         = Column(String(100), nullable=False)
+    attendees          = Column(Integer,     nullable=False, default=0)
+    status             = Column(String(25),  nullable=False, default="awaitingRatings")
     # awaitingRatings | rated | flagged
+    approval_status    = Column(String(25),  nullable=False, default="Approved")  # Approved | Pending | Rejected | Revision Requested
+    revision_comment   = Column(Text,         nullable=True)
+    assigned_personnel = Column(Text,         nullable=True)  # JSON-serialized array of objects
 
     evaluations = relationship("EventEvaluation", back_populates="event",
                                foreign_keys="EventEvaluation.event_id")
@@ -228,6 +231,14 @@ class ReportSubmission(Base):
 
     # relationship
     personnel = relationship("User", back_populates="report_submissions", foreign_keys=[personnel_id])
+
+    @property
+    def personnel_name(self) -> Optional[str]:
+        return self.personnel.name if self.personnel else None
+
+    @property
+    def personnel_department(self) -> Optional[str]:
+        return self.personnel.department if self.personnel else None
 
 
 class AppraisalRecord(Base):
@@ -370,8 +381,30 @@ class EventOut(BaseModel):
     department: str
     attendees: int
     status: str
+    approval_status: str
+    revision_comment: Optional[str] = None
+    assigned_personnel: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class EventCreate(BaseModel):
+    id: str
+    name: str
+    date: str
+    organizer: str
+    department: str
+    attendees: int
+    assigned_personnel: Optional[str] = None
+
+
+class EventUpdate(BaseModel):
+    name: Optional[str] = None
+    date: Optional[str] = None
+    organizer: Optional[str] = None
+    department: Optional[str] = None
+    attendees: Optional[int] = None
+    assigned_personnel: Optional[str] = None
 
 
 # ── EventEvaluation ───────────────────────────────────────────────────────────
@@ -459,6 +492,8 @@ class ReportSubmissionOut(BaseModel):
     content_quality_score:   int
     format_compliance_score: int
     completeness_score:      int
+    personnel_name:          Optional[str] = None
+    personnel_department:    Optional[str] = None
 
     model_config = {"from_attributes": True}
 

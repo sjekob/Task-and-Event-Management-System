@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 enum TaskStatus { pending, evaluated, flagged, notSubmitted }
 enum EventStatus { awaitingRatings, rated, flagged }
+enum ApprovalStatus { approved, pending, rejected, revisionRequested }
 enum TrendDirection { up, down, stable }
 enum AppraisalGrade { outstanding, verySatisfactory, satisfactory, unsatisfactory }
 enum EvaluatorRole { teacher, student, coordinator, dean, principal }
@@ -124,6 +127,7 @@ class SpecialTask {
   final SpecialTaskEvaluation? evaluation;
   final TaskStatus status;
   final int? score;  // Derived from evaluation
+  final String targetRole; // e.g. 'teacher', 'dean', 'coordinator', 'registrar'
 
   const SpecialTask({
     required this.id,
@@ -136,12 +140,39 @@ class SpecialTask {
     this.evaluation,
     required this.status,
     this.score,
+    required this.targetRole,
   });
 
   bool get isFlagged => score != null && score! < 60;
 
   /// Returns the score if available, otherwise 0
   int getScore() => score ?? 0;
+}
+
+// ── Assigned Personnel ────────────────────────────────────────────────────────
+class AssignedPersonnel {
+  final String name;
+  final String role;
+  final String responsibility;
+
+  const AssignedPersonnel({
+    required this.name,
+    required this.role,
+    required this.responsibility,
+  });
+
+  factory AssignedPersonnel.fromJson(Map<String, dynamic> json) =>
+      AssignedPersonnel(
+        name: json['name'] as String? ?? '',
+        role: json['role'] as String? ?? '',
+        responsibility: json['responsibility'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'role': role,
+    'responsibility': responsibility,
+  };
 }
 
 // ── School Event ──────────────────────────────────────────────────────────────
@@ -154,6 +185,9 @@ class SchoolEvent {
   final int attendees;
   final List<AttendeeRating> ratings;
   final EventStatus status;
+  final ApprovalStatus approvalStatus;
+  final String? revisionComment;
+  final List<AssignedPersonnel> assignedPersonnel;
 
   const SchoolEvent({
     required this.id,
@@ -164,7 +198,70 @@ class SchoolEvent {
     required this.attendees,
     required this.ratings,
     required this.status,
+    this.approvalStatus = ApprovalStatus.approved,
+    this.revisionComment,
+    this.assignedPersonnel = const [],
   });
+
+  /// Build a SchoolEvent from the backend JSON (GET /events list item).
+  /// Ratings are not included in the list endpoint; call getEventDetails separately.
+  factory SchoolEvent.fromJson(Map<String, dynamic> json, {List<AttendeeRating> ratings = const []}) {
+    // Parse approval_status
+    ApprovalStatus approvalStatus;
+    switch ((json['approval_status'] as String? ?? '').toLowerCase()) {
+      case 'pending':
+        approvalStatus = ApprovalStatus.pending;
+        break;
+      case 'rejected':
+        approvalStatus = ApprovalStatus.rejected;
+        break;
+      case 'revision requested':
+        approvalStatus = ApprovalStatus.revisionRequested;
+        break;
+      default:
+        approvalStatus = ApprovalStatus.approved;
+    }
+
+    // Parse status
+    EventStatus eventStatus;
+    switch ((json['status'] as String? ?? '').toLowerCase()) {
+      case 'rated':
+        eventStatus = EventStatus.rated;
+        break;
+      case 'flagged':
+        eventStatus = EventStatus.flagged;
+        break;
+      default:
+        eventStatus = EventStatus.awaitingRatings;
+    }
+
+    // Parse assigned_personnel (JSON string)
+    List<AssignedPersonnel> personnel = [];
+    final apRaw = json['assigned_personnel'] as String?;
+    if (apRaw != null && apRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(apRaw) as List<dynamic>;
+        personnel = decoded
+            .whereType<Map<String, dynamic>>()
+            .map(AssignedPersonnel.fromJson)
+            .toList();
+      } catch (_) {}
+    }
+
+    return SchoolEvent(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      date: json['date'] as String? ?? '',
+      organizer: json['organizer'] as String? ?? '',
+      department: json['department'] as String? ?? '',
+      attendees: (json['attendees'] as num?)?.toInt() ?? 0,
+      ratings: ratings,
+      status: eventStatus,
+      approvalStatus: approvalStatus,
+      revisionComment: json['revision_comment'] as String?,
+      assignedPersonnel: personnel,
+    );
+  }
 
   int get responses => ratings.length;
   double? get avgRating => ratings.isEmpty
@@ -220,13 +317,14 @@ class MonthlyTrend {
 final List<SpecialTask> sampleTasks = [
   const SpecialTask(
     id: 'ST001', personnel: 'John Smith', department: 'Engineering',
-    task: 'Curriculum Review Documentation', assignedBy: 'Dean Garcia',
+    task: 'Report on MPS Consolidation', assignedBy: 'Dean Garcia',
     dueDate: '4/15/2025', submittedDate: '4/14/2025',
     evaluation: null, status: TaskStatus.pending, score: null,
+    targetRole: 'teacher',
   ),
   const SpecialTask(
     id: 'ST002', personnel: 'Sarah Johnson', department: 'Business',
-    task: 'Faculty Development Workshop Facilitation', assignedBy: 'Dean Garcia',
+    task: 'Reading Report Consolidation (Phil-IRI)', assignedBy: 'Dean Garcia',
     dueDate: '4/10/2025', submittedDate: '4/11/2025',
     evaluation: SpecialTaskEvaluation(
       completionQualityScore: 4, timelinessScore: 3, initiativeScore: 3, coordinationScore: 0,
@@ -235,10 +333,11 @@ final List<SpecialTask> sampleTasks = [
       evaluatorName: 'Dean Garcia', dateSubmitted: '2025-04-12 09:30:00',
     ),
     status: TaskStatus.evaluated, score: 69,
+    targetRole: 'teacher',
   ),
   const SpecialTask(
     id: 'ST003', personnel: 'Dean Garcia', department: 'Sciences',
-    task: 'Laboratory Safety Compliance Report', assignedBy: 'Coord Santos',
+    task: 'Baseline Report on Health Consolidation', assignedBy: 'Coord Santos',
     dueDate: '4/5/2025', submittedDate: '4/3/2025',
     evaluation: SpecialTaskEvaluation(
       completionQualityScore: 5, timelinessScore: 5, initiativeScore: 5, coordinationScore: 0,
@@ -247,10 +346,11 @@ final List<SpecialTask> sampleTasks = [
       evaluatorName: 'Coord Santos', dateSubmitted: '2025-04-04 14:00:00',
     ),
     status: TaskStatus.evaluated, score: 100,
+    targetRole: 'dean',
   ),
   const SpecialTask(
     id: 'ST004', personnel: 'Dean Garcia', department: 'Sciences',
-    task: 'Teacher Development Program Planning', assignedBy: 'Coord Santos',
+    task: 'Endline Report on Health Consolidation', assignedBy: 'Coord Santos',
     dueDate: '4/18/2025', submittedDate: '4/22/2025',
     evaluation: SpecialTaskEvaluation(
       completionQualityScore: 2, timelinessScore: 2, initiativeScore: 2, coordinationScore: 1,
@@ -259,10 +359,11 @@ final List<SpecialTask> sampleTasks = [
       evaluatorName: 'Coord Santos', dateSubmitted: '2025-04-23 10:00:00',
     ),
     status: TaskStatus.flagged, score: 37,
+    targetRole: 'dean',
   ),
   const SpecialTask(
     id: 'ST005', personnel: 'Dean Reyes', department: 'Engineering',
-    task: 'Faculty Development Workshop Facilitation', assignedBy: 'Coord Santos',
+    task: 'Reading Report Consolidation (Phil-IRI)', assignedBy: 'Coord Santos',
     dueDate: '4/20/2025', submittedDate: '4/19/2025',
     evaluation: SpecialTaskEvaluation(
       completionQualityScore: 5, timelinessScore: 4, initiativeScore: 4, coordinationScore: 0,
@@ -271,12 +372,28 @@ final List<SpecialTask> sampleTasks = [
       evaluatorName: 'Coord Santos', dateSubmitted: '2025-04-20 16:00:00',
     ),
     status: TaskStatus.evaluated, score: 91,
+    targetRole: 'dean',
   ),
   const SpecialTask(
     id: 'ST006', personnel: 'Sarah Johnson', department: 'Business',
-    task: 'Laboratory Safety Compliance Report', assignedBy: 'Dean Cruz',
+    task: 'Baseline Report on Health Consolidation', assignedBy: 'Dean Cruz',
     dueDate: '4/25/2025', submittedDate: null,
     evaluation: null, status: TaskStatus.notSubmitted, score: null,
+    targetRole: 'teacher',
+  ),
+  const SpecialTask(
+    id: 'ST007', personnel: 'Coord Santos', department: 'Administration',
+    task: 'Weekly Reports Consolidation', assignedBy: 'Principal Gomez',
+    dueDate: '4/20/2025', submittedDate: '4/19/2025',
+    evaluation: null, status: TaskStatus.pending, score: null,
+    targetRole: 'coordinator',
+  ),
+  const SpecialTask(
+    id: 'ST008', personnel: 'Registrar Ramos', department: 'Administration',
+    task: 'Enrollment Records Consolidation', assignedBy: 'Principal Gomez',
+    dueDate: '4/22/2025', submittedDate: '4/21/2025',
+    evaluation: null, status: TaskStatus.pending, score: null,
+    targetRole: 'registrar',
   ),
 ];
 
