@@ -68,6 +68,7 @@ from .security import (
     get_current_user_claims,
     RoleChecker,
     PUBLIC_KEY_PEM,
+    oauth2_scheme,
 )
 
 
@@ -153,9 +154,7 @@ def _compute_timing(submitted_at: str, deadline: str) -> tuple[str, int]:
 
     delta_hours = (sub - dl).total_seconds() / 3600
 
-    if delta_hours < -1:           # submitted more than 1 hour before deadline
-        return "Early", 150
-    elif delta_hours <= 0:
+    if delta_hours <= 0:
         return "On Time", 100
     elif delta_hours <= 24:
         return "Late within 24 hours", 50
@@ -259,7 +258,7 @@ def _seed_reports(db: Session):
         ReportSubmission(
             report_id=101, personnel_id=john_id,
             deadline="2025-04-15 17:00:00", submitted_at="2025-04-14 09:30:00",
-            timing_status="Early", timing_points=150,
+            timing_status="On Time", timing_points=100,
             content_quality_score=5, format_compliance_score=5, completeness_score=4
         ),
         ReportSubmission(
@@ -283,7 +282,7 @@ def _seed_reports(db: Session):
         ReportSubmission(
             report_id=105, personnel_id=david_id,
             deadline="2025-04-20 17:00:00", submitted_at="2025-04-19 14:00:00",
-            timing_status="Early", timing_points=150,
+            timing_status="On Time", timing_points=100,
             content_quality_score=5, format_compliance_score=4, completeness_score=5
         ),
     ]
@@ -293,7 +292,7 @@ def _seed_reports(db: Session):
     for s in subs:
         rubric_avg = (s.content_quality_score + s.format_compliance_score + s.completeness_score) / 3.0
         rubric_pts = (rubric_avg / 5.0) * 70
-        timing_pct = (s.timing_points / 150.0) * 30
+        timing_pct = (s.timing_points / 100.0) * 30
         total_points = round(rubric_pts + timing_pct, 2)
 
         _upsert_appraisal_record(
@@ -603,12 +602,107 @@ def get_audit_logs(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Routes — Notifications (derived from audit log)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Lightweight in-memory read-tracking (per-user, per-audit-log-id)
+# In production, this would be a DB table or Redis set.
+_read_notification_ids: dict[str, set[int]] = {}
+
+@app.get("/notifications", tags=["Notifications"])
+def get_notifications(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    claims: dict = Depends(get_current_user_claims),
+):
+    """
+    Returns recent audit log entries formatted as notifications for the current user.
+    All roles see notifications relevant to their scope.
+    """
+    username = claims.get("sub", "")
+    role = claims.get("role", "")
+
+    query = db.query(AuditLog).order_by(AuditLog.id.desc())
+
+    # Filter by relevance to user role
+    if role in ("teacher", "dean"):
+        # Show only notifications about their own evaluations
+        query = query.filter(
+            AuditLog.username == username
+        )
+    # coordinator/principal see all notifications
+
+    logs = query.limit(limit).all()
+    user_read_ids = _read_notification_ids.get(username, set())
+
+    results = []
+    for log in logs:
+        after_state = {}
+        if log.after_state:
+            try:
+                after_state = json.loads(log.after_state)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        results.append({
+            "id": log.id,
+            "action_type": log.action_type,
+            "username": log.username,
+            "timestamp": log.timestamp,
+            "after_state": after_state,
+            "is_read": log.id in user_read_ids,
+        })
+
+    return {"notifications": results, "total": len(results)}
+
+
+@app.post("/notifications/{notification_id}/read", tags=["Notifications"])
+def mark_notification_read(
+    notification_id: int,
+    claims: dict = Depends(get_current_user_claims),
+):
+    """Mark a notification (audit log entry) as read for the current user."""
+    username = claims.get("sub", "")
+    if username not in _read_notification_ids:
+        _read_notification_ids[username] = set()
+    _read_notification_ids[username].add(notification_id)
+    return {"status": "ok", "notification_id": notification_id}
+
+
+@app.post("/notifications/read-all", tags=["Notifications"])
+def mark_all_notifications_read(
+    claims: dict = Depends(get_current_user_claims),
+    db: Session = Depends(get_db),
+):
+    """Mark all notifications as read for the current user."""
+    username = claims.get("sub", "")
+    logs = db.query(AuditLog.id).all()
+    _read_notification_ids[username] = {log.id for log in logs}
+    return {"status": "ok"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Routes — Health
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/health", tags=["System"])
 def health():
     return {"status": "ok", "time": _now()}
+
+
+@app.get("/api/server-ip", tags=["System"])
+def get_server_ip():
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.255.255.255', 1))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return {"local_ip": ip}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -834,13 +928,22 @@ def evaluate_event(
     event_id: str,
     payload: EventEvaluationIn,
     db: Session = Depends(get_db),
-    claims: dict = Depends(RoleChecker(["teacher", "student", "coordinator", "dean", "principal"])),
+    token: Optional[str] = Depends(oauth2_scheme),
 ):
     """
     UC002 — Attendee submits event evaluation form.
     All 6 rubric criteria are required [1–5].
     Computes average score, updates event status, creates AppraisalRecord.
+    Available publicly (e.g. for student QR code scans without system login).
     """
+    # Decode claims if token is provided
+    claims = {}
+    if token:
+        try:
+            claims = verify_access_token(token)
+        except Exception:
+            pass
+
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -1121,7 +1224,7 @@ def submit_report(
                     payload.format_compliance_score +
                     payload.completeness_score) / 3.0
     rubric_pts   = (rubric_avg / 5.0) * 70           # rubric = 70% of score
-    timing_pct   = (timing_pts / 150.0) * 30         # timing = 30% of score
+    timing_pct   = (timing_pts / 100.0) * 30         # timing = 30% of score
     total_points = round(rubric_pts + timing_pct, 2)
 
     _upsert_appraisal_record(

@@ -125,6 +125,15 @@ class EventsApi {
     final res = await _dio.post('/events/$id/request-revision', data: {'comment': comment});
     return res.data as Map<String, dynamic>;
   }
+
+  Future<String> getServerIp() async {
+    try {
+      final res = await _dio.get('/api/server-ip');
+      return res.data['local_ip'] ?? '127.0.0.1';
+    } catch (_) {
+      return '127.0.0.1';
+    }
+  }
 }
 
 class DashboardApi {
@@ -195,3 +204,74 @@ class DashboardApi {
     return res.data as Map<String, dynamic>;
   }
 }
+
+
+class NotificationsApi {
+  final Dio _dio = ApiService().dio;
+
+  Future<Map<String, dynamic>> getNotifications({int limit = 50}) async {
+    final res = await _dio.get('/notifications', queryParameters: {
+      'limit': limit,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<void> markAsRead(int notificationId) async {
+    await _dio.post('/notifications/$notificationId/read');
+  }
+
+  Future<void> markAllAsRead() async {
+    await _dio.post('/notifications/read-all');
+  }
+}
+
+
+class AppraisalRecordsApi {
+  final Dio _dio = ApiService().dio;
+
+  Future<List<dynamic>> listRecords({int? personnelId, String? type}) async {
+    final params = <String, dynamic>{};
+    if (personnelId != null) params['personnel_id'] = personnelId;
+    if (type != null) params['appraisal_type'] = type;
+    final res = await _dio.get('/appraisal-records', queryParameters: params);
+    return res.data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getRecord(int appraisalId) async {
+    final res = await _dio.get('/appraisal-records/$appraisalId');
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> lockRecord(int appraisalId) async {
+    final res = await _dio.patch('/appraisal-records/$appraisalId/lock');
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> archiveRecord(int appraisalId) async {
+    final res = await _dio.patch('/appraisal-records/$appraisalId/archive');
+    return res.data as Map<String, dynamic>;
+  }
+}
+
+
+class PerformanceSummaryApi {
+  final Dio _dio = ApiService().dio;
+
+  Future<Map<String, dynamic>> generateSummary({
+    required int personnelId,
+    required String period,
+  }) async {
+    final res = await _dio.post('/performance-summaries/generate', data: {
+      'personnel_id': personnelId,
+      'period': period,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> listSummaries({int? personnelId}) async {
+    final params = <String, dynamic>{};
+    if (personnelId != null) params['personnel_id'] = personnelId;
+    final res = await _dio.get('/performance-summaries', queryParameters: params);
+    return res.data as List<dynamic>;
+  }
+}

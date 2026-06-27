@@ -115,7 +115,7 @@ class _TimingPointsTabState extends State<TimingPointsTab> {
         ? 0
         : filtered.map((s) => (s['timing_points'] as num).toInt()).fold(0, (a, b) => a + b);
     
-    final onTimeCount = filtered.where((s) => s['timing_status'] == 'Early' || s['timing_status'] == 'On Time').length;
+    final onTimeCount = filtered.where((s) => s['timing_status'] == 'On Time').length;
     final complianceRate = totalSubmissions > 0 ? (onTimeCount / totalSubmissions) * 100 : 0.0;
 
     // Group submissions by teacher name
@@ -183,7 +183,7 @@ class _TimingPointsTabState extends State<TimingPointsTab> {
                                 child: _buildStatCard(
                                   title: 'Compliance Rate',
                                   value: '${complianceRate.toStringAsFixed(1)}%',
-                                  subtitle: 'Early + On-Time submissions',
+                                  subtitle: 'On-Time submissions',
                                   icon: Icons.trending_up,
                                   color: const Color(0xFF8B5CF6),
                                 ),
@@ -219,7 +219,7 @@ class _TimingPointsTabState extends State<TimingPointsTab> {
                           child: _buildStatCard(
                             title: 'Compliance Rate',
                             value: '${complianceRate.toStringAsFixed(1)}%',
-                            subtitle: 'Early + On-Time submissions',
+                            subtitle: 'On-Time submissions',
                             icon: Icons.trending_up,
                             color: const Color(0xFF8B5CF6),
                           ),
@@ -260,13 +260,11 @@ class _TimingPointsTabState extends State<TimingPointsTab> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Expanded(child: _buildRuleCard('Early', '150 pts', const Color(0xFF10B981))),
-                          const SizedBox(width: 8),
                           Expanded(child: _buildRuleCard('On Time', '100 pts', const Color(0xFF06B6D4))),
                           const SizedBox(width: 8),
                           Expanded(child: _buildRuleCard('Late ≤ 24h', '50 pts', const Color(0xFFF59E0B))),
                           const SizedBox(width: 8),
-                          Expanded(child: _buildRuleCard('Late > 24h', '0 pts', const Color(0xFFEF4444))),
+                          Expanded(child: _buildRuleCard('Late > 24h / Missing', '0 pts', const Color(0xFFEF4444))),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -578,7 +576,7 @@ class _TimingPointsTabState extends State<TimingPointsTab> {
                 ),
               ),
 
-              _tableCell('$timingPoints pts', isBold: true, color: timingPoints == 150 ? Colors.green : (timingPoints == 100 ? Colors.teal : (timingPoints == 50 ? Colors.orange : Colors.red))),
+              _tableCell('$timingPoints pts', isBold: true, color: timingPoints == 100 ? Colors.teal : (timingPoints == 50 ? Colors.orange : Colors.red)),
               
               // Rubric breakdown
               Padding(
@@ -607,7 +605,7 @@ class _TimingPointsTabState extends State<TimingPointsTab> {
     final avgPoints = total > 0
         ? submissions.map((s) => (s['timing_points'] as num).toDouble()).reduce((a, b) => a + b) / total
         : 0.0;
-    final onTime = submissions.where((s) => s['timing_status'] == 'Early' || s['timing_status'] == 'On Time').length;
+    final onTime = submissions.where((s) => s['timing_status'] == 'On Time').length;
     final compliance = total > 0 ? (onTime / total) * 100 : 0.0;
     final dept = submissions.isNotEmpty ? (submissions.first['personnel_department'] ?? 'General') : 'General';
 
@@ -691,7 +689,7 @@ class _TimingPointsTabState extends State<TimingPointsTab> {
                       Expanded(
                         child: _buildTeacherMiniStat(
                           'Avg Timing Points',
-                          '${avgPoints.toStringAsFixed(1)} / 150',
+                          '${avgPoints.toStringAsFixed(1)} / 100',
                           Icons.timer_outlined,
                         ),
                       ),
@@ -975,7 +973,7 @@ class _TimingPointsTabState extends State<TimingPointsTab> {
                   ),
                 ),
               ),
-              _tableCell('$timingPoints pts', isBold: true, color: timingPoints == 150 ? Colors.green : (timingPoints == 100 ? Colors.teal : (timingPoints == 50 ? Colors.orange : Colors.red))),
+              _tableCell('$timingPoints pts', isBold: true, color: timingPoints == 100 ? Colors.teal : (timingPoints == 50 ? Colors.orange : Colors.red)),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                 child: Column(

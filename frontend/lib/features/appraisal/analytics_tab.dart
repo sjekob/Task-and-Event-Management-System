@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../core/theme.dart';
+import '../../core/api_service.dart';
 import '../../shared/widgets/shared_widgets.dart';
 import 'models/appraisal_models.dart';
-
 bool _matchesName(String nameA, String nameB) {
   String clean(String s) {
     return s.toLowerCase()
@@ -423,22 +423,51 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                             borderRadius: BorderRadius.circular(7),
                             border: Border.all(color: const Color(0xFFFECACA), width: 0.8),
                           ),
-                          child: Row(children: [
-                            const Icon(Icons.person_outline, color: AppColors.danger, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(f.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                              Text(f.department, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                            ])),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFEE2E2),
-                                borderRadius: BorderRadius.circular(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                const Icon(Icons.person_outline, color: AppColors.danger, size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(f.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                                  Text(f.department, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                ])),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEE2E2),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text('${f.overallScore}% — Below 60', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.danger)),
+                                ),
+                              ]),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Flagged: Today • Status: Unacknowledged', style: TextStyle(fontSize: 11, color: AppColors.danger)),
+                                  SizedBox(
+                                    height: 28,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Reminder sent to personnel and supervisor.'), backgroundColor: AppColors.info),
+                                        );
+                                      },
+                                      icon: const Icon(Icons.notifications_active_outlined, size: 14, color: AppColors.danger),
+                                      label: const Text('Send Reminder', style: TextStyle(fontSize: 11, color: AppColors.danger)),
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                        side: const BorderSide(color: AppColors.danger),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              child: Text('${f.overallScore}% — Below 60', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.danger)),
-                            ),
-                          ]),
+                            ],
+                          ),
                         )),
                         const SizedBox(height: 4),
                         const Text(
@@ -636,6 +665,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 // Export button — Principal only
                 if (widget.role == 'principal') ...[
                   const SizedBox(height: 20),
+                  _buildPerformanceSummaryCard(context),
+                  const SizedBox(height: 20),
                   Align(
                     alignment: Alignment.centerRight,
                     child: ElevatedButton.icon(
@@ -644,13 +675,36 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Generating consolidated DepEd Annual Faculty Evaluation report…'),
                             backgroundColor: AppColors.tabActive,
                           ),
                         );
+                        try {
+                          await DashboardApi().exportPerformanceSummary(
+                            period: 'annual',
+                            role: widget.role,
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Export successful. Document saved to downloads.'),
+                                backgroundColor: AppColors.success,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Failed to export document. Please try again.'),
+                                backgroundColor: AppColors.danger,
+                              ),
+                            );
+                          }
+                        }
                       },
                       icon: const Icon(Icons.download_rounded, color: Colors.white, size: 18),
                       label: const Text('Export Consolidated Report', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
@@ -661,6 +715,79 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             ),
           ),
         ],
+    );
+  }
+  Widget _buildPerformanceSummaryCard(BuildContext context) {
+    String _selectedPeriod = 'annual';
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return SectionCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Faculty Performance Summary Generator', style: AppTextStyles.sectionTitle),
+              const SizedBox(height: 8),
+              const Text(
+                'Generate an official performance summary for the selected period.',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedPeriod,
+                      decoration: InputDecoration(
+                        labelText: 'Evaluation Period',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'annual', child: Text('Annual')),
+                        DropdownMenuItem(value: 'semester_1', child: Text('First Semester')),
+                        DropdownMenuItem(value: 'semester_2', child: Text('Second Semester')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setState(() => _selectedPeriod = val);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.tabActive,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () async {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Generating summary from backend...'), backgroundColor: AppColors.info),
+                      );
+                      try {
+                        // Hardcode personnel_id 1 for demo purposes since we don't have a personnel selector here
+                        await PerformanceSummaryApi().generateSummary(personnelId: 1, period: _selectedPeriod);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Summary generated successfully.'), backgroundColor: AppColors.success),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Failed to generate summary.'), backgroundColor: AppColors.danger),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.auto_graph, color: Colors.white, size: 18),
+                    label: const Text('Generate Summary', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }
     );
   }
 

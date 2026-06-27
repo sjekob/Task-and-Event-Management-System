@@ -161,6 +161,16 @@ class PersonalDashboardTab extends StatelessWidget {
 
     final List<Widget> leftColumnWidgets = [];
 
+    // ── Compliance Points Tracker (New Component 2) ──────────────────────────
+    leftColumnWidgets.add(
+      CompliancePointsTracker(
+        username: username,
+        evaluations: evaluations,
+        newRatings: newRatings,
+      ),
+    );
+    leftColumnWidgets.add(const SizedBox(height: 24));
+
     final showPersonnel = activeRole == 'coordinator' || activeRole == 'principal';
 
     if (teacherTasks.isNotEmpty) {
@@ -1136,6 +1146,217 @@ class PendingBadge extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. Compliance Points Tracker (Component 2)
+// ─────────────────────────────────────────────────────────────────────────────
+class CompliancePointsTracker extends StatelessWidget {
+  final String username;
+  final Map<String, dynamic> evaluations;
+  final Map<String, List<AttendeeRating>> newRatings;
+
+  const CompliancePointsTracker({
+    super.key,
+    required this.username,
+    required this.evaluations,
+    required this.newRatings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Find the faculty match, fallback to first if blank
+    final f = sampleFaculty.firstWhere(
+      (fac) => fac.name.toLowerCase() == username.toLowerCase(),
+      orElse: () => sampleFaculty.first,
+    );
+
+    // Replicate real-time points logic
+    final facultyTasks = sampleTasks.where((t) => t.personnel.toLowerCase() == f.name.toLowerCase()).toList();
+
+    final List<int> scores = [];
+    int flaggedCount = 0;
+    
+    for (final t in facultyTasks) {
+      final eval = evaluations[t.id];
+      if (eval != null) {
+        final raw = eval['score'];
+        final int s = raw is num ? raw.round() : 0;
+        if (s > 0) scores.add(s);
+        if (s < 60) flaggedCount++; // Below 3 stars equivalent
+      } else {
+        final sc = t.getScore();
+        if (sc > 0) scores.add(sc);
+      }
+    }
+
+    final int realTimeTaskScore = scores.isEmpty
+        ? (f.taskScore ?? 100)
+        : (scores.reduce((a, b) => a + b) / scores.length).round();
+
+    final organizedEvents = sampleEvents.where((e) => e.organizer.toLowerCase() == f.name.toLowerCase()).toList();
+    double eventScoresSum = 0;
+    int eventScoresCount = 0;
+    for (final e in organizedEvents) {
+      final extra = newRatings[e.id] ?? [];
+      final combined = [...e.ratings, ...extra];
+      if (combined.isNotEmpty) {
+        final avg = combined.map((r) => r.overallScore).reduce((a, b) => a + b) / combined.length;
+        eventScoresSum += (avg * 20.0);
+        eventScoresCount++;
+        if (avg < 3.0) flaggedCount++;
+      }
+    }
+    
+    final int realTimeEventScore = eventScoresCount > 0
+        ? (eventScoresSum / eventScoresCount).round()
+        : (f.eventScore ?? 100);
+        
+    final int reportScore = f.reportScore ?? 100;
+    
+    // Total Compliance Points
+    final totalPoints = reportScore + realTimeTaskScore + realTimeEventScore;
+    
+    // Calculate Star Rating (1-5)
+    final double starRating = (totalPoints / 300) * 5.0;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.cardBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.verified_user_outlined, color: AppColors.tabActive, size: 24),
+              const SizedBox(width: 12),
+              const Text(
+                'Compliance Points Tracker',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const Spacer(),
+              if (flaggedCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 14),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$flaggedCount Flagged',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFEF4444),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              // Overall points
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Total Points', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$totalPoints / 300',
+                      style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: List.generate(5, (index) {
+                        return Icon(
+                          index < starRating.floor()
+                              ? Icons.star_rounded
+                              : index < starRating
+                                  ? Icons.star_half_rounded
+                                  : Icons.star_outline_rounded,
+                          color: const Color(0xFFF59E0B),
+                          size: 20,
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Breakdown
+              Expanded(
+                flex: 3,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildBreakdownItem('Reports', reportScore, Icons.description_outlined, const Color(0xFF10B981)),
+                    _buildBreakdownItem('Tasks', realTimeTaskScore, Icons.assignment_outlined, const Color(0xFF3B82F6)),
+                    _buildBreakdownItem('Events', realTimeEventScore, Icons.event_available_outlined, const Color(0xFF8B5CF6)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBreakdownItem(String label, int score, IconData icon, Color color) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          '$score',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+        ),
+      ],
     );
   }
 }

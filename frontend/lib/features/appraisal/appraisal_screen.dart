@@ -7,7 +7,9 @@ import 'analytics_tab.dart';
 import 'personal_dashboard_tab.dart';
 import 'timing_points_tab.dart';
 import 'models/appraisal_models.dart';
+import 'models/notification_model.dart';
 import '../../core/api_service.dart';
+import 'notifications_screen.dart';
 
 enum _AppraisalTab { timingPoints, specialTasks, events, analytics, personalDashboard }
 
@@ -231,6 +233,11 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         },
         pendingTasksCount: _pendingTasksCount,
         pendingEventsCount: _pendingEventsCount,
+        onNotificationTap: () {
+          setState(() {
+            _activeSidebarIndex = 5;
+          });
+        },
       );
 
   @override
@@ -302,7 +309,10 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
       case 4:
         return _buildPlaceholderScreen('Personnel');
       case 5:
-        return _buildPlaceholderScreen('Notifications');
+        return NotificationsScreen(
+          username: widget.username ?? '',
+          role: widget.role ?? 'teacher',
+        );
       case 6:
         return _buildPlaceholderScreen('Settings');
       default:
@@ -391,10 +401,18 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
               pageHeader: header,
               role: widget.role ?? 'dean',
               evaluations: _taskEvaluations,
-              onSubmitEvaluation: (id, result) => setState(() {
-                // Create a NEW map so reference changes, triggering didUpdateWidget
-                _taskEvaluations = {..._taskEvaluations, id: result};
-              }),
+              onSubmitEvaluation: (id, result) {
+                setState(() {
+                  // Create a NEW map so reference changes, triggering didUpdateWidget
+                  _taskEvaluations = {..._taskEvaluations, id: result};
+                });
+                NotificationStore().pushLocal(
+                  title: 'Special Task Evaluated',
+                  message: 'A special task evaluation was submitted successfully.',
+                  type: NotificationType.evaluationSubmitted,
+                  relatedId: id,
+                );
+              },
             ),
           _AppraisalTab.events => EventsTab(
               pageHeader: header,
@@ -420,6 +438,13 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
                     'feedback_comments': rating.comments,
                   };
                   await api.evaluateEvent(id, payload);
+                  
+                  NotificationStore().pushLocal(
+                    title: 'Event Evaluation Submitted',
+                    message: 'Your evaluation for this event has been successfully submitted.',
+                    type: NotificationType.evaluationSubmitted,
+                    relatedId: id,
+                  );
                 } catch (e) {
                   debugPrint('Failed to persist event evaluation to backend: $e');
                 }
@@ -457,6 +482,7 @@ class _PageHeader extends StatelessWidget {
   final ValueChanged<_AppraisalTab> onTabChanged;
   final int pendingTasksCount;
   final int pendingEventsCount;
+  final VoidCallback onNotificationTap;
 
   const _PageHeader({
     required this.activeTab,
@@ -464,6 +490,7 @@ class _PageHeader extends StatelessWidget {
     required this.onTabChanged,
     required this.pendingTasksCount,
     required this.pendingEventsCount,
+    required this.onNotificationTap,
   });
 
   String _getTabLabel(_AppraisalTab tab) {
@@ -519,6 +546,8 @@ class _PageHeader extends StatelessWidget {
                       fontSize: 12,
                       color: AppColors.textSecondary,
                       fontWeight: FontWeight.w500)),
+              const Spacer(),
+              NotificationBellButton(onTap: onNotificationTap),
             ],
           ),
 

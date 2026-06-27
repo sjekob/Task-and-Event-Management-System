@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../shared/widgets/shared_widgets.dart';
 import '../../core/api_service.dart';
@@ -815,6 +816,29 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                           }
                           // Always update local memory state to keep UI synchronized in real-time
                           widget.onSubmitEvaluation(id, result);
+                          
+                          final int score = result['score'] as int? ?? 0;
+                          if (score < 60 && context.mounted) {
+                            showDialog(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Row(
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded, color: Colors.red),
+                                    SizedBox(width: 8),
+                                    Text('Task Flagged'),
+                                  ],
+                                ),
+                                content: const Text('This task evaluation resulted in a score below 60. It has been automatically flagged and a notification has been sent to the supervisor.'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(context).pop(),
+                                    child: const Text('Acknowledge'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
                         },
                         role: widget.role,
                       ),
@@ -1013,6 +1037,29 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                           debugPrint('Failed to persist task evaluation to backend: $err');
                         }
                         widget.onSubmitEvaluation(id, result);
+                        
+                        final int score = result['score'] as int? ?? 0;
+                        if (score < 60 && context.mounted) {
+                          showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Row(
+                                children: [
+                                  Icon(Icons.warning_amber_rounded, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text('Task Flagged'),
+                                ],
+                              ),
+                              content: const Text('This task evaluation resulted in a score below 60. It has been automatically flagged and a notification has been sent to the supervisor.'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text('Acknowledge'),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
                       },
                       role: widget.role,
                     ),
@@ -1229,10 +1276,33 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Performance Summary exported successfully!')),
+                        const SnackBar(content: Text('Exporting Performance Summary...')),
                       );
+                      try {
+                        await DashboardApi().exportPerformanceSummary(
+                          period: 'annual',
+                          role: widget.role,
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Performance Summary exported successfully! Document saved to downloads.'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to export Performance Summary.'),
+                              backgroundColor: AppColors.danger,
+                            ),
+                          );
+                        }
+                      }
                     },
                     icon: const Icon(Icons.download, size: 16, color: Colors.white),
                     label: const Text('Export Performance Summary', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
@@ -1277,10 +1347,33 @@ class _SpecialTasksTabState extends State<SpecialTasksTab> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   ElevatedButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Performance Summary exported successfully!')),
+                        const SnackBar(content: Text('Exporting Performance Summary...')),
                       );
+                      try {
+                        await DashboardApi().exportPerformanceSummary(
+                          period: 'annual',
+                          role: widget.role,
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Performance Summary exported successfully! Document saved to downloads.'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to export Performance Summary.'),
+                              backgroundColor: AppColors.danger,
+                            ),
+                          );
+                        }
+                      }
                     },
                     icon: const Icon(Icons.download, size: 16, color: Colors.white),
                     label: const Text('Export Performance Summary', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),

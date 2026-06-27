@@ -5,7 +5,7 @@ enum EventStatus { awaitingRatings, rated, flagged }
 enum ApprovalStatus { approved, pending, rejected, revisionRequested }
 enum TrendDirection { up, down, stable }
 enum AppraisalGrade { outstanding, verySatisfactory, satisfactory, unsatisfactory }
-enum EvaluatorRole { teacher, student, coordinator, dean, principal }
+enum EvaluatorRole { teacher, student, coordinator, dean, principal, registrar }
 
 extension EvaluatorRoleLabel on EvaluatorRole {
   String get label {
@@ -15,6 +15,7 @@ extension EvaluatorRoleLabel on EvaluatorRole {
       case EvaluatorRole.coordinator: return 'Coordinator';
       case EvaluatorRole.dean:        return 'Dean';
       case EvaluatorRole.principal:   return 'Principal';
+      case EvaluatorRole.registrar:   return 'Registrar';
     }
   }
 }
