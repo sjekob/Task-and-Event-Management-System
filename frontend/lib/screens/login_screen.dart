@@ -244,6 +244,7 @@ class _InputBox extends StatelessWidget {
                 focusedBorder: InputBorder.none,
                 errorBorder: InputBorder.none,
                 focusedErrorBorder: InputBorder.none,
+                filled: false,
                 isDense: true,
                 contentPadding:
                     const EdgeInsets.symmetric(vertical: 12),

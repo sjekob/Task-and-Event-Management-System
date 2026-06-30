@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
 import '../services/api_service.dart';
+import '../utils/event_format.dart';
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
@@ -305,8 +306,14 @@ class _EventDetailDialog extends StatelessWidget {
                       _InfoItem('Fund Source', event['fund_source']),
                       _InfoItem('Proposed Budget', event['proposed_budget'] != null
                           ? '₱${event['proposed_budget']}' : null),
-                      _InfoItem('Participants', event['participants']),
                     ]),
+
+                    if (_hasVal(event['participants'])) ...[
+                      const SizedBox(height: 16),
+                      _SectionLabel('Participants'),
+                      const SizedBox(height: 6),
+                      _TextBlock(formatParticipants(event['participants'].toString())),
+                    ],
 
                     if (_hasVal(event['focal_name'])) ...[
                       const SizedBox(height: 16),
@@ -337,37 +344,37 @@ class _EventDetailDialog extends StatelessWidget {
                       const SizedBox(height: 16),
                       _SectionLabel('Expected Outputs'),
                       const SizedBox(height: 6),
-                      _TextBlock(event['expected_outputs'] as String),
+                      _TextBlock(formatOutputs(event['expected_outputs'].toString())),
                     ],
 
                     if (_hasVal(event['phase1']) || _hasVal(event['phase2']) || _hasVal(event['phase3'])) ...[
                       const SizedBox(height: 16),
                       _SectionLabel('Implementation Phases'),
                       const SizedBox(height: 10),
-                      if (_hasVal(event['phase1'])) _PhaseItem('Phase 1 – Pre-Activity', event['phase1'] as String),
-                      if (_hasVal(event['phase2'])) _PhaseItem('Phase 2 – During Activity', event['phase2'] as String),
-                      if (_hasVal(event['phase3'])) _PhaseItem('Phase 3 – Post-Activity', event['phase3'] as String),
+                      if (_hasVal(event['phase1'])) _PhaseItem('Phase 1 – Pre-Activity', formatMethodology(event['phase1'].toString())),
+                      if (_hasVal(event['phase2'])) _PhaseItem('Phase 2 – During Activity', formatMethodology(event['phase2'].toString())),
+                      if (_hasVal(event['phase3'])) _PhaseItem('Phase 3 – Post-Activity', formatMethodology(event['phase3'].toString())),
                     ],
 
                     if (_hasVal(event['activity_matrix'])) ...[
                       const SizedBox(height: 16),
                       _SectionLabel('Activity Matrix'),
                       const SizedBox(height: 6),
-                      _TextBlock(event['activity_matrix'] as String),
+                      _TextBlock(formatActivityMatrix(event['activity_matrix'].toString())),
                     ],
 
                     if (_hasVal(event['exec_committee'])) ...[
                       const SizedBox(height: 16),
                       _SectionLabel('Executive Committee'),
                       const SizedBox(height: 6),
-                      _TextBlock(event['exec_committee'] as String),
+                      _TextBlock(formatCommittee(event['exec_committee'].toString())),
                     ],
 
                     if (_hasVal(event['twg_groups'])) ...[
                       const SizedBox(height: 16),
                       _SectionLabel('TWG Groups'),
                       const SizedBox(height: 6),
-                      _TextBlock(event['twg_groups'] as String),
+                      _TextBlock(formatTwg(event['twg_groups'].toString())),
                     ],
 
                     if (_hasVal(event['monitoring_criteria'])) ...[

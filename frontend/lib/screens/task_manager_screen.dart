@@ -25,6 +25,8 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
   bool _loading = true;
   String _search = '';
   String? _errorMsg;
+  // Principal-only: 'mine' = tasks they created, 'all' = every task.
+  String _scope = 'mine';
 
   @override
   void initState() {
@@ -35,11 +37,17 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
   Future<void> _load() async {
     setState(() { _loading = true; _errorMsg = null; });
     try {
-      final tasks = await ApiService.getTasks();
+      final tasks = await ApiService.getTasks(scope: _scope);
       if (mounted) setState(() { _tasks = tasks; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _loading = false; _errorMsg = e.toString(); });
     }
+  }
+
+  void _setScope(String scope) {
+    if (_scope == scope) return;
+    setState(() => _scope = scope);
+    _load();
   }
 
   List<Task> get _active => _tasks
@@ -110,6 +118,24 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
               subtitle: _bannerSubtitle(role),
             ),
             const SizedBox(height: 20),
+
+            // ── Scope tabs (principal: their created tasks vs. all tasks) ──
+            if (role == 'principal') ...[
+              Row(children: [
+                _ScopeTab(
+                  label: 'My Created Tasks',
+                  selected: _scope == 'mine',
+                  onTap: () => _setScope('mine'),
+                ),
+                const SizedBox(width: 8),
+                _ScopeTab(
+                  label: 'All Tasks',
+                  selected: _scope == 'all',
+                  onTap: () => _setScope('all'),
+                ),
+              ]),
+              const SizedBox(height: 16),
+            ],
 
             // ── Search ──
             Container(
@@ -518,6 +544,37 @@ class _ConfirmDisableDialog extends StatelessWidget {
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScopeTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ScopeTab({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.darkBanner : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: selected ? AppTheme.darkBanner : AppTheme.borderColor),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : AppTheme.textMuted,
           ),
         ),
       ),

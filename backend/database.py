@@ -3,7 +3,7 @@ import os
 from contextlib import contextmanager
 
 DB_PATH = "tasknet.db"
-SCHEMA_VERSION = 9  # bump when schema changes (9: events CHECK now allows 'draft')
+SCHEMA_VERSION = 10  # bump when schema changes (10: 0/1 CHECK on is_active/is_read)
 
 
 def _connect() -> sqlite3.Connection:
@@ -58,18 +58,21 @@ def _save_version(v: int):
         f.write(str(v))
 
 
-def init_db():
-    if _stored_version() < SCHEMA_VERSION:
-        if os.path.exists(DB_PATH):
-            os.remove(DB_PATH)
-        _save_version(SCHEMA_VERSION)
-
+def _build_and_seed():
+    """Create the schema (CREATE TABLE IF NOT EXISTS) and seed defaults
+    (INSERT OR IGNORE). Idempotent and non-destructive — never deletes data."""
     conn = connect_db()
     c = conn.cursor()
     c.executescript("""
     CREATE TABLE IF NOT EXISTS grade_levels (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         grade_level TEXT NOT NULL UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS departments (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        department_name TEXT NOT NULL UNIQUE,
+        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS users (
@@ -94,7 +97,7 @@ def init_db():
         date_of_appointment TEXT,
         birthdate           TEXT,
         address             TEXT,
-        is_active           INTEGER NOT NULL DEFAULT 1,
+        is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
         created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -122,7 +125,8 @@ def init_db():
     CREATE TABLE IF NOT EXISTS dean_assignment (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id        INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-        grade_level_id INTEGER NOT NULL REFERENCES grade_levels(id)
+        grade_level_id INTEGER NOT NULL REFERENCES grade_levels(id),
+        department_id  INTEGER REFERENCES departments(id)
     );
 
     CREATE TABLE IF NOT EXISTS task_types (
@@ -302,17 +306,6 @@ def init_db():
         UNIQUE(task_id)
     );
 
-    CREATE TABLE IF NOT EXISTS school_events (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        title       TEXT NOT NULL,
-        description TEXT,
-        event_date  TEXT,
-        status      TEXT NOT NULL DEFAULT 'upcoming'
-            CHECK(status IN ('upcoming','ongoing','completed','cancelled')),
-        created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
     -- ── Notifications ─────────────────────────────────────────────────────────
     -- Per-user in-app notifications triggered by task assignments and event posts.
     CREATE TABLE IF NOT EXISTS notifications (
@@ -322,13 +315,13 @@ def init_db():
         title      TEXT NOT NULL,
         body       TEXT,
         ref_id     INTEGER,
-        is_read    INTEGER NOT NULL DEFAULT 0,
+        is_read    INTEGER NOT NULL DEFAULT 0 CHECK(is_read IN (0,1)),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS event_evaluations (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,
-        event_id         INTEGER NOT NULL REFERENCES school_events(id) ON DELETE CASCADE,
+        event_id         INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
         evaluator_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
         evaluator_name   TEXT NOT NULL,
         evaluator_role   TEXT,
@@ -341,11 +334,118 @@ def init_db():
         feedback_comments TEXT,
         date_submitted   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Anti-abuse log for the unauthenticated QR public-evaluation endpoint:
+    -- one row per (event, submitter) so we can cap submissions per device.
+    CREATE TABLE IF NOT EXISTS public_submission_log (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        ip_hash      TEXT NOT NULL,
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(event_id, ip_hash)
+    );
     """)
 
     conn.commit()
+
+    # Non-destructive migrations: add columns introduced after a table was first
+    # created, so existing databases gain them via ALTER (no wipe needed).
+    _ensure_column(c, "dean_assignment", "department_id", "INTEGER")
+    _ensure_column(c, "events", "department", "TEXT")
+    _ensure_column(c, "events", "expected_attendees", "INTEGER")
+    conn.commit()
+
+    # event_evaluations may have been created (on existing DBs) back when its FK
+    # pointed at school_events; rebuild it pointed at events before dropping that table.
+    try:
+        row = c.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='event_evaluations'"
+        ).fetchone()
+        if row and row[0] and "school_events" in row[0]:
+            c.executescript("""
+                ALTER TABLE event_evaluations RENAME TO event_evaluations_old;
+                CREATE TABLE event_evaluations (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id         INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                    evaluator_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    evaluator_name   TEXT NOT NULL,
+                    evaluator_role   TEXT,
+                    planning_score   INTEGER NOT NULL DEFAULT 0 CHECK(planning_score BETWEEN 0 AND 5),
+                    objectives_score INTEGER NOT NULL DEFAULT 0 CHECK(objectives_score BETWEEN 0 AND 5),
+                    personnel_score  INTEGER NOT NULL DEFAULT 0 CHECK(personnel_score BETWEEN 0 AND 5),
+                    time_mgmt_score  INTEGER NOT NULL DEFAULT 0 CHECK(time_mgmt_score BETWEEN 0 AND 5),
+                    engagement_score INTEGER NOT NULL DEFAULT 0 CHECK(engagement_score BETWEEN 0 AND 5),
+                    resource_score   INTEGER NOT NULL DEFAULT 0 CHECK(resource_score BETWEEN 0 AND 5),
+                    feedback_comments TEXT,
+                    date_submitted   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT INTO event_evaluations
+                    SELECT * FROM event_evaluations_old WHERE event_id IN (SELECT id FROM events);
+                DROP TABLE event_evaluations_old;
+            """)
+            conn.commit()
+    except Exception:
+        pass  # Already migrated; ignore
+
+    # Drop redundant school_events table; event_evaluations now references events directly
+    try:
+        c.execute("DROP TABLE IF EXISTS school_events")
+        conn.commit()
+    except Exception:
+        pass  # Already dropped or constrained; ignore
+
     _seed(conn)
     conn.close()
+
+
+def _ensure_column(cur, table: str, column: str, decl: str):
+    cols = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in cols:
+        try:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        except sqlite3.OperationalError:
+            pass  # another service added it concurrently — fine
+
+
+def init_db():
+    """Ensure the DB exists at the current schema version.
+
+    Concurrency-safe: a schema bump requires recreating the DB, but the six
+    services share one sqlite file. An exclusive lock guarantees exactly ONE
+    process performs the destructive recreate+seed while the others wait — so
+    no process can delete the file out from under another and corrupt it.
+    """
+    import time
+
+    # Already current → just ensure schema/seed exist (idempotent, no delete).
+    if _stored_version() >= SCHEMA_VERSION:
+        _build_and_seed()
+        return
+
+    lock_path = DB_PATH + ".init.lock"
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+    except FileExistsError:
+        # Another process owns the recreate — wait for it to publish the version.
+        for _ in range(120):
+            if _stored_version() >= SCHEMA_VERSION and not os.path.exists(lock_path):
+                break
+            time.sleep(0.5)
+        _build_and_seed()
+        return
+
+    # We own the recreate.
+    try:
+        if os.path.exists(DB_PATH):
+            os.remove(DB_PATH)
+        _build_and_seed()
+        _save_version(SCHEMA_VERSION)
+    finally:
+        try:
+            os.remove(lock_path)
+        except OSError:
+            pass
 
 
 def create_notification(db, user_id: int, notif_type: str, title: str, body: str = "", ref_id: int = None):
@@ -365,6 +465,9 @@ def _seed(conn):
 
     for tt in ['Administrative', 'Curriculum', 'Documentation', 'Assessment', 'Research']:
         c.execute("INSERT OR IGNORE INTO task_types (task_type) VALUES (?)", (tt,))
+
+    for dept in ['Academic Affairs', 'Student Affairs', 'Administration', 'Research & Development']:
+        c.execute("INSERT OR IGNORE INTO departments (department_name) VALUES (?)", (dept,))
 
     conn.commit()
 
@@ -574,22 +677,12 @@ def _seed(conn):
                  VALUES (3, ?, 4, 5, 3, 4, 4.05, 'Good effort on curriculum alignment.')""",
               (uid['coordinator1'],))
 
-    # ── School Events sample data ──────────────────────────────────────────────
-    school_events = [
-        (1, 'Foundation Day',  'School anniversary celebration', '2026-06-10', 'upcoming',  uid['principal']),
-        (2, 'Science Fair',    'Annual science exhibit',         '2026-07-05', 'upcoming',  uid['coordinator1']),
-        (3, 'Graduation 2026', 'Grade 6 graduation ceremony',   '2026-05-28', 'completed', uid['principal']),
-    ]
-    for ev in school_events:
-        c.execute("""INSERT OR IGNORE INTO school_events
-                     (id, title, description, event_date, status, created_by)
-                     VALUES (?,?,?,?,?,?)""", ev)
-
+    # ── Event Evaluation sample data (evaluates the approved EVENTS row) ───────
     c.execute("""INSERT OR IGNORE INTO event_evaluations
                  (event_id, evaluator_id, evaluator_name, evaluator_role,
                   planning_score, objectives_score, personnel_score,
                   time_mgmt_score, engagement_score, resource_score, feedback_comments)
-                 VALUES (3, ?, 'Coordinator Grace Tan', 'Coordinator', 5, 4, 5, 4, 5, 4,
+                 VALUES (1, ?, 'Coordinator Grace Tan', 'Coordinator', 5, 4, 5, 4, 5, 4,
                          'Ceremony was well organized and on time.')""",
               (uid['coordinator1'],))
 

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:google_fonts/google_fonts.dart';
+import '../utils/input_formatters.dart';
+import '../utils/date_parse.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
@@ -813,6 +815,51 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
+  // Target date is picked from a calendar and stored month-in-words
+  // ("October 1, 2026") so viewing shows it directly and the calendar parses it.
+  static const _monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  String _fmtLongDate(DateTime d) => '${_monthNames[d.month - 1]} ${d.day}, ${d.year}';
+
+  Future<void> _pickTargetDate() async {
+    final now = DateTime.now();
+    final initial = parseEventDate(_dateCtrl.text) ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+    );
+    if (picked != null) {
+      setState(() => _dateCtrl.text = _fmtLongDate(picked));
+    }
+  }
+
+  Widget _buildDateField() {
+    return TextField(
+      controller: _dateCtrl,
+      readOnly: true,
+      onTap: _pickTargetDate,
+      style: const TextStyle(fontSize: 13),
+      decoration: InputDecoration(
+        hintText: 'Select target date',
+        hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 13),
+        filled: true, fillColor: const Color(0xFFF7F9FC),
+        suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF718096)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFACC2DF), width: 1.5)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      ),
+    );
+  }
+
   // ── Step 1 ────────────────────────────────────────────────────────────────
   Widget _buildProposalBrief() {
     return SingleChildScrollView(
@@ -847,7 +894,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 _fLabel('c. Target Date'),
-                _tField(_dateCtrl, hint: 'e.g. October 23, 24 & 28, 2024'),
+                _buildDateField(),
               ])),
               const SizedBox(width: 16),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -919,7 +966,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             const SizedBox(height: 16),
             _fLabel('h. Focal Person'),
             Row(children: [
-              Expanded(child: _tField(_focalNameCtrl, hint: 'Full name')),
+              Expanded(child: _tField(_focalNameCtrl, hint: 'Full name', titleCase: true)),
               const SizedBox(width: 12),
               Expanded(child: _tField(_focalRoleCtrl, hint: 'Designation')),
               const SizedBox(width: 12),
@@ -1304,7 +1351,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF718096))),
                 const SizedBox(height: 6),
                 Row(children: [
-                  Expanded(child: _tField(s['name'] as TextEditingController, hint: 'Full name (e.g. JUAN D. CRUZ)')),
+                  Expanded(child: _tField(s['name'] as TextEditingController, hint: 'Full name (e.g. Juan D. Cruz)', titleCase: true)),
                   const SizedBox(width: 10),
                   Expanded(child: _tField(s['title'] as TextEditingController, hint: 'Position/Title')),
                 ]),
@@ -1493,9 +1540,10 @@ Widget _fLabel(String t) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
     child: Text(t, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))));
 
-Widget _tField(TextEditingController c, {String hint = '', int maxLines = 1}) {
+Widget _tField(TextEditingController c, {String hint = '', int maxLines = 1, bool titleCase = false}) {
   final field = TextField(
     controller: c, maxLines: maxLines,
+    inputFormatters: titleCase ? const [TitleCaseTextInputFormatter()] : null,
     style: const TextStyle(fontSize: 13),
     decoration: InputDecoration(
       hintText: hint,

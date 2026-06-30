@@ -7,6 +7,7 @@ import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
+import '../utils/date_parse.dart';
 import 'task_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -42,24 +43,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       for (final e in events) {
         final status = (e['status'] ?? '').toString();
         if (status == 'disabled' || status == 'draft') continue;
-        final d = _parseEventDate(e['target_date']?.toString());
+        final d = parseEventDate(e['target_date']?.toString());
         if (d == null) continue;
         final key = DateTime(d.year, d.month, d.day);
         (map[key] ??= []).add(e);
       }
       if (mounted) setState(() => _eventsByDay = map);
     } catch (_) {/* best-effort */}
-  }
-
-  static DateTime? _parseEventDate(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return null;
-    final iso = DateTime.tryParse(raw);
-    if (iso != null) return iso;
-    for (final part in raw.split(RegExp(r'[,&]'))) {
-      final d = DateTime.tryParse(part.trim());
-      if (d != null) return d;
-    }
-    return null;
   }
 
   List<Map<String, dynamic>> _eventsFor(int day) =>

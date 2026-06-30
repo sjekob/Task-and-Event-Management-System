@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from database import connect_db
 from auth import get_current_user, require_admin_or_principal
+from files import save_upload
 
 router = APIRouter(tags=["Templates"])
 
@@ -62,7 +63,4 @@ def delete_template(template_id: int, user=Depends(require_admin_or_principal)):
 
 @router.post("/api/upload")
 async def upload_file(file: UploadFile, user=Depends(get_current_user)):
-    fname = f"{int(datetime.datetime.now().timestamp())}_{file.filename}"
-    with open(f"uploads/{fname}", "wb") as out:
-        out.write(await file.read())
-    return {"url": f"/uploads/{fname}", "name": file.filename}
+    return await save_upload(file)

@@ -36,6 +36,8 @@ class User {
   final String? coordinatorType;
   final int? deanGradeLevelId;
   final String? deanGradeLevel;
+  final int? departmentId;
+  final String? department;
 
   User({
     required this.id,
@@ -63,6 +65,8 @@ class User {
     this.coordinatorType,
     this.deanGradeLevelId,
     this.deanGradeLevel,
+    this.departmentId,
+    this.department,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -98,6 +102,8 @@ class User {
       coordinatorType: json['coordinator_type']?.toString(),
       deanGradeLevelId: json['dean_grade_level_id'] as int?,
       deanGradeLevel: json['dean_grade_level']?.toString(),
+      departmentId: json['department_id'] as int?,
+      department: json['department']?.toString(),
     );
   }
 
@@ -547,37 +553,46 @@ class SpecialTaskEvaluation {
       );
 }
 
-class SchoolEvent {
+class EventForAppraisal {
   final int id;
   final String title;
   final String? description;
-  final String? eventDate;
+  final String? targetDate;
+  final String? venue;
   final String status;
   final String? organizerName;
+  final String? department;
+  final int? expectedAttendees;
   final List<EventEvaluation> evaluations;
 
-  SchoolEvent({
+  EventForAppraisal({
     required this.id,
     required this.title,
     this.description,
-    this.eventDate,
+    this.targetDate,
+    this.venue,
     required this.status,
     this.organizerName,
+    this.department,
+    this.expectedAttendees,
     this.evaluations = const [],
   });
 
-  factory SchoolEvent.fromJson(Map<String, dynamic> json) {
+  factory EventForAppraisal.fromJson(Map<String, dynamic> json) {
     final organizer = json['organizer'] as Map<String, dynamic>?;
     final evals = (json['evaluations'] as List? ?? [])
         .map((e) => EventEvaluation.fromJson(e as Map<String, dynamic>))
         .toList();
-    return SchoolEvent(
+    return EventForAppraisal(
       id: json['id'] ?? 0,
       title: (json['title'] ?? '').toString(),
       description: json['description']?.toString(),
-      eventDate: json['event_date']?.toString(),
-      status: (json['status'] ?? 'upcoming').toString(),
+      targetDate: json['target_date']?.toString(),
+      venue: json['venue']?.toString(),
+      status: (json['status'] ?? 'pending_approval').toString(),
       organizerName: organizer?['full_name']?.toString(),
+      department: json['department']?.toString(),
+      expectedAttendees: json['expected_attendees'] as int?,
       evaluations: evals,
     );
   }
@@ -586,6 +601,11 @@ class SchoolEvent {
     if (evaluations.isEmpty) return 0;
     return evaluations.map((e) => e.average).reduce((a, b) => a + b) / evaluations.length;
   }
+
+  // Evidency Rate: 0-5 average mapped to 0-100% for display, matching Lok's UI.
+  double get evidencyRate => avgRating / 5.0 * 100.0;
+
+  String get shortDate => targetDate?.split('T').first ?? '—';
 }
 
 class EventEvaluation {

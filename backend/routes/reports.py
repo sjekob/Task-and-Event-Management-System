@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from database import connect_db
 from auth import get_current_user, TASK_CREATORS
+from files import save_upload
 
 router = APIRouter(tags=["Reports"])
 
@@ -85,17 +86,15 @@ async def submit_report_file(task_id: int, file: UploadFile, user=Depends(get_cu
         db.close()
         raise HTTPException(404, "Submit a report first before uploading a file")
 
-    fname = f"{task_id}_{uid}_{int(datetime.datetime.now().timestamp())}_{file.filename}"
-    with open(f"uploads/{fname}", "wb") as out:
-        out.write(await file.read())
+    saved = await save_upload(file, prefix=f"{task_id}_{uid}_")
 
     db.execute(
         "UPDATE reports SET report_file_path=?, report_filename=? WHERE id=?",
-        (f"/uploads/{fname}", file.filename, report["id"])
+        (saved["url"], saved["name"], report["id"])
     )
     db.commit()
     db.close()
-    return {"message": "File uploaded", "url": f"/uploads/{fname}"}
+    return {"message": "File uploaded", "url": saved["url"]}
 
 
 @router.delete("/api/reports/{report_id}")

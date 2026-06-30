@@ -92,4 +92,25 @@ class PersonnelService {
     }
     return [];
   }
+
+  static Future<List<Map<String, dynamic>>> departmentsMeta() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/departments'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  static Future<Map<String, dynamic>?> createDepartment(String name) async {
+    final res = await http.post(
+      Uri.parse('$_base/api/personnel/departments'),
+      headers: await _h,
+      body: jsonEncode({'department_name': name}),
+    );
+    if (res.statusCode == 201) return jsonDecode(res.body) as Map<String, dynamic>;
+    return null;
+  }
 }

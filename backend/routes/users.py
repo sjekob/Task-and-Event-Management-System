@@ -33,11 +33,12 @@ def list_assignable_users(user=Depends(require_can_assign)):
         db.close()
         return []
 
-    placeholders = ",".join(f"'{r}'" for r in allowed_roles)
+    # Parameterised IN clause (no string-built SQL), one '?' per allowed role.
+    placeholders = ",".join("?" for _ in allowed_roles)
     q = f"""SELECT u.id, u.username, u.full_name, u.role, u.grade_level_id, gl.grade_level
             FROM users u LEFT JOIN grade_levels gl ON gl.id=u.grade_level_id
             WHERE u.role IN ({placeholders})"""
-    params = []
+    params = list(allowed_roles)
 
     if role == "dean":
         dean = db.execute("SELECT grade_level_id FROM users WHERE id=?", (uid,)).fetchone()
@@ -125,18 +126,44 @@ class UpdateProfileRequest(BaseModel):
     address: Optional[str] = None
 
 
+# Explicit allowlist of columns the profile endpoint may ever write — even
+# though req.dict() keys are already bounded by the Pydantic model, this makes
+# the dynamic SET clause provably safe (defense in depth).
+_PROFILE_COLUMNS = {
+    "first_name", "middle_name", "last_name", "suffix", "email", "phone_number",
+    "tin", "qsis", "hdmf", "phic", "date_of_appointment", "address",
+}
+
+
 @router.put("/api/users/me/profile")
 def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user)):
     db = connect_db()
-    uid = int(user["sub"])
-    updates = {k: v for k, v in req.dict().items() if v is not None}
-    if updates:
-        set_clause = ", ".join(f"{k}=?" for k in updates)
-        db.execute(f"UPDATE users SET {set_clause} WHERE id=?",
-                   list(updates.values()) + [uid])
-        db.commit()
-    db.close()
-    return {"message": "Profile updated"}
+    try:
+        uid = int(user["sub"])
+        updates = {k: v for k, v in req.dict().items()
+                   if v is not None and k in _PROFILE_COLUMNS}
+        if updates:
+            # Keep the denormalized full_name in sync when a name part changes,
+            # merging the new values with the existing ones for parts not sent.
+            name_parts = ("first_name", "middle_name", "last_name", "suffix")
+            if any(k in updates for k in name_parts):
+                row = db.execute(
+                    "SELECT first_name, middle_name, last_name, suffix FROM users WHERE id=?",
+                    (uid,)
+                ).fetchone()
+                merged = dict(row) if row else {}
+                merged.update({k: updates[k] for k in name_parts if k in updates})
+                updates["full_name"] = " ".join(
+                    p for p in (merged.get("first_name"), merged.get("middle_name"),
+                                merged.get("last_name"), merged.get("suffix")) if p
+                )
+            set_clause = ", ".join(f"{k}=?" for k in updates)
+            db.execute(f"UPDATE users SET {set_clause} WHERE id=?",
+                       list(updates.values()) + [uid])
+            db.commit()
+        return {"message": "Profile updated"}
+    finally:
+        db.close()
 
 
 # ── Subjects & Grade Levels & Task Types ──────────────────────────────────────

@@ -22,6 +22,10 @@ x-backend-common: &backend-common
     - tasknet_uploads:/app/uploads
   environment:
     SECRET_KEY: ${SECRET_KEY:-tasknet-dev-secret-change-in-prod}
+    # MUST be shared by every service — each one validates JWTs with this key.
+    # If unset, each service generates its own random key and rejects tokens
+    # issued by the auth service (401 on every non-auth endpoint).
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY:-tasknet-dev-jwt-secret-change-in-prod}
     # Data layer. Defaults to the shared sqlite file during the SQLAlchemy
     # migration. Final cutover = set DATABASE_URL to the Postgres URL below:
     #   postgresql+psycopg2://tasknet:tasknet@postgres:5432/tasknet
@@ -71,45 +75,49 @@ services:
       EVENTS_SERVICE_URL:    http://events:8004
       APPRAISAL_SERVICE_URL: http://appraisal:8005
 
+  # Internal services below publish NO host ports — they are private and only
+  # reachable by the gateway over the internal Docker network (service DNS).
+  # The gateway (8000) is the single public entry point.
+
   # ── Auth Service ─────────────────────────────────────────────────────────────
   auth:
     <<: *backend-common
     container_name: tasknet_auth
     command: uvicorn services.auth.main:app --host 0.0.0.0 --port 8001
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
 
   # ── Personnel Service ────────────────────────────────────────────────────────
   personnel:
     <<: *backend-common
     container_name: tasknet_personnel
     command: uvicorn services.personnel.main:app --host 0.0.0.0 --port 8002
-    ports:
-      - "8002:8002"
+    expose:
+      - "8002"
 
   # ── Tasks Service ────────────────────────────────────────────────────────────
   tasks:
     <<: *backend-common
     container_name: tasknet_tasks
     command: uvicorn services.tasks.main:app --host 0.0.0.0 --port 8003
-    ports:
-      - "8003:8003"
+    expose:
+      - "8003"
 
   # ── Events Service ───────────────────────────────────────────────────────────
   events:
     <<: *backend-common
     container_name: tasknet_events
     command: uvicorn services.events.main:app --host 0.0.0.0 --port 8004
-    ports:
-      - "8004:8004"
+    expose:
+      - "8004"
 
   # ── Appraisal Service ────────────────────────────────────────────────────────
   appraisal:
     <<: *backend-common
     container_name: tasknet_appraisal
     command: uvicorn services.appraisal.main:app --host 0.0.0.0 --port 8005
-    ports:
-      - "8005:8005"
+    expose:
+      - "8005"
 
 volumes:
   tasknet_uploads:

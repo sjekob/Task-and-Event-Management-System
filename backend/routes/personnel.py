@@ -27,13 +27,16 @@ def _user_row(row, db):
     ).fetchone()
     d["coordinator_type"] = ct["coordinator_type"] if ct else None
     da = db.execute(
-        """SELECT da.grade_level_id, gl.grade_level
+        """SELECT da.grade_level_id, gl.grade_level, da.department_id, dep.department_name
            FROM dean_assignment da
            LEFT JOIN grade_levels gl ON gl.id = da.grade_level_id
+           LEFT JOIN departments dep ON dep.id = da.department_id
            WHERE da.user_id=?""", (d["id"],)
     ).fetchone()
     d["dean_grade_level_id"] = da["grade_level_id"] if da else None
     d["dean_grade_level"] = da["grade_level"] if da else None
+    d["department_id"] = da["department_id"] if da else None
+    d["department"] = da["department_name"] if da else None
     return d
 
 
@@ -60,6 +63,28 @@ def get_grade_levels_meta(db=Depends(get_db), user=Depends(get_current_user)):
 @router.get("/api/personnel/meta/subjects")
 def get_subjects_meta(db=Depends(get_db), user=Depends(get_current_user)):
     return [dict(r) for r in db.execute("SELECT * FROM subjects ORDER BY id").fetchall()]
+
+
+@router.get("/api/personnel/meta/departments")
+def get_departments_meta(db=Depends(get_db), user=Depends(get_current_user)):
+    return [dict(r) for r in
+            db.execute("SELECT * FROM departments ORDER BY department_name").fetchall()]
+
+
+class DepartmentBody(BaseModel):
+    department_name: str
+
+
+@router.post("/api/personnel/departments", status_code=201)
+def create_department(body: DepartmentBody, db=Depends(get_db),
+                      user=Depends(require_personnel_manager)):
+    name = body.department_name.strip()
+    if not name:
+        raise HTTPException(400, "Department name is required")
+    db.execute("INSERT OR IGNORE INTO departments (department_name) VALUES (?)", (name,))
+    db.commit()
+    row = db.execute("SELECT * FROM departments WHERE department_name=?", (name,)).fetchone()
+    return dict(row)
 
 
 @router.get("/api/personnel/{uid}")
@@ -136,6 +161,7 @@ class PersonnelUpdateBody(BaseModel):
     password: Optional[str] = None
     coordinator_type: Optional[str] = None
     dean_grade_level_id: Optional[int] = None
+    department_id: Optional[int] = None
 
 
 @router.put("/api/personnel/{uid}")
@@ -150,7 +176,8 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, db=Depends(get_db),
         ("email", body.email), ("first_name", body.first_name),
         ("middle_name", body.middle_name), ("last_name", body.last_name),
         ("suffix", body.suffix), ("role", body.role),
-        ("grade_level_id", body.grade_level_id), ("phone_number", body.phone_number),
+        ("grade_level_id", body.grade_level_id),
+        ("phone_number", body.phone_number),
         ("tin", body.tin), ("qsis", body.qsis), ("hdmf", body.hdmf),
         ("phic", body.phic), ("date_of_appointment", body.date_of_appointment),
         ("birthdate", body.birthdate), ("address", body.address),
@@ -185,11 +212,21 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, db=Depends(get_db),
         )
         db.commit()
 
-    if body.dean_grade_level_id is not None:
+    if body.dean_grade_level_id is not None or body.department_id is not None:
+        existing = db.execute(
+            "SELECT grade_level_id, department_id FROM dean_assignment WHERE user_id=?", (uid,)
+        ).fetchone()
+        grade_level_id = body.dean_grade_level_id if body.dean_grade_level_id is not None \
+            else (existing["grade_level_id"] if existing else None)
+        department_id = body.department_id if body.department_id is not None \
+            else (existing["department_id"] if existing else None)
+        if grade_level_id is None:
+            raise HTTPException(400, "A grade level must be set before assigning a department")
         db.execute(
-            """INSERT INTO dean_assignment (user_id, grade_level_id) VALUES (?,?)
-               ON CONFLICT(user_id) DO UPDATE SET grade_level_id=excluded.grade_level_id""",
-            (uid, body.dean_grade_level_id)
+            """INSERT INTO dean_assignment (user_id, grade_level_id, department_id) VALUES (?,?,?)
+               ON CONFLICT(user_id) DO UPDATE SET grade_level_id=excluded.grade_level_id,
+                                                   department_id=excluded.department_id""",
+            (uid, grade_level_id, department_id)
         )
         db.commit()
 

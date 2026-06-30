@@ -10,6 +10,7 @@ from cors import get_cors_config
 from database import init_db
 from routes.appraisal import router as appraisal_router
 from routes.dashboard import router as dashboard_router
+from routes.public_evaluation import router as public_evaluation_router
 
 SERVICE_PORT = int(os.getenv("APPRAISAL_SERVICE_PORT", "8005"))
 
@@ -37,6 +38,7 @@ def startup():
 
 app.include_router(appraisal_router)
 app.include_router(dashboard_router)
+app.include_router(public_evaluation_router)
 
 
 @app.get("/health")

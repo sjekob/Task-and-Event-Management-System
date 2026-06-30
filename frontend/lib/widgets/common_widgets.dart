@@ -533,7 +533,7 @@ class _CommentInputFieldState extends State<CommentInputField> {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.bgColor,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppTheme.borderColor),
       ),

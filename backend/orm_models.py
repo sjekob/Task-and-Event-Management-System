@@ -18,6 +18,13 @@ class GradeLevel(Base):
     grade_level = Column(Text, nullable=False, unique=True)
 
 
+class Department(Base):
+    __tablename__ = "departments"
+    id = Column(Integer, primary_key=True)
+    department_name = Column(Text, nullable=False, unique=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
@@ -40,7 +47,7 @@ class User(Base):
     date_of_appointment = Column(Text)
     birthdate = Column(Text)
     address = Column(Text)
-    is_active = Column(Integer, nullable=False, default=1)
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
     __table_args__ = (
         CheckConstraint(
@@ -79,6 +86,7 @@ class DeanAssignment(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
     grade_level_id = Column(Integer, ForeignKey("grade_levels.id"), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"))
 
 
 class TaskType(Base):
@@ -394,7 +402,7 @@ class Notification(Base):
     title = Column(Text, nullable=False)
     body = Column(Text)
     ref_id = Column(Integer)
-    is_read = Column(Integer, nullable=False, default=0)
+    is_read = Column(Boolean, nullable=False, default=False)
     created_at = Column(TIMESTAMP, server_default=func.now())
     __table_args__ = (
         CheckConstraint(
@@ -404,30 +412,10 @@ class Notification(Base):
     )
 
 
-# NOTE: Left as-is — the existing supervisor appraisal rubric on school_events.
-# A future attendee/QR satisfaction review (venue/speaker/relevance/satisfaction
-# on the proposal `events`) will be added separately, not folded into this.
-class SchoolEvent(Base):
-    __tablename__ = "school_events"
-    id = Column(Integer, primary_key=True)
-    title = Column(Text, nullable=False)
-    description = Column(Text)
-    event_date = Column(Text)
-    status = Column(Text, nullable=False, default="upcoming")
-    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
-    created_at = Column(TIMESTAMP, server_default=func.now())
-    __table_args__ = (
-        CheckConstraint(
-            "status IN ('upcoming','ongoing','completed','cancelled')",
-            name="ck_school_event_status",
-        ),
-    )
-
-
 class EventEvaluation(Base):
     __tablename__ = "event_evaluations"
     id = Column(Integer, primary_key=True)
-    event_id = Column(Integer, ForeignKey("school_events.id", ondelete="CASCADE"), nullable=False)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
     evaluator_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     evaluator_name = Column(Text, nullable=False)
     evaluator_role = Column(Text)
@@ -446,4 +434,16 @@ class EventEvaluation(Base):
         CheckConstraint("time_mgmt_score BETWEEN 0 AND 5", name="ck_ee_time"),
         CheckConstraint("engagement_score BETWEEN 0 AND 5", name="ck_ee_engagement"),
         CheckConstraint("resource_score BETWEEN 0 AND 5", name="ck_ee_resource"),
+    )
+
+
+class PublicSubmissionLog(Base):
+    """Anti-abuse log for the unauthenticated QR public-evaluation endpoint."""
+    __tablename__ = "public_submission_log"
+    id = Column(Integer, primary_key=True)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    ip_hash = Column(Text, nullable=False)
+    submitted_at = Column(TIMESTAMP, server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint("event_id", "ip_hash", name="uq_public_submission_event_ip"),
     )

@@ -711,6 +711,10 @@ class _PersonnelDetailDialog extends StatelessWidget {
                   _field('Address', u.address ?? '—'),
                   const SizedBox(height: 24),
                   _sectionHeader('Academic Information'),
+                  if (u.isDean && (u.department ?? '').isNotEmpty) ...[
+                    _field('Department', u.department!),
+                    const SizedBox(height: 18),
+                  ],
                   if (coordinatorLabel != null) ...[
                     _field('Assignment', coordinatorLabel),
                     const SizedBox(height: 18),
@@ -1047,9 +1051,11 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
   bool _saving = false;
   late String _selectedRole;
   int? _deanGradeLevelId;
+  int? _departmentId;
   String? _coordinatorType;
   final _appointmentCtrl = TextEditingController();
   List<Map<String, dynamic>> _gradeLevels = [];
+  List<Map<String, dynamic>> _departments = [];
   List<String> _subjects = [];
   List<_SubjectRow> _subjectRows = [];
 
@@ -1070,6 +1076,7 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
     _selectedRole = widget.user.role;
     _deanGradeLevelId =
         widget.user.deanGradeLevelId ?? widget.user.gradeLevelId;
+    _departmentId = widget.user.departmentId;
     _coordinatorType = widget.user.coordinatorType;
     _appointmentCtrl.text = widget.user.dateOfAppointment ?? '';
     _loadMeta();
@@ -1079,6 +1086,7 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
     final results = await Future.wait([
       PersonnelService.gradeLevelsMeta(),
       PersonnelService.subjectsMeta(),
+      PersonnelService.departmentsMeta(),
     ]);
     if (!mounted) return;
     final levels = results[0];
@@ -1086,6 +1094,7 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
         results[1].map((s) => s['subject_name'] as String).toList();
     setState(() {
       _gradeLevels = levels;
+      _departments = results[2];
       _subjects = subjectsList;
       _subjectRows = widget.user.subjects.map((s) {
         final glId = levels.firstWhere(
@@ -1113,6 +1122,8 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
           'date_of_appointment': _appointmentCtrl.text.trim(),
         if (_selectedRole == 'dean' && _deanGradeLevelId != null)
           'dean_grade_level_id': _deanGradeLevelId,
+        if (_selectedRole == 'dean' && _departmentId != null)
+          'department_id': _departmentId,
         if (_selectedRole == 'coordinator' && _coordinatorType != null)
           'coordinator_type': _coordinatorType,
       });
@@ -1200,10 +1211,28 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
                       _gradeLevels.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _gradeLevelDropdown(
-                      label: 'Department Handled',
+                      label: 'Grade Level Handled',
                       value: _deanGradeLevelId,
                       onChanged: (v) =>
                           setState(() => _deanGradeLevelId = v),
+                    ),
+                  ],
+                  if (_selectedRole == 'dean' && _departments.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      initialValue: _departments.any((d) => d['id'] == _departmentId)
+                          ? _departmentId
+                          : null,
+                      decoration: _deco('Department'),
+                      hint: const Text('Select department'),
+                      items: _departments
+                          .map((d) => DropdownMenuItem(
+                                value: d['id'] as int,
+                                child: Text(d['department_name'].toString(),
+                                    style: const TextStyle(fontSize: 14)),
+                              ))
+                          .toList(),
+                      onChanged: (v) => setState(() => _departmentId = v),
                     ),
                   ],
                   if (_selectedRole == 'coordinator') ...[

@@ -16,6 +16,7 @@ import 'features/personnel/screens/personnel_screen.dart';
 import 'screens/appraisal_screen.dart';
 import 'screens/event_management_screen.dart';
 import 'screens/add_event_screen.dart';
+import 'screens/public_evaluation_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,6 +53,7 @@ class _TaskNetAppState extends State<TaskNetApp> {
       redirect: (context, state) {
         final loggedIn = widget.appState.isLoggedIn;
         final loc = state.matchedLocation;
+        if (loc.startsWith('/eval/')) return null; // public QR landing page — no auth
         if (!loggedIn && loc != '/login') return '/login';
         if (loggedIn && loc == '/login') return '/dashboard';
         return null;
@@ -60,6 +62,12 @@ class _TaskNetAppState extends State<TaskNetApp> {
         GoRoute(
           path: '/login',
           builder: (_, __) => const LoginScreen(),
+        ),
+        GoRoute(
+          path: '/eval/:eventId',
+          builder: (context, state) => PublicEvaluationScreen(
+            eventId: state.pathParameters['eventId']!,
+          ),
         ),
         ShellRoute(
           builder: (context, state, child) => MainShell(child: child),

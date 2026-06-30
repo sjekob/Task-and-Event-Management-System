@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/skeleton_widgets.dart';
+import '../utils/input_formatters.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -384,12 +385,16 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
+    final appState = context.read<AppState>();
     try {
       final body = {
         for (final e in _ctrl.entries)
           if (e.value.text.trim().isNotEmpty) e.key: e.value.text.trim()
       };
       await ApiService.updateMyProfile(body);
+      // Re-fetch the current user so the header/sidebar/avatar reflect the new
+      // name immediately (they read full_name from AppState.currentUser).
+      await appState.tryAutoLogin();
       if (mounted) {
         Navigator.pop(context);
         widget.onSaved();
@@ -471,8 +476,12 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
         ),
       );
 
+  static const _nameKeys = {'first_name', 'middle_name', 'last_name', 'suffix'};
+
   Widget _field(String key, String label) => TextFormField(
         controller: _ctrl[key],
+        inputFormatters:
+            _nameKeys.contains(key) ? const [TitleCaseTextInputFormatter()] : null,
         style: GoogleFonts.plusJakartaSans(fontSize: 13),
         decoration: InputDecoration(
           labelText: label,

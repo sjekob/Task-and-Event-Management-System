@@ -1588,22 +1588,45 @@ function downloadDoc() {
         .join('\n');
   }
 
+  /// Normalizes a list field that may be stored either as a JSON array
+  /// (e.g. expected_outputs = ["Basta","sample"]) or as newline-separated text.
+  /// Returns newline-joined items in both cases.
+  static String _normalizeListText(String text) {
+    final t = text.trim();
+    if (t.startsWith('[')) {
+      try {
+        final decoded = jsonDecode(t);
+        if (decoded is List) {
+          return decoded.map((e) => e.toString()).where((s) => s.trim().isNotEmpty).join('\n');
+        }
+      } catch (_) {}
+    }
+    return text;
+  }
+
+  // Strips a leading bullet marker so a user-typed "• x" doesn't double up with
+  // the auto-numbering/bulleting of the list it's placed in.
+  static String _stripBullet(String s) =>
+      s.trim().replaceFirst(RegExp(r'^[•\-\*·●○]\s*'), '');
+
   static String _bulletList(String text) {
-    if (text.trim().isEmpty) return '<ul><li>—</li></ul>';
-    final items = text
+    final norm = _normalizeListText(text);
+    if (norm.trim().isEmpty) return '<ul><li>—</li></ul>';
+    final items = norm
         .split('\n')
         .where((l) => l.trim().isNotEmpty)
-        .map((l) => '<li>${_esc(l.trim())}</li>')
+        .map((l) => '<li>${_esc(_stripBullet(l))}</li>')
         .join('\n');
     return '<ul>$items</ul>';
   }
 
   static String _numberedList(String text) {
-    if (text.trim().isEmpty) return '<ol><li>—</li></ol>';
-    final items = text
+    final norm = _normalizeListText(text);
+    if (norm.trim().isEmpty) return '<ol><li>—</li></ol>';
+    final items = norm
         .split('\n')
         .where((l) => l.trim().isNotEmpty)
-        .map((l) => '<li>${_esc(l.trim())}</li>')
+        .map((l) => '<li>${_esc(_stripBullet(l))}</li>')
         .join('\n');
     return '<ol>$items</ol>';
   }
@@ -1771,7 +1794,7 @@ function downloadDoc() {
           trainingTotal += tot;
           materialsRows += '<tr>'
               '<td>${_esc(m['item']?.toString()     ?? '')}</td>'
-              '<td style="text-align:center;">${_esc(m['quantity']?.toString() ?? '')}</td>'
+              '<td style="text-align:center;">${_esc(m['qty']?.toString() ?? '')}</td>'
               '<td style="text-align:right;">${m['cost']  ?? ''}</td>'
               '<td style="text-align:right;">${m['total'] ?? ''}</td>'
               '</tr>';
@@ -1788,8 +1811,8 @@ function downloadDoc() {
           snacksTotal += tot;
           snacksRows += '<tr>'
               '<td>${_esc(m['item']?.toString()         ?? '')}</td>'
-              '<td style="text-align:center;">${_esc(m['participants']?.toString() ?? '')}</td>'
-              '<td style="text-align:right;">${m['cost_per_day'] ?? ''}</td>'
+              '<td style="text-align:center;">${_esc(m['pax']?.toString() ?? '')}</td>'
+              '<td style="text-align:right;">${m['cost'] ?? ''}</td>'
               '<td style="text-align:right;">${m['total']        ?? ''}</td>'
               '</tr>';
         }
@@ -1804,8 +1827,9 @@ function downloadDoc() {
     }
 
     final grandTotal       = trainingTotal + snacksTotal;
-    final totalLabel       = budgetDisplay.isNotEmpty ? budgetDisplay
-        : (grandTotal > 0 ? 'P${grandTotal.toStringAsFixed(2)}' : '—');
+    // The summary total is the sum of the line items — NOT the proposed
+    // (estimated) budget, which is a separate figure shown in the brief.
+    final totalLabel       = grandTotal > 0 ? 'P${grandTotal.toStringAsFixed(2)}' : '—';
     final trainingLabel    = trainingTotal > 0 ? trainingTotal.toStringAsFixed(2) : '—';
     final snacksLabel      = snacksTotal   > 0 ? snacksTotal.toStringAsFixed(2)   : '—';
 

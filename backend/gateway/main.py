@@ -10,6 +10,9 @@ Service map:
   8005  appraisal  /api/appraisal, /api/dashboard
 """
 import os
+import time
+from collections import deque
+
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
@@ -56,6 +59,39 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Per-IP rate limiting ──────────────────────────────────────────────────────
+# The gateway is the single public entry point, so one limiter here protects
+# every downstream service. Sliding window keyed by client IP. Generous enough
+# that normal use never trips it; abuse/floods get a 429.
+_RL_WINDOW = float(os.getenv("RATE_LIMIT_WINDOW", "60"))      # seconds
+_RL_MAX    = int(os.getenv("RATE_LIMIT_MAX", "600"))          # requests / window / IP
+_rl_hits: dict[str, deque] = {}
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    # Skip CORS preflight and health checks.
+    if request.method == "OPTIONS" or request.url.path == "/health":
+        return await call_next(request)
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    dq = _rl_hits.setdefault(ip, deque())
+    cutoff = now - _RL_WINDOW
+    while dq and dq[0] < cutoff:
+        dq.popleft()
+    if len(dq) >= _RL_MAX:
+        retry = max(1, int(dq[0] + _RL_WINDOW - now))
+        return Response(
+            content=b'{"detail":"Too many requests. Please slow down."}',
+            status_code=429,
+            media_type="application/json",
+            headers={"Retry-After": str(retry)},
+        )
+    dq.append(now)
+    if not dq:
+        _rl_hits.pop(ip, None)
+    return await call_next(request)
 
 
 def _resolve(path: str) -> str | None:
@@ -107,6 +143,10 @@ async def proxy(request: Request, path: str):
     # Strip hop-by-hop headers that must not be forwarded
     skip = {"host", "content-length", "transfer-encoding", "connection"}
     headers = {k: v for k, v in request.headers.items() if k.lower() not in skip}
+    # Downstream services only ever see this gateway's IP unless we pass the
+    # real client IP along — needed for any per-client logic they do (e.g.
+    # the public evaluation endpoint's per-device submission throttle).
+    headers["x-forwarded-for"] = request.client.host if request.client else "unknown"
 
     body = await request.body()
 

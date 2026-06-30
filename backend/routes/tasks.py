@@ -69,7 +69,8 @@ def _task_row(row, db, current_user_id: int, current_role: str):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/api/tasks")
-def list_tasks(user=Depends(get_current_user), search: str = "", assigned: int = 0):
+def list_tasks(user=Depends(get_current_user), search: str = "",
+               assigned: int = 0, scope: str = "mine"):
     db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
@@ -83,8 +84,13 @@ def list_tasks(user=Depends(get_current_user), search: str = "", assigned: int =
         q = "SELECT * FROM tasks WHERE 1=1"
         params = []
     elif role == "principal":
-        q = "SELECT * FROM tasks WHERE created_by=?"
-        params = [uid]
+        # scope=all → every task in the system; otherwise only those they created.
+        if scope == "all":
+            q = "SELECT * FROM tasks WHERE 1=1"
+            params = []
+        else:
+            q = "SELECT * FROM tasks WHERE created_by=?"
+            params = [uid]
     elif role in ("coordinator", "dean"):
         q = """SELECT DISTINCT t.* FROM tasks t
                LEFT JOIN task_assignments ta ON ta.task_id=t.id
