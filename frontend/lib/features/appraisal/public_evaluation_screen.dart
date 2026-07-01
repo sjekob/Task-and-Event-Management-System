@@ -155,6 +155,8 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
       else if (_selectedRole == EvaluatorRole.coordinator) roleString = 'Coordinator';
       else if (_selectedRole == EvaluatorRole.principal) roleString = 'Principal';
       else if (_selectedRole == EvaluatorRole.registrar) roleString = 'Registrar';
+      else if (_selectedRole == EvaluatorRole.parent) roleString = 'Parent';
+      else if (_selectedRole == EvaluatorRole.other) roleString = 'Other';
 
       await EventsApi().evaluateEvent(widget.eventId, {
         'evaluator_id': null,

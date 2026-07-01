@@ -217,6 +217,13 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         return EvaluatorRole.dean;
       case 'principal':
         return EvaluatorRole.principal;
+      case 'registrar':
+        return EvaluatorRole.registrar;
+      case 'parent':
+        return EvaluatorRole.parent;
+      case 'other':
+      case 'others':
+        return EvaluatorRole.other;
       default:
         return EvaluatorRole.student;
     }

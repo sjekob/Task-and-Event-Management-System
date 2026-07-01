@@ -437,7 +437,7 @@ class EventEvaluationIn(BaseModel):
     @field_validator("evaluator_role")
     @classmethod
     def valid_role(cls, v: str) -> str:
-        allowed = {"Teacher", "Student", "Coordinator", "Dean", "Principal"}
+        allowed = {"Teacher", "Student", "Coordinator", "Dean", "Principal", "Registrar", "Parent", "Other", "Others"}
         if v not in allowed:
             raise ValueError(f"Role must be one of {allowed}")
         return v
