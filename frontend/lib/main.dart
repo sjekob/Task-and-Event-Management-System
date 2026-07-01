@@ -79,6 +79,8 @@ class _TaskNetAppState extends State<TaskNetApp> {
             GoRoute(
               path: '/tasks',
               builder: (context, state) => TaskManagerScreen(
+                category: 'common',
+                onCreateTask: () => context.go('/tasks/new'),
                 onSelectTask: (id) => context.go('/tasks/$id'),
               ),
             ),
@@ -87,6 +89,46 @@ class _TaskNetAppState extends State<TaskNetApp> {
               builder: (context, state) => CreateTaskScreen(
                 onBack: () => context.go('/tasks'),
                 onCreated: () => context.go('/tasks'),
+              ),
+            ),
+            // ── Special Tasks (manage/create) ──
+            GoRoute(
+              path: '/special-tasks',
+              builder: (context, state) => TaskManagerScreen(
+                category: 'special',
+                onCreateTask: () => context.go('/special-tasks/new'),
+                onSelectTask: (id) => context.go('/special-tasks/$id'),
+              ),
+            ),
+            GoRoute(
+              path: '/special-tasks/new',
+              builder: (context, state) => CreateTaskScreen(
+                lockedCategory: 'special',
+                onBack: () => context.go('/special-tasks'),
+                onCreated: () => context.go('/special-tasks'),
+              ),
+            ),
+            GoRoute(
+              path: '/special-tasks/:id',
+              builder: (context, state) => TaskDetailScreen(
+                taskId: int.parse(state.pathParameters['id']!),
+                onBack: () => context.go('/special-tasks'),
+              ),
+            ),
+            // ── My Special Tasks (assignee view/submit) ──
+            GoRoute(
+              path: '/my-special-tasks',
+              builder: (context, state) => MyTasksScreen(
+                category: 'special',
+                onSelectTask: (id) => context.go('/my-special-tasks/$id'),
+              ),
+            ),
+            GoRoute(
+              path: '/my-special-tasks/:id',
+              builder: (context, state) => TaskDetailScreen(
+                taskId: int.parse(state.pathParameters['id']!),
+                onBack: () => context.go('/my-special-tasks'),
+                ownTaskView: true,
               ),
             ),
             GoRoute(
@@ -107,6 +149,7 @@ class _TaskNetAppState extends State<TaskNetApp> {
             GoRoute(
               path: '/my-tasks',
               builder: (context, state) => MyTasksScreen(
+                category: 'common',
                 onSelectTask: (id) => context.go('/my-tasks/$id'),
               ),
             ),

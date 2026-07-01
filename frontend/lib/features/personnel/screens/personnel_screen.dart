@@ -123,7 +123,14 @@ class _PersonnelView extends StatelessWidget {
       builder: (ctx, provider, _) {
         return Container(
           color: _kPageBg,
-          child: SingleChildScrollView(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              if (n.metrics.pixels >= n.metrics.maxScrollExtent - 300) {
+                provider.loadMore();
+              }
+              return false;
+            },
+            child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -245,8 +252,20 @@ class _PersonnelView extends StatelessWidget {
                       ],
                     ],
                   ),
+                if (!provider.loading && provider.hasMore)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Center(
+                      child: provider.loadingMore
+                          ? const CircularProgressIndicator(strokeWidth: 2)
+                          : OutlinedButton(
+                              onPressed: provider.loadMore,
+                              child: const Text('Load more')),
+                    ),
+                  ),
               ],
             ),
+          ),
           ),
         );
       },
@@ -1051,23 +1070,64 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
   bool _saving = false;
   late String _selectedRole;
   int? _deanGradeLevelId;
-  int? _departmentId;
   String? _coordinatorType;
+  bool _alsoTeaching = false;
   final _appointmentCtrl = TextEditingController();
   List<Map<String, dynamic>> _gradeLevels = [];
-  List<Map<String, dynamic>> _departments = [];
   List<String> _subjects = [];
   List<_SubjectRow> _subjectRows = [];
 
   static const _roles = [
     'principal', 'coordinator', 'dean', 'registrar', 'teacher'
   ];
-  static const _coordinatorTypes = [
-    'Academic Coordinator',
-    'Grade Level Coordinator',
-    'SHS Coordinator',
-    'JHS Coordinator',
-    'Subject Coordinator',
+  // Coordinator delegation choices, grouped by category. Each category header is
+  // a non-selectable label; the specific types under it are the pickable values.
+  static const Map<String, List<String>> _coordinatorTypeGroups = {
+    'Subject & Curriculum': [
+      'Filipino Coordinator',
+      'English Coordinator',
+      'Araling Panlipunan (Social Studies) Coordinator',
+      'Science Coordinator',
+      'Mathematics Coordinator',
+      'EPP (Edukasyong Pantahanan at Pangkabuhayan) Coordinator',
+      'MAPEH (Music, Arts, Physical Education, and Health) Coordinator',
+    ],
+    'Program & Special Project': [
+      'SSES Coordinator',
+      'SBFP Coordinator',
+      'Brigada Eskwela Coordinator',
+      'Disaster Risk Reduction and Management (DRRM) Coordinator',
+      'Feeding Program Coordinator',
+      'Gulayan sa Paaralan Coordinator',
+      'School Health Focal Person',
+      'Youth for Environment in Schools Organization (YES-O) Coordinator',
+    ],
+    'Student & Extracurricular': [
+      'Supreme Elementary Learner Government (SELG) Adviser',
+      'Girl Scout Coordinator',
+      'Twinkler Coordinator',
+      'Star Scout Coordinator',
+      'Boy Scout Coordinator',
+      'KAB Scout Coordinator',
+      'Kid Scout Coordinator',
+      'School Paper Adviser',
+    ],
+    'Administrative & Support': [
+      'Property Custodian',
+      'Library Coordinator',
+      'School Testing Coordinator',
+      'ICT (Information and Communications Technology) Coordinator',
+      'LIS (Learner Info System) Coordinator',
+      'School Information Coordinator',
+      'School Assessment Coordinator',
+      'Gender and Development (GAD) Coordinator',
+      'External Partnership Focal Person',
+    ],
+  };
+
+  // Flat list of all selectable types (used for value validation).
+  static final List<String> _coordinatorTypes = [
+    for (final list in _coordinatorTypeGroups.values) ...list,
   ];
 
   @override
@@ -1076,8 +1136,8 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
     _selectedRole = widget.user.role;
     _deanGradeLevelId =
         widget.user.deanGradeLevelId ?? widget.user.gradeLevelId;
-    _departmentId = widget.user.departmentId;
     _coordinatorType = widget.user.coordinatorType;
+    _alsoTeaching = widget.user.alsoTeaching;
     _appointmentCtrl.text = widget.user.dateOfAppointment ?? '';
     _loadMeta();
   }
@@ -1086,7 +1146,6 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
     final results = await Future.wait([
       PersonnelService.gradeLevelsMeta(),
       PersonnelService.subjectsMeta(),
-      PersonnelService.departmentsMeta(),
     ]);
     if (!mounted) return;
     final levels = results[0];
@@ -1094,7 +1153,6 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
         results[1].map((s) => s['subject_name'] as String).toList();
     setState(() {
       _gradeLevels = levels;
-      _departments = results[2];
       _subjects = subjectsList;
       _subjectRows = widget.user.subjects.map((s) {
         final glId = levels.firstWhere(
@@ -1122,10 +1180,12 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
           'date_of_appointment': _appointmentCtrl.text.trim(),
         if (_selectedRole == 'dean' && _deanGradeLevelId != null)
           'dean_grade_level_id': _deanGradeLevelId,
-        if (_selectedRole == 'dean' && _departmentId != null)
-          'department_id': _departmentId,
         if (_selectedRole == 'coordinator' && _coordinatorType != null)
           'coordinator_type': _coordinatorType,
+        if (_selectedRole == 'dean' ||
+            _selectedRole == 'coordinator' ||
+            _selectedRole == 'registrar')
+          'also_teaching': _alsoTeaching,
       });
       final subjects = _subjectRows
           .where((r) => r.subject != null && r.subject!.isNotEmpty)
@@ -1217,42 +1277,69 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
                           setState(() => _deanGradeLevelId = v),
                     ),
                   ],
-                  if (_selectedRole == 'dean' && _departments.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int>(
-                      initialValue: _departments.any((d) => d['id'] == _departmentId)
-                          ? _departmentId
-                          : null,
-                      decoration: _deco('Department'),
-                      hint: const Text('Select department'),
-                      items: _departments
-                          .map((d) => DropdownMenuItem(
-                                value: d['id'] as int,
-                                child: Text(d['department_name'].toString(),
-                                    style: const TextStyle(fontSize: 14)),
-                              ))
-                          .toList(),
-                      onChanged: (v) => setState(() => _departmentId = v),
-                    ),
-                  ],
                   if (_selectedRole == 'coordinator') ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue:
                           _coordinatorTypes.contains(_coordinatorType)
                               ? _coordinatorType
                               : null,
                       decoration: _deco('Coordinator Type'),
                       hint: const Text('Select type'),
-                      items: _coordinatorTypes
-                          .map((t) => DropdownMenuItem(
-                              value: t,
-                              child: Text(t,
-                                  style: const TextStyle(
-                                      fontSize: 14))))
-                          .toList(),
+                      items: [
+                        for (final entry in _coordinatorTypeGroups.entries) ...[
+                          DropdownMenuItem<String>(
+                            enabled: false,
+                            value: null,
+                            child: Text(entry.key.toUpperCase(),
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF94A3B8),
+                                    letterSpacing: 0.5)),
+                          ),
+                          ...entry.value.map((t) => DropdownMenuItem<String>(
+                                value: t,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 10),
+                                  child: Text(t,
+                                      style: const TextStyle(fontSize: 14)),
+                                ),
+                              )),
+                        ],
+                      ],
                       onChanged: (v) =>
                           setState(() => _coordinatorType = v),
+                    ),
+                  ],
+                  if (_selectedRole == 'dean' ||
+                      _selectedRole == 'coordinator' ||
+                      _selectedRole == 'registrar') ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(14, 2, 6, 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(children: [
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('Also teaching personnel',
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                            Text('Adds a Teacher identity to this account, selectable at login.',
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                          ],
+                        )),
+                        Switch(
+                          value: _alsoTeaching,
+                          onChanged: (v) => setState(() => _alsoTeaching = v),
+                        ),
+                      ]),
                     ),
                   ],
                   const SizedBox(height: 24),

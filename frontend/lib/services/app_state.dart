@@ -57,17 +57,28 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> login(String username, String password) async {
+  /// Returns the list of available roles when the account holds more than one
+  /// and no role was chosen yet (caller must prompt, then call again with
+  /// [role]). Returns null once the user is fully logged in.
+  Future<List<String>?> login(String username, String password, {String? role}) async {
     isLoading = true;
     error = null;
     sessionExpired = false;
     notifyListeners();
     try {
-      final data = await ApiService.login(username, password);
+      final data = await ApiService.login(username, password, role: role);
+      if (data['needs_role_selection'] == true) {
+        isLoading = false;
+        notifyListeners();
+        return (data['available_roles'] as List? ?? [])
+            .map((e) => e.toString())
+            .toList();
+      }
       currentUser = User.fromJson(data['user']);
       isLoading = false;
       notifyListeners();
       await _scheduleExpiryAutosave();
+      return null;
     } catch (e) {
       error = e.toString();
       isLoading = false;

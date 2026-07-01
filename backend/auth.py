@@ -52,6 +52,7 @@ ASSIGNABLE_TO: dict[str, set[str]] = {
     "admin":       {"principal", "coordinator", "dean", "teacher", "registrar"},
     "principal":   {"coordinator", "dean", "teacher", "registrar"},
     "coordinator": {"coordinator", "dean", "teacher"},
+    "registrar":   {"dean", "teacher"},
     "dean":        {"teacher"},
 }
 
@@ -130,8 +131,18 @@ def require_personnel_manager(user=Depends(get_current_user)):
 
 
 def require_appraisal_access(user=Depends(get_current_user)):
+    """Full appraisal access — can evaluate. Excludes teachers."""
     if user["role"] not in ("principal", "coordinator", "dean", "admin"):
         raise HTTPException(403, "Appraisal access requires Principal, Coordinator, Dean, or Admin role")
+    return user
+
+
+def require_appraisal_view(user=Depends(get_current_user)):
+    """Read access to appraisal data. Teachers may view their OWN records; deans
+    see their grade-level teachers + own; the rest see all. Row scoping is applied
+    per-endpoint via _visible_personnel_ids."""
+    if user["role"] not in ("principal", "coordinator", "dean", "admin", "teacher"):
+        raise HTTPException(403, "Appraisal view requires a staff account")
     return user
 
 

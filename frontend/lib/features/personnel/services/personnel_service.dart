@@ -28,6 +28,22 @@ class PersonnelService {
     throw Exception('Failed to load personnel');
   }
 
+  /// One page of personnel (infinite scroll).
+  static Future<PageResult<User>> listPage(
+      {String search = '', int limit = 30, int offset = 0}) async {
+    final q = Uri.encodeQueryComponent(search);
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel?search=$q&limit=$limit&offset=$offset'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return PageResult.fromJson(
+          jsonDecode(res.body) as Map<String, dynamic>,
+          (m) => User.fromJson(m));
+    }
+    throw Exception('Failed to load personnel');
+  }
+
   static Future<User> create(Map<String, dynamic> data) async {
     final res = await http.post(
       Uri.parse('$_base/api/personnel'),

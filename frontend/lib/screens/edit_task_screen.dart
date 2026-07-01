@@ -124,6 +124,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     final t = await showTimePicker(
       context: context,
       initialTime: _dueTime ?? TimeOfDay.now(),
+      initialEntryMode: TimePickerEntryMode.input,
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: AppTheme.accentBlue)),
         child: child!,

@@ -27,31 +27,40 @@ def _user_row(row, db):
     ).fetchone()
     d["coordinator_type"] = ct["coordinator_type"] if ct else None
     da = db.execute(
-        """SELECT da.grade_level_id, gl.grade_level, da.department_id, dep.department_name
+        """SELECT da.grade_level_id, gl.grade_level
            FROM dean_assignment da
            LEFT JOIN grade_levels gl ON gl.id = da.grade_level_id
-           LEFT JOIN departments dep ON dep.id = da.department_id
            WHERE da.user_id=?""", (d["id"],)
     ).fetchone()
     d["dean_grade_level_id"] = da["grade_level_id"] if da else None
     d["dean_grade_level"] = da["grade_level"] if da else None
-    d["department_id"] = da["department_id"] if da else None
-    d["department"] = da["department_name"] if da else None
+    roles = {r["roles"] for r in db.execute(
+        """SELECT rr.roles FROM user_roles ur JOIN roles rr ON rr.id = ur.role_id
+           WHERE ur.user_id=?""", (d["id"],)
+    ).fetchall()}
+    d["roles"] = sorted(roles)
+    d["also_teaching"] = ("teacher" in roles) and d.get("role") != "teacher"
     return d
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/api/personnel")
-def list_personnel(search: str = "", db=Depends(get_db), user=Depends(get_current_user)):
+def list_personnel(search: str = "", limit: int = 0, offset: int = 0,
+                   db=Depends(get_db), user=Depends(get_current_user)):
     q = f"%{search}%"
-    rows = db.execute(
-        """SELECT u.* FROM users u
-           WHERE u.role != 'admin'
-             AND (u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ?)
-           ORDER BY u.role, u.full_name""",
-        (q, q, q)
-    ).fetchall()
+    where = ("FROM users u WHERE u.role != 'admin' "
+             "AND (u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ?)")
+    params = [q, q, q]
+    order = " ORDER BY u.role, u.full_name"
+    if limit and limit > 0:
+        total = db.execute(f"SELECT COUNT(*) {where}", params).fetchone()[0]
+        rows = db.execute(f"SELECT u.* {where}{order} LIMIT ? OFFSET ?",
+                          params + [limit, offset]).fetchall()
+        items = [_user_row(r, db) for r in rows]
+        return {"items": items, "total": total, "limit": limit, "offset": offset,
+                "has_more": offset + len(items) < total}
+    rows = db.execute(f"SELECT u.* {where}{order}", params).fetchall()
     return [_user_row(r, db) for r in rows]
 
 
@@ -161,7 +170,7 @@ class PersonnelUpdateBody(BaseModel):
     password: Optional[str] = None
     coordinator_type: Optional[str] = None
     dean_grade_level_id: Optional[int] = None
-    department_id: Optional[int] = None
+    also_teaching: Optional[bool] = None  # admin role who is also teaching staff
 
 
 @router.put("/api/personnel/{uid}")
@@ -212,22 +221,30 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, db=Depends(get_db),
         )
         db.commit()
 
-    if body.dean_grade_level_id is not None or body.department_id is not None:
-        existing = db.execute(
-            "SELECT grade_level_id, department_id FROM dean_assignment WHERE user_id=?", (uid,)
-        ).fetchone()
-        grade_level_id = body.dean_grade_level_id if body.dean_grade_level_id is not None \
-            else (existing["grade_level_id"] if existing else None)
-        department_id = body.department_id if body.department_id is not None \
-            else (existing["department_id"] if existing else None)
-        if grade_level_id is None:
-            raise HTTPException(400, "A grade level must be set before assigning a department")
+    if body.dean_grade_level_id is not None:
         db.execute(
-            """INSERT INTO dean_assignment (user_id, grade_level_id, department_id) VALUES (?,?,?)
-               ON CONFLICT(user_id) DO UPDATE SET grade_level_id=excluded.grade_level_id,
-                                                   department_id=excluded.department_id""",
-            (uid, grade_level_id, department_id)
+            """INSERT INTO dean_assignment (user_id, grade_level_id) VALUES (?,?)
+               ON CONFLICT(user_id) DO UPDATE SET grade_level_id=excluded.grade_level_id""",
+            (uid, body.dean_grade_level_id)
         )
+        db.commit()
+
+    # Keep user_roles in sync. The primary role is always present; an admin role
+    # (dean/coordinator/registrar) can additionally hold the teacher identity.
+    primary_role = body.role if body.role is not None else row["role"]
+    if primary_role:
+        db.execute(
+            """INSERT OR IGNORE INTO user_roles (user_id, role_id)
+               SELECT ?, id FROM roles WHERE roles=?""", (uid, primary_role))
+        if body.also_teaching is not None and primary_role != "teacher":
+            if body.also_teaching:
+                db.execute(
+                    """INSERT OR IGNORE INTO user_roles (user_id, role_id)
+                       SELECT ?, id FROM roles WHERE roles='teacher'""", (uid,))
+            else:
+                db.execute(
+                    """DELETE FROM user_roles WHERE user_id=?
+                       AND role_id=(SELECT id FROM roles WHERE roles='teacher')""", (uid,))
         db.commit()
 
     return _user_row(db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone(), db)

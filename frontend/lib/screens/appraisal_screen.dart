@@ -43,7 +43,9 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   void initState() {
     super.initState();
     final role = context.read<AppState>().userRole;
-    if (role == 'dean') {
+    if (role == 'dean' || role == 'teacher') {
+      // Teachers see their own records only; deans see their grade level. Neither
+      // gets the school-wide Analytics tab.
       _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events];
     } else {
       _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];

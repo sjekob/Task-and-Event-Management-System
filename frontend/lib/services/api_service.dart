@@ -85,15 +85,22 @@ class ApiService {
   }
 
   // ── Auth ──
-  static Future<Map<String, dynamic>> login(String username, String password) async {
+  static Future<Map<String, dynamic>> login(String username, String password,
+      {String? role}) async {
     final res = await _client.post(
       Uri.parse('$baseUrl/api/auth/login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
+      body: jsonEncode({
+        'username': username,
+        'password': password,
+        if (role != null) 'role': role,
+      }),
     ).timeout(const Duration(seconds: 10),
         onTimeout: () => throw Exception('Cannot reach server. Check your network.'));
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
+      // Multi-role account: credentials OK but the caller must pick an identity.
+      if (data['needs_role_selection'] == true) return data;
       await saveToken(data['token']);
       return data;
     }
@@ -121,6 +128,36 @@ class ApiService {
       return data.map((t) => Task.fromJson(t)).toList();
     }
     throw Exception('Failed to load tasks');
+  }
+
+  // ── Paginated task lists (infinite scroll) ──────────────────────────────────
+  static Future<PageResult<Task>> getTasksPage({
+    String search = '', String scope = 'mine', String? category,
+    int limit = 30, int offset = 0}) async {
+    final params = <String>['limit=$limit', 'offset=$offset'];
+    if (search.isNotEmpty) params.add('search=${Uri.encodeComponent(search)}');
+    if (scope != 'mine') params.add('scope=$scope');
+    if (category != null) params.add('category=$category');
+    final res = await _client.get(
+        Uri.parse('$baseUrl/api/tasks?${params.join('&')}'), headers: await _headers);
+    if (res.statusCode == 200) {
+      return PageResult.fromJson(
+          jsonDecode(res.body) as Map<String, dynamic>, (m) => Task.fromJson(m));
+    }
+    throw Exception('Failed to load tasks');
+  }
+
+  static Future<PageResult<Task>> getAssignedTasksPage({
+    String? category, int limit = 30, int offset = 0}) async {
+    final params = <String>['assigned=1', 'limit=$limit', 'offset=$offset'];
+    if (category != null) params.add('category=$category');
+    final res = await _client.get(
+        Uri.parse('$baseUrl/api/tasks?${params.join('&')}'), headers: await _headers);
+    if (res.statusCode == 200) {
+      return PageResult.fromJson(
+          jsonDecode(res.body) as Map<String, dynamic>, (m) => Task.fromJson(m));
+    }
+    throw Exception('Failed to load assigned tasks');
   }
 
   static Future<List<Task>> getAssignedTasks() async {
@@ -214,9 +251,10 @@ class ApiService {
     if (res.statusCode != 200) throw Exception('Failed to unassign user');
   }
 
-  static Future<List<User>> getAssignableUsers() async {
+  static Future<List<User>> getAssignableUsers({String? targetRole}) async {
+    final qs = targetRole != null ? '?target_role=$targetRole' : '';
     final res = await _client.get(
-      Uri.parse('$baseUrl/api/users/assignable'),
+      Uri.parse('$baseUrl/api/users/assignable$qs'),
       headers: await _headers,
     );
     if (res.statusCode == 200) {

@@ -15,7 +15,9 @@ class CreateTaskScreen extends StatefulWidget {
   final VoidCallback? onBack;
   final VoidCallback? onCreated;
   final bool isTemplate;
-  const CreateTaskScreen({super.key, this.onBack, this.onCreated, this.isTemplate = false});
+  final String? lockedCategory; // when set ('special'/'common'), force it and hide the toggle
+  const CreateTaskScreen({super.key, this.onBack, this.onCreated,
+      this.isTemplate = false, this.lockedCategory});
 
   @override
   State<CreateTaskScreen> createState() => _CreateTaskScreenState();
@@ -32,14 +34,29 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   List<User> _allAssignable = [];
   final Set<int> _selectedIds = {};
+  String _taskCategory = 'common'; // 'common' | 'special'
+  String? _targetRole; // which identity the assignees receive the task as
   bool _loadingUsers = true;
   bool _submitting = false;
+
+  // Which target identities the current creator may assign to.
+  List<String> _targetRoleOptions(String creatorRole) {
+    switch (creatorRole) {
+      case 'admin':
+      case 'principal':  return ['teacher', 'dean', 'coordinator', 'registrar'];
+      case 'coordinator': return ['teacher', 'dean'];
+      case 'registrar':   return ['teacher', 'dean'];
+      case 'dean':        return ['teacher'];
+      default:            return ['teacher'];
+    }
+  }
 
   final List<Map<String, String>> _attachments = [];
 
   @override
   void initState() {
     super.initState();
+    if (widget.lockedCategory != null) _taskCategory = widget.lockedCategory!;
     _loadUsers();
   }
 
@@ -52,8 +69,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Future<void> _loadUsers() async {
+    final creatorRole = context.read<AppState>().userRole;
+    final opts = _targetRoleOptions(creatorRole);
+    _targetRole ??= opts.isNotEmpty ? opts.first : null;
     try {
-      final users = await ApiService.getAssignableUsers();
+      final users = await ApiService.getAssignableUsers(targetRole: _targetRole);
       if (mounted) setState(() { _allAssignable = users; _loadingUsers = false; });
     } catch (_) {
       try {
@@ -97,6 +117,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     final t = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
+      initialEntryMode: TimePickerEntryMode.input,
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: AppTheme.accentBlue)),
         child: child!,
@@ -177,6 +198,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       } else {
         await ApiService.createTask({
           'title': title,
+          'task_category': _taskCategory,
+          if (_targetRole != null) 'target_role': _targetRole,
           if (_subjectCtrl.text.trim().isNotEmpty) 'subject': _subjectCtrl.text.trim(),
           if (_instrCtrl.text.trim().isNotEmpty) 'instructions': _instrCtrl.text.trim(),
           if (_startDate != null) 'start_date': _fmtApi(_startDate!),
@@ -270,7 +293,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           // ── Page Title row ──
           Row(
             children: [
-              Text(widget.isTemplate ? 'Create Template' : 'Create Task',
+              Text(widget.isTemplate
+                      ? 'Create Template'
+                      : widget.lockedCategory == 'special'
+                          ? 'Create Special Task'
+                          : 'Create Task',
                   style: GoogleFonts.plusJakartaSans(
                       fontSize: 24, fontWeight: FontWeight.w700,
                       color: AppTheme.textPrimary)),
@@ -299,6 +326,30 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           const SizedBox(height: 6),
           _input(_titleCtrl, widget.isTemplate ? 'Template Name' : 'Task Name'),
           const SizedBox(height: 16),
+
+          // ── Task Type (common vs special — appraisal uses this tag).
+          // Hidden when the category is fixed by the route (e.g. Special Tasks). ──
+          if (!widget.isTemplate && widget.lockedCategory == null) ...[
+            _FieldLabel('Task Type'),
+            const SizedBox(height: 6),
+            _categoryField(),
+            const SizedBox(height: 16),
+          ],
+
+          // ── Assign As (target identity) — only when the creator can target
+          // more than one role. Switching reloads the assignable people. ──
+          if (!widget.isTemplate) ...[
+            Builder(builder: (ctx) {
+              final opts = _targetRoleOptions(ctx.read<AppState>().userRole);
+              if (opts.length < 2) return const SizedBox.shrink();
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _FieldLabel('Assign As'),
+                const SizedBox(height: 6),
+                _targetRoleField(opts),
+                const SizedBox(height: 16),
+              ]);
+            }),
+          ],
 
           // ── Assign to | Start Date | End Date | Time ──
           IntrinsicHeight(
@@ -474,7 +525,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
               const SizedBox(width: 8),
               _AttIcon(Icons.play_circle_outline, const Color(0xFFFF0000), () => _openAttachmentInput('youtube')),
               const Spacer(),
-              // ── Cancel with gradient ──
+              // ── Cancel (secondary / subtle so it contrasts with Submit) ──
               GestureDetector(
                 onTap: () {
                   if (widget.onBack != null) widget.onBack!();
@@ -483,18 +534,15 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6B7280), Color(0xFF374151)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text('Cancel',
                       style: GoogleFonts.plusJakartaSans(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
-                          color: Colors.white)),
+                          color: const Color(0xFF374151))),
                 ),
               ),
               const SizedBox(width: 10),
@@ -506,7 +554,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                     gradient: _submitting
                         ? null
                         : const LinearGradient(
-                            colors: [Color(0xFF6B7280), Color(0xFF374151)],
+                            colors: [Color(0xFF334155), Color(0xFF0F172A)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
@@ -598,6 +646,80 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ),
         ),
       );
+
+  // Common vs Special task tag. Two-option toggle so the choice is obvious.
+  Widget _categoryField() {
+    Widget opt(String value, String label, IconData icon) {
+      final selected = _taskCategory == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _taskCategory = value),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: selected ? AppTheme.darkBanner : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: selected ? AppTheme.darkBanner : AppTheme.borderColor),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon, size: 16,
+                  color: selected ? Colors.white : AppTheme.textMuted),
+              const SizedBox(width: 8),
+              Text(label,
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13, fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : AppTheme.textMuted)),
+            ]),
+          ),
+        ),
+      );
+    }
+
+    return Row(children: [
+      opt('common', 'Common Task', Icons.assignment_outlined),
+      const SizedBox(width: 10),
+      opt('special', 'Special Task', Icons.star_outline),
+    ]);
+  }
+
+  String _roleLabel(String r) {
+    switch (r) {
+      case 'teacher': return 'Teacher';
+      case 'dean': return 'Dean';
+      case 'coordinator': return 'Coordinator';
+      case 'registrar': return 'Registrar';
+      default: return r;
+    }
+  }
+
+  void _setTargetRole(String r) {
+    if (_targetRole == r) return;
+    setState(() { _targetRole = r; _selectedIds.clear(); _loadingUsers = true; });
+    _loadUsers();
+  }
+
+  Widget _targetRoleField(List<String> opts) {
+    return Wrap(spacing: 8, runSpacing: 8, children: opts.map((r) {
+      final selected = _targetRole == r;
+      return GestureDetector(
+        onTap: () => _setTargetRole(r),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.darkBanner : Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+                color: selected ? AppTheme.darkBanner : AppTheme.borderColor),
+          ),
+          child: Text(_roleLabel(r),
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, fontWeight: FontWeight.w600,
+                  color: selected ? Colors.white : AppTheme.textMuted)),
+        ),
+      );
+    }).toList());
+  }
 }
 
 // ── Small helpers ──────────────────────────────────────────────────────────────

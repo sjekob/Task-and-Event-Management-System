@@ -32,12 +32,79 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _error = null);
     final state = context.read<AppState>();
     try {
-      await state.login(_userCtrl.text.trim(), _passCtrl.text);
+      final roles = await state.login(_userCtrl.text.trim(), _passCtrl.text);
+      // Single-role accounts log in directly (roles == null). Multi-role accounts
+      // return their available roles — prompt for which identity to log in as.
+      if (roles != null && roles.isNotEmpty) {
+        if (!mounted) return;
+        final chosen = await _pickRole(roles);
+        if (chosen == null) return; // cancelled
+        await state.login(_userCtrl.text.trim(), _passCtrl.text, role: chosen);
+      }
       // GoRouter's refreshListenable redirects to /dashboard automatically
     } catch (e) {
       final msg = e.toString().replaceFirst('Exception: ', '');
       setState(() => _error = msg);
     }
+  }
+
+  String _roleLabel(String r) {
+    switch (r) {
+      case 'admin': return 'Administrator';
+      case 'principal': return 'Principal';
+      case 'coordinator': return 'Coordinator';
+      case 'dean': return 'Dean';
+      case 'teacher': return 'Teacher';
+      case 'registrar': return 'Registrar';
+      default: return r;
+    }
+  }
+
+  Future<String?> _pickRole(List<String> roles) {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: 320,
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Log in as',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            const SizedBox(height: 4),
+            const Text('This account has more than one role. Choose which to use.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+            const SizedBox(height: 16),
+            ...roles.map((r) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: InkWell(
+                onTap: () => Navigator.pop(ctx, r),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.badge_outlined, size: 18, color: Color(0xFF1A1A2E)),
+                    const SizedBox(width: 12),
+                    Text(_roleLabel(r),
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A2E))),
+                    const Spacer(),
+                    const Icon(Icons.chevron_right, size: 18, color: Color(0xFF94A3B8)),
+                  ]),
+                ),
+              ),
+            )),
+          ]),
+        ),
+      ),
+    );
   }
 
   @override

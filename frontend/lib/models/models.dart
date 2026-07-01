@@ -1,3 +1,29 @@
+/// One page of a paginated list endpoint ({items, total, offset, has_more}).
+class PageResult<T> {
+  final List<T> items;
+  final int total;
+  final int offset;
+  final bool hasMore;
+  const PageResult({
+    required this.items,
+    required this.total,
+    required this.offset,
+    required this.hasMore,
+  });
+
+  factory PageResult.fromJson(
+      Map<String, dynamic> json, T Function(Map<String, dynamic>) parse) {
+    return PageResult<T>(
+      items: (json['items'] as List? ?? [])
+          .map((e) => parse(e as Map<String, dynamic>))
+          .toList(),
+      total: json['total'] ?? 0,
+      offset: json['offset'] ?? 0,
+      hasMore: json['has_more'] == true,
+    );
+  }
+}
+
 class UserSubject {
   final String subject;
   final String? gradeLevel;
@@ -34,6 +60,7 @@ class User {
   final bool isActive;
   final List<UserSubject> subjects;
   final String? coordinatorType;
+  final bool alsoTeaching;
   final int? deanGradeLevelId;
   final String? deanGradeLevel;
   final int? departmentId;
@@ -63,6 +90,7 @@ class User {
     this.isActive = true,
     this.subjects = const [],
     this.coordinatorType,
+    this.alsoTeaching = false,
     this.deanGradeLevelId,
     this.deanGradeLevel,
     this.departmentId,
@@ -100,6 +128,7 @@ class User {
       isActive: (json['is_active'] ?? 1) == 1,
       subjects: subjects,
       coordinatorType: json['coordinator_type']?.toString(),
+      alsoTeaching: json['also_teaching'] == true,
       deanGradeLevelId: json['dean_grade_level_id'] as int?,
       deanGradeLevel: json['dean_grade_level']?.toString(),
       departmentId: json['department_id'] as int?,
@@ -276,6 +305,7 @@ class Task {
   final String? dueTime;
   final String? instructions;
   final String status;
+  final String taskCategory; // 'common' | 'special'
   final int submissionCount;
   final List<User> assignedUsers;
   final List<Comment> publicComments;
@@ -299,6 +329,7 @@ class Task {
     this.dueTime,
     this.instructions,
     required this.status,
+    this.taskCategory = 'common',
     required this.submissionCount,
     required this.assignedUsers,
     required this.publicComments,
@@ -359,6 +390,7 @@ class Task {
       dueTime: json['due_time']?.toString(),
       instructions: json['instructions']?.toString(),
       status: (json['status'] ?? 'active').toString(),
+      taskCategory: (json['task_category'] ?? 'common').toString(),
       submissionCount: json['submission_count'] ?? 0,
       assignedUsers: assignedUsers,
       publicComments: publicComments,

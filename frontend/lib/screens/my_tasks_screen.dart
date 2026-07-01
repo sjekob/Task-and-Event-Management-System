@@ -9,31 +9,74 @@ import 'task_detail_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
   final ValueChanged<int>? onSelectTask;
-  const MyTasksScreen({super.key, this.onSelectTask});
+  final String category; // 'common' | 'special'
+  const MyTasksScreen({super.key, this.onSelectTask, this.category = 'common'});
 
   @override
   State<MyTasksScreen> createState() => _MyTasksScreenState();
 }
 
 class _MyTasksScreenState extends State<MyTasksScreen> {
+  static const _pageSize = 30;
+  final _scrollCtrl = ScrollController();
   List<Task> _tasks = [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  int _offset = 0;
   String _search = '';
   String _statusFilter = 'all'; // 'all' | 'pending' | 'submitted'
 
   @override
   void initState() {
     super.initState();
+    _scrollCtrl.addListener(_onScroll);
     _load();
   }
 
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollCtrl.position.pixels >=
+        _scrollCtrl.position.maxScrollExtent - 300) {
+      _loadMore();
+    }
+  }
+
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() { _loading = true; _offset = 0; _hasMore = true; });
     try {
-      final tasks = await ApiService.getAssignedTasks();
-      if (mounted) setState(() { _tasks = tasks; _loading = false; });
+      final page = await ApiService.getAssignedTasksPage(
+          category: widget.category, limit: _pageSize, offset: 0);
+      if (mounted) setState(() {
+        _tasks = page.items;
+        _offset = _tasks.length;
+        _hasMore = page.hasMore;
+        _loading = false;
+      });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _loading || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ApiService.getAssignedTasksPage(
+          category: widget.category, limit: _pageSize, offset: _offset);
+      if (mounted) setState(() {
+        _tasks = [..._tasks, ...page.items];
+        _offset = _tasks.length;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -55,15 +98,18 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: SingleChildScrollView(
+        controller: _scrollCtrl,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(isMobile ? 14 : 24, 8, isMobile ? 14 : 24, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Banner ──
-            const AppBanner(
-              title: 'My Tasks',
-              subtitle: 'Track your assigned tasks and submit reports on time.',
+            AppBanner(
+              title: widget.category == 'special' ? 'My Special Tasks' : 'My Tasks',
+              subtitle: widget.category == 'special'
+                  ? 'Track special tasks assigned to you and submit reports on time.'
+                  : 'Track your assigned tasks and submit reports on time.',
             ),
             const SizedBox(height: 20),
 
@@ -143,6 +189,20 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                       }
                     },
                   )),
+
+            // ── Load more (infinite scroll footer) ──
+            if (!_loading && _hasMore && _search.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 16),
+                child: Center(
+                  child: _loadingMore
+                      ? const SizedBox(width: 22, height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : OutlinedButton(
+                          onPressed: _loadMore,
+                          child: const Text('Load more')),
+                ),
+              ),
           ],
         ),
       ),

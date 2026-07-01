@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/common_widgets.dart';
 
-enum NavPage { dashboard, taskManager, myTasks, activity, personnelManagement, appraisal, eventManagement }
+enum NavPage { dashboard, taskManager, myTasks, specialTasks, mySpecialTasks, activity, personnelManagement, appraisal, eventManagement }
 
 // ── Shared dark sidebar palette ───────────────────────────────────────────────
 const Color _kSidebarBg       = Color(0xFF1A1A2E);
@@ -87,7 +87,8 @@ class _AppSidebarState extends State<AppSidebar> {
       widget.userRole == 'admin';
   bool get _hasAppraisalAccess =>
       widget.userRole == 'principal' || widget.userRole == 'coordinator' ||
-      widget.userRole == 'dean' || widget.userRole == 'admin';
+      widget.userRole == 'dean' || widget.userRole == 'admin' ||
+      widget.userRole == 'teacher';
 
   String get _roleLabel => _roleLabelFor(widget.userRole);
 
@@ -127,6 +128,14 @@ class _AppSidebarState extends State<AppSidebar> {
                       collapsed: _collapsed,
                       onTap: () => widget.onNavigate(NavPage.myTasks),
                     ),
+                  if (_canReassign || _isLeaf)
+                    _NavItem(
+                      icon: Icons.star_outline,
+                      label: 'My Special Tasks',
+                      isActive: widget.currentPage == NavPage.mySpecialTasks,
+                      collapsed: _collapsed,
+                      onTap: () => widget.onNavigate(NavPage.mySpecialTasks),
+                    ),
                   _NavItem(
                     icon: Icons.calendar_today_outlined,
                     label: 'Activity',
@@ -142,6 +151,14 @@ class _AppSidebarState extends State<AppSidebar> {
                       isActive: widget.currentPage == NavPage.taskManager,
                       collapsed: _collapsed,
                       onTap: () => widget.onNavigate(NavPage.taskManager),
+                    ),
+                  if (_isTopManager || _canReassign)
+                    _NavItem(
+                      icon: Icons.star_border_purple500_outlined,
+                      label: 'Special Tasks',
+                      isActive: widget.currentPage == NavPage.specialTasks,
+                      collapsed: _collapsed,
+                      onTap: () => widget.onNavigate(NavPage.specialTasks),
                     ),
                   if (_canManagePersonnel)
                     _NavItem(
@@ -474,7 +491,7 @@ class MobileNavDrawer extends StatelessWidget {
       userRole == 'principal' || userRole == 'registrar' || userRole == 'admin';
   bool get _hasAppraisalAccess =>
       userRole == 'principal' || userRole == 'coordinator' ||
-      userRole == 'dean' || userRole == 'admin';
+      userRole == 'dean' || userRole == 'admin' || userRole == 'teacher';
 
   void _navigate(BuildContext context, NavPage page) {
     Navigator.of(context).pop();
@@ -538,6 +555,13 @@ class MobileNavDrawer extends StatelessWidget {
                         isActive: currentPage == NavPage.myTasks,
                         onTap: () => _navigate(context, NavPage.myTasks),
                       ),
+                    if (_canReassign || _isLeaf)
+                      _NavItem(
+                        icon: Icons.star_outline,
+                        label: 'My Special Tasks',
+                        isActive: currentPage == NavPage.mySpecialTasks,
+                        onTap: () => _navigate(context, NavPage.mySpecialTasks),
+                      ),
                     _NavItem(
                       icon: Icons.calendar_today_outlined,
                       label: 'Activity',
@@ -551,6 +575,13 @@ class MobileNavDrawer extends StatelessWidget {
                         label: 'Task Manager',
                         isActive: currentPage == NavPage.taskManager,
                         onTap: () => _navigate(context, NavPage.taskManager),
+                      ),
+                    if (_isTopManager || _canReassign)
+                      _NavItem(
+                        icon: Icons.star_border_purple500_outlined,
+                        label: 'Special Tasks',
+                        isActive: currentPage == NavPage.specialTasks,
+                        onTap: () => _navigate(context, NavPage.specialTasks),
                       ),
                     if (_canManagePersonnel)
                       _NavItem(

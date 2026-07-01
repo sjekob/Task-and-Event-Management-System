@@ -70,16 +70,20 @@ def _task_row(row, db, current_user_id: int, current_role: str):
 
 @router.get("/api/tasks")
 def list_tasks(user=Depends(get_current_user), search: str = "",
-               assigned: int = 0, scope: str = "mine"):
+               assigned: int = 0, scope: str = "mine", category: str = "",
+               limit: int = 0, offset: int = 0):
     db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
     if assigned:
+        # Only tasks targeted at the identity (role) the user is logged in as —
+        # plus legacy untargeted assignments (target_role IS NULL).
         q = """SELECT DISTINCT t.* FROM tasks t
                JOIN task_assignments ta ON ta.task_id=t.id
-               WHERE ta.user_id=? AND t.status='active'"""
-        params = [uid]
+               WHERE ta.user_id=? AND t.status='active'
+                 AND (ta.target_role=? OR ta.target_role IS NULL)"""
+        params = [uid, role]
     elif role == "admin":
         q = "SELECT * FROM tasks WHERE 1=1"
         params = []
@@ -102,14 +106,27 @@ def list_tasks(user=Depends(get_current_user), search: str = "",
                WHERE ta.user_id=? AND t.status='active'"""
         params = [uid]
 
+    # Column prefix differs between the joined queries (alias t) and the plain ones.
+    pref = "t." if "task_assignments" in q else ""
     if search:
-        if "JOIN task_assignments" in q or "LEFT JOIN task_assignments" in q:
-            q += " AND t.title LIKE ?"
-        else:
-            q += " AND title LIKE ?"
+        q += f" AND {pref}title LIKE ?"
         params.append(f"%{search}%")
+    if category:
+        q += f" AND {pref}task_category=?"
+        params.append(category)
 
-    rows = db.execute(q, params).fetchall()
+    order = f" ORDER BY {pref}id DESC"
+    if limit and limit > 0:
+        # Paginated: return an envelope with the page + total so the client can
+        # decide whether to keep scrolling, instead of dumping every row.
+        total = db.execute(f"SELECT COUNT(*) FROM ({q})", params).fetchone()[0]
+        rows = db.execute(f"{q}{order} LIMIT ? OFFSET ?", params + [limit, offset]).fetchall()
+        items = [_task_row(row, db, uid, role) for row in rows]
+        db.close()
+        return {"items": items, "total": total, "limit": limit, "offset": offset,
+                "has_more": offset + len(items) < total}
+
+    rows = db.execute(f"{q}{order}", params).fetchall()
     result = [_task_row(row, db, uid, role) for row in rows]
     db.close()
     return result
@@ -196,12 +213,14 @@ def get_task(task_id: int, user=Depends(get_current_user)):
 class CreateTaskRequest(BaseModel):
     title: str
     subject: Optional[str] = None
+    task_category: Optional[str] = 'common'  # 'common' | 'special'
     task_type_id: Optional[int] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     due_time: Optional[str] = None
     instructions: Optional[str] = None
     assigned_user_ids: Optional[List[int]] = []
+    target_role: Optional[str] = None  # which identity the assignees receive this as
     points_early: Optional[int] = 100
     points_ontime: Optional[int] = 100
     points_late24: Optional[int] = 50
@@ -215,38 +234,63 @@ def create_task(req: CreateTaskRequest, user=Depends(require_task_creator)):
     uid = int(user["sub"])
     role = user["role"]
 
+    category = req.task_category if req.task_category in ('common', 'special') else 'common'
     db.execute(
         """INSERT INTO tasks
-           (title, subject, task_type_id, start_date, end_date, due_time, instructions,
-            created_by, points_early, points_ontime, points_late24, points_after24)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (req.title, req.subject, req.task_type_id, req.start_date, req.end_date,
+           (title, subject, task_category, task_type_id, start_date, end_date, due_time,
+            instructions, created_by, points_early, points_ontime, points_late24, points_after24)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (req.title, req.subject, category, req.task_type_id, req.start_date, req.end_date,
          req.due_time, req.instructions, uid,
          req.points_early, req.points_ontime, req.points_late24, req.points_after24)
     )
     task_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
+    # Which identity these assignees receive the task as. If given it must be one
+    # the creator may assign to; otherwise we fall back per-assignee to their role.
+    target_role = req.target_role
+    if target_role and not can_assign(role, target_role):
+        target_role = None
+
     for assign_uid in (req.assigned_user_ids or []):
-        assignee = db.execute("SELECT role FROM users WHERE id=?", (assign_uid,)).fetchone()
-        if not assignee:
+        # The assignee must actually hold the target identity (or, with no target,
+        # we use their primary role for the hierarchy check).
+        roles_held = {r["roles"] for r in db.execute(
+            """SELECT rr.roles FROM user_roles ur JOIN roles rr ON rr.id = ur.role_id
+               WHERE ur.user_id=?""", (assign_uid,)
+        ).fetchall()}
+        if not roles_held:
+            primary = db.execute("SELECT role FROM users WHERE id=?", (assign_uid,)).fetchone()
+            if primary:
+                roles_held = {primary["role"]}
+        if not roles_held:
             continue
-        if can_assign(role, assignee["role"]):
+
+        if target_role:
+            if target_role not in roles_held:
+                continue
+            row_target = target_role
+        else:
+            row_target = next((r for r in roles_held if can_assign(role, r)), None)
+            if row_target is None:
+                continue
+
+        try:
+            db.execute(
+                "INSERT INTO task_assignments (task_id, user_id, assigned_by, target_role) VALUES (?,?,?,?)",
+                (task_id, assign_uid, uid, row_target)
+            )
             try:
-                db.execute(
-                    "INSERT INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?)",
-                    (task_id, assign_uid, uid)
+                create_notification(
+                    db, assign_uid, "task",
+                    f"New task assigned: {req.title}",
+                    req.instructions[:120] if req.instructions else "",
+                    task_id,
                 )
-                try:
-                    create_notification(
-                        db, assign_uid, "task",
-                        f"New task assigned: {req.title}",
-                        req.instructions[:120] if req.instructions else "",
-                        task_id,
-                    )
-                except Exception:
-                    pass
             except Exception:
                 pass
+        except Exception:
+            pass
 
     for att in (req.attachments or []):
         db.execute(

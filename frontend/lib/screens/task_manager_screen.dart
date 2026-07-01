@@ -14,7 +14,9 @@ class TaskManagerScreen extends StatefulWidget {
   final VoidCallback? onCreateTask;
   final VoidCallback? onCreateTemplate;
   final ValueChanged<int>? onSelectTask;
-  const TaskManagerScreen({super.key, this.onCreateTask, this.onCreateTemplate, this.onSelectTask});
+  final String category; // 'common' | 'special' — which task type this screen manages
+  const TaskManagerScreen({super.key, this.onCreateTask, this.onCreateTemplate,
+      this.onSelectTask, this.category = 'common'});
 
   @override
   State<TaskManagerScreen> createState() => _TaskManagerScreenState();
@@ -38,7 +40,8 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
     setState(() { _loading = true; _errorMsg = null; });
     try {
       final tasks = await ApiService.getTasks(scope: _scope);
-      if (mounted) setState(() { _tasks = tasks; _loading = false; });
+      final filtered = tasks.where((t) => t.taskCategory == widget.category).toList();
+      if (mounted) setState(() { _tasks = filtered; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _loading = false; _errorMsg = e.toString(); });
     }
@@ -255,6 +258,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
   }
 
   String _bannerTitle(String role) {
+    if (widget.category == 'special') return 'Special Tasks';
     switch (role) {
       case 'admin':
       case 'principal': return 'Task Manager';
@@ -265,6 +269,9 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
   }
 
   String _bannerSubtitle(String role) {
+    if (widget.category == 'special') {
+      return 'Create and manage special tasks. Assign to your team.';
+    }
     switch (role) {
       case 'admin':
       case 'principal': return 'Create and manage tasks. Assign to your team.';

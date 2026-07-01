@@ -117,7 +117,8 @@ def delete_report(report_id: int, user=Depends(get_current_user)):
 @router.get("/api/reports")
 def list_reports(user=Depends(get_current_user),
                  task_id: Optional[int] = None,
-                 status: Optional[str] = None):
+                 status: Optional[str] = None,
+                 limit: int = 0, offset: int = 0):
     db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
@@ -151,8 +152,15 @@ def list_reports(user=Depends(get_current_user),
         q += " AND r.report_status=?"
         params.append(status)
 
-    q += " ORDER BY r.report_date DESC"
-    rows = db.execute(q, params).fetchall()
+    order = " ORDER BY r.report_date DESC"
+    if limit and limit > 0:
+        total = db.execute(f"SELECT COUNT(*) FROM ({q})", params).fetchone()[0]
+        rows = db.execute(f"{q}{order} LIMIT ? OFFSET ?", params + [limit, offset]).fetchall()
+        db.close()
+        items = [dict(r) for r in rows]
+        return {"items": items, "total": total, "limit": limit, "offset": offset,
+                "has_more": offset + len(items) < total}
+    rows = db.execute(f"{q}{order}", params).fetchall()
     db.close()
     return [dict(r) for r in rows]
 

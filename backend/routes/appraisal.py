@@ -3,7 +3,32 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
 from database import get_db
-from auth import require_appraisal_access
+from auth import require_appraisal_access, require_appraisal_view
+
+
+def _visible_personnel_ids(db, user):
+    """Which personnel's appraisal records this user may see.
+    Returns None = everyone (principal/coordinator/admin); otherwise a set of
+    user ids: the user themselves, plus — for a dean — the teachers in the grade
+    level they handle (dean_assignment.grade_level_id, falling back to own)."""
+    role = user["role"]
+    uid = int(user["sub"])
+    if role in ("principal", "coordinator", "admin"):
+        return None
+    ids = {uid}
+    if role == "dean":
+        gl = db.execute(
+            """SELECT COALESCE(da.grade_level_id, u.grade_level_id) AS gl
+               FROM users u LEFT JOIN dean_assignment da ON da.user_id = u.id
+               WHERE u.id=?""", (uid,)
+        ).fetchone()
+        if gl and gl["gl"] is not None:
+            for r in db.execute(
+                "SELECT id FROM users WHERE role='teacher' AND grade_level_id=?",
+                (gl["gl"],)
+            ).fetchall():
+                ids.add(r["id"])
+    return ids
 
 router = APIRouter(prefix="/api/appraisal", tags=["Appraisal"])
 
@@ -59,67 +84,95 @@ def _compute_timing(submitted_at: Optional[str], end_date: Optional[str],
 
 
 @router.get("/report-submissions")
-def list_report_submissions(db=Depends(get_db), user=Depends(require_appraisal_access)):
+def list_report_submissions(db=Depends(get_db), user=Depends(require_appraisal_view),
+                            limit: int = 0, offset: int = 0):
     """Report submissions with server-computed timing status/points, for the
     Timing Points tab. Timing is derived from the submission time vs the task
-    deadline (end_date + due_time)."""
-    rows = db.execute(
-        """SELECT sl.id, sl.report_id, sl.date_of_submission,
+    deadline (end_date + due_time). Rows are scoped to who the caller may see,
+    and the visibility filter is pushed into SQL so pagination stays correct."""
+    select = """SELECT sl.id, sl.report_id, sl.date_of_submission, sl.sender_personnel_id,
                   r.report_title, r.task_id,
                   t.title AS task_title, t.end_date, t.due_time,
                   u.full_name AS personnel_name, u.role AS personnel_role,
-                  gl.grade_level AS personnel_department
-           FROM submission_log sl
-           JOIN reports r ON r.id = sl.report_id
-           JOIN tasks t ON t.id = r.task_id
-           JOIN users u ON u.id = sl.sender_personnel_id
-           LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
-           ORDER BY sl.date_of_submission DESC"""
-    ).fetchall()
+                  gl.grade_level AS personnel_department """
+    base = """FROM submission_log sl
+              JOIN reports r ON r.id = sl.report_id
+              JOIN tasks t ON t.id = r.task_id
+              JOIN users u ON u.id = sl.sender_personnel_id
+              LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
+              WHERE 1=1"""
+    params = []
+    visible = _visible_personnel_ids(db, user)
+    if visible is not None:
+        if not visible:
+            return {"items": [], "total": 0, "limit": limit, "offset": offset,
+                    "has_more": False} if limit else []
+        ph = ",".join("?" for _ in visible)
+        base += f" AND sl.sender_personnel_id IN ({ph})"
+        params += list(visible)
+    order = " ORDER BY sl.date_of_submission DESC"
 
-    out = []
-    for r in rows:
-        d = dict(r)
-        status, points = _compute_timing(d["date_of_submission"], d["end_date"], d["due_time"])
-        dl = _deadline_dt(d["end_date"], d["due_time"])
-        out.append({
-            "id": d["id"],
-            "report_id": d["report_id"],
-            "task_id": d["task_id"],
-            "task_name": d["task_title"] or d["report_title"],
-            "personnel_name": d["personnel_name"] or "Unknown",
-            "personnel_department": d["personnel_department"],
-            "deadline": dl.strftime("%Y-%m-%d %H:%M:%S") if dl else None,
-            "submitted_at": d["date_of_submission"],
-            "timing_status": status,
-            "timing_points": points,
-            # Report rubric scoring is not captured in this backend yet.
-            "content_quality_score": None,
-            "format_compliance_score": None,
-            "completeness_score": None,
-        })
-    return out
+    def shape(rows):
+        out = []
+        for r in rows:
+            d = dict(r)
+            status, points = _compute_timing(d["date_of_submission"], d["end_date"], d["due_time"])
+            dl = _deadline_dt(d["end_date"], d["due_time"])
+            out.append({
+                "id": d["id"], "report_id": d["report_id"], "task_id": d["task_id"],
+                "task_name": d["task_title"] or d["report_title"],
+                "personnel_name": d["personnel_name"] or "Unknown",
+                "personnel_department": d["personnel_department"],
+                "deadline": dl.strftime("%Y-%m-%d %H:%M:%S") if dl else None,
+                "submitted_at": d["date_of_submission"],
+                "timing_status": status, "timing_points": points,
+                "content_quality_score": None, "format_compliance_score": None,
+                "completeness_score": None,
+            })
+        return out
+
+    if limit and limit > 0:
+        total = db.execute(f"SELECT COUNT(*) {base}", params).fetchone()[0]
+        rows = db.execute(f"{select}{base}{order} LIMIT ? OFFSET ?",
+                          params + [limit, offset]).fetchall()
+        items = shape(rows)
+        return {"items": items, "total": total, "limit": limit, "offset": offset,
+                "has_more": offset + len(items) < total}
+    rows = db.execute(f"{select}{base}{order}", params).fetchall()
+    return shape(rows)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _special_task_row(row, db):
+    """Shape a `tasks` row (tagged task_category='special') into the special-task
+    payload the appraisal UI expects. Assignee = first task_assignment; assigner =
+    tasks.created_by; status derived from whether an evaluation exists."""
     d = dict(row)
     assignee = db.execute(
         """SELECT u.id, u.full_name, u.role, gl.grade_level
-           FROM users u LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
-           WHERE u.id=?""", (d.get("assignee_id"),)
+           FROM task_assignments ta
+           JOIN users u ON u.id = ta.user_id
+           LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
+           WHERE ta.task_id=? ORDER BY ta.id LIMIT 1""", (d["id"],)
     ).fetchone()
-    d["assignee"] = dict(assignee) if assignee else None
     assigner = db.execute(
-        "SELECT id, full_name FROM users WHERE id=?", (d.get("assigned_by"),)
+        "SELECT id, full_name FROM users WHERE id=?", (d.get("created_by"),)
     ).fetchone()
-    d["assigner"] = dict(assigner) if assigner else None
     ev = db.execute(
         "SELECT * FROM special_task_evaluations WHERE task_id=?", (d["id"],)
     ).fetchone()
-    d["evaluation"] = dict(ev) if ev else None
-    return d
+    return {
+        "id": d["id"],
+        "title": d["title"],
+        "description": d.get("instructions"),
+        "due_date": d.get("end_date"),
+        "created_at": d.get("created_at"),
+        "status": "evaluated" if ev else "pending",
+        "assignee": dict(assignee) if assignee else None,
+        "assigner": dict(assigner) if assigner else None,
+        "evaluation": dict(ev) if ev else None,
+    }
 
 
 def _event_evaluation_row(event_row, db):
@@ -153,32 +206,58 @@ class SpecialTaskEvalBody(BaseModel):
     remarks: Optional[str] = None
 
 
+def _special_task_or_404(db, task_id: int):
+    row = db.execute(
+        "SELECT * FROM tasks WHERE id=? AND task_category='special'", (task_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Special task not found")
+    return row
+
+
 @router.get("/special-tasks")
-def list_special_tasks(db=Depends(get_db), user=Depends(require_appraisal_access)):
-    rows = db.execute("SELECT * FROM special_tasks ORDER BY created_at DESC").fetchall()
-    return [_special_task_row(r, db) for r in rows]
+def list_special_tasks(db=Depends(get_db), user=Depends(require_appraisal_view)):
+    """Special tasks scoped to who the caller may see (by assignee). Teachers see
+    tasks assigned to them; deans see their grade-level teachers' + their own."""
+    rows = db.execute(
+        "SELECT * FROM tasks WHERE task_category='special' ORDER BY created_at DESC"
+    ).fetchall()
+    visible = _visible_personnel_ids(db, user)
+    out = []
+    for r in rows:
+        shaped = _special_task_row(r, db)
+        if visible is not None:
+            assignee = shaped.get("assignee")
+            if not assignee or assignee["id"] not in visible:
+                continue
+        out.append(shaped)
+    return out
 
 
 @router.post("/special-tasks", status_code=201)
 def create_special_task(body: SpecialTaskBody, db=Depends(get_db),
                         user=Depends(require_appraisal_access)):
+    """Create a special task = a `tasks` row tagged 'special' + an assignment."""
     uid = int(user["sub"])
     db.execute(
-        """INSERT INTO special_tasks (title, description, assignee_id, assigned_by, due_date)
-           VALUES (?,?,?,?,?)""",
-        (body.title, body.description, body.assignee_id, uid, body.due_date)
+        """INSERT INTO tasks (title, instructions, task_category, end_date, created_by)
+           VALUES (?,?, 'special', ?, ?)""",
+        (body.title, body.description, body.due_date, uid)
     )
+    task_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    if body.assignee_id:
+        db.execute(
+            "INSERT OR IGNORE INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?)",
+            (task_id, body.assignee_id, uid)
+        )
     db.commit()
-    row = db.execute("SELECT * FROM special_tasks ORDER BY id DESC LIMIT 1").fetchone()
-    return _special_task_row(row, db)
+    return _special_task_row(_special_task_or_404(db, task_id), db)
 
 
 @router.post("/special-tasks/{task_id}/evaluate")
 def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody,
                           db=Depends(get_db), user=Depends(require_appraisal_access)):
-    row = db.execute("SELECT * FROM special_tasks WHERE id=?", (task_id,)).fetchone()
-    if not row:
-        raise HTTPException(404, "Special task not found")
+    _special_task_or_404(db, task_id)
     scores = [body.completion_quality_score, body.timeliness_score,
               body.initiative_score, body.coordination_score]
     weights = [0.40, 0.30, 0.30, 0.00]
@@ -201,11 +280,8 @@ def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody,
         (task_id, uid, body.completion_quality_score, body.timeliness_score,
          body.initiative_score, body.coordination_score, weighted_avg, body.remarks)
     )
-    db.execute("UPDATE special_tasks SET status='evaluated' WHERE id=?", (task_id,))
     db.commit()
-    return _special_task_row(
-        db.execute("SELECT * FROM special_tasks WHERE id=?", (task_id,)).fetchone(), db
-    )
+    return _special_task_row(_special_task_or_404(db, task_id), db)
 
 
 # ── Event Evaluation (appraisal rubric on EVENTS) ──────────────────────────────
@@ -223,11 +299,15 @@ class EventEvalBody(BaseModel):
 
 
 @router.get("/events")
-def list_events_for_evaluation(db=Depends(get_db), user=Depends(require_appraisal_access)):
-    """List events available for evaluation."""
+def list_events_for_evaluation(db=Depends(get_db), user=Depends(require_appraisal_view)):
+    """List events available for evaluation, scoped to the caller. Teachers see
+    events they organized; deans see their grade-level teachers' + their own."""
     rows = db.execute(
         "SELECT * FROM events WHERE status != 'draft' ORDER BY target_date DESC"
     ).fetchall()
+    visible = _visible_personnel_ids(db, user)
+    if visible is not None:
+        rows = [r for r in rows if r["created_by"] in visible]
     return [_event_evaluation_row(r, db) for r in rows]
 
 

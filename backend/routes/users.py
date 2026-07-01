@@ -24,7 +24,11 @@ def list_users(user=Depends(get_current_user)):
 
 
 @router.get("/api/users/assignable")
-def list_assignable_users(user=Depends(require_can_assign)):
+def list_assignable_users(user=Depends(require_can_assign), target_role: str = ""):
+    """Personnel the caller may assign a task to. Matching is by the *roles a
+    person can act as* (user_roles), so a teacher-who-is-also-a-dean shows up
+    under whichever identity is being targeted. When target_role is given, only
+    holders of that role are returned (and the returned `role` is that target)."""
     db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
@@ -33,23 +37,42 @@ def list_assignable_users(user=Depends(require_can_assign)):
         db.close()
         return []
 
-    # Parameterised IN clause (no string-built SQL), one '?' per allowed role.
-    placeholders = ",".join("?" for _ in allowed_roles)
-    q = f"""SELECT u.id, u.username, u.full_name, u.role, u.grade_level_id, gl.grade_level
-            FROM users u LEFT JOIN grade_levels gl ON gl.id=u.grade_level_id
-            WHERE u.role IN ({placeholders})"""
-    params = list(allowed_roles)
+    if target_role:
+        if target_role not in allowed_roles:
+            db.close()
+            return []
+        roles_to_show = {target_role}
+    else:
+        roles_to_show = allowed_roles
+
+    placeholders = ",".join("?" for _ in roles_to_show)
+    # Match against the roles a person holds (user_roles → roles), and report that
+    # role as the user's role so the UI assigns to the intended identity.
+    q = f"""SELECT DISTINCT u.id, u.username, u.full_name, r.roles AS role,
+                   u.grade_level_id, gl.grade_level
+            FROM users u
+            JOIN user_roles ur ON ur.user_id = u.id
+            JOIN roles r ON r.id = ur.role_id
+            LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
+            WHERE r.roles IN ({placeholders})"""
+    params = list(roles_to_show)
 
     if role == "dean":
-        dean = db.execute("SELECT grade_level_id FROM users WHERE id=?", (uid,)).fetchone()
-        if dean and dean["grade_level_id"]:
+        # A dean assigns only to teachers in the grade level she *handles*
+        # (dean_assignment.grade_level_id), falling back to her own grade level.
+        dean = db.execute(
+            """SELECT COALESCE(da.grade_level_id, u.grade_level_id) AS gl
+               FROM users u LEFT JOIN dean_assignment da ON da.user_id = u.id
+               WHERE u.id=?""", (uid,)
+        ).fetchone()
+        if dean and dean["gl"]:
             q += " AND u.grade_level_id=?"
-            params.append(dean["grade_level_id"])
+            params.append(dean["gl"])
         else:
             db.close()
             return []
 
-    q += " ORDER BY u.role, u.full_name"
+    q += " ORDER BY r.roles, u.full_name"
     rows = db.execute(q, params).fetchall()
     db.close()
     return [dict(r) for r in rows]

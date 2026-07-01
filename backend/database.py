@@ -122,11 +122,24 @@ def _build_and_seed():
         coordinator_type TEXT NOT NULL
     );
 
+    -- Role catalog + the personnel↔roles junction (ERD: ROLES + PERSONNEL_ROLE).
+    -- A person may hold several roles; `users.role` stays the primary one, and
+    -- the login "log in as" picker chooses which active role the token carries.
+    CREATE TABLE IF NOT EXISTS roles (
+        id    INTEGER PRIMARY KEY AUTOINCREMENT,
+        roles TEXT NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS user_roles (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+        UNIQUE(user_id, role_id)
+    );
+
     CREATE TABLE IF NOT EXISTS dean_assignment (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id        INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-        grade_level_id INTEGER NOT NULL REFERENCES grade_levels(id),
-        department_id  INTEGER REFERENCES departments(id)
+        grade_level_id INTEGER NOT NULL REFERENCES grade_levels(id)
     );
 
     CREATE TABLE IF NOT EXISTS task_types (
@@ -280,21 +293,11 @@ def _build_and_seed():
     );
 
     -- ── Appraisal Management ──────────────────────────────────────────────────
-    CREATE TABLE IF NOT EXISTS special_tasks (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        title       TEXT NOT NULL,
-        description TEXT,
-        assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        due_date    TEXT,
-        status      TEXT NOT NULL DEFAULT 'pending'
-            CHECK(status IN ('pending','submitted','evaluated','flagged')),
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
+    -- Special tasks are ordinary `tasks` rows tagged task_category='special'.
+    -- This table only holds their supervisor evaluation, keyed by tasks.id.
     CREATE TABLE IF NOT EXISTS special_task_evaluations (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-        task_id                 INTEGER NOT NULL REFERENCES special_tasks(id) ON DELETE CASCADE,
+        task_id                 INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
         evaluator_id            INTEGER REFERENCES users(id) ON DELETE SET NULL,
         completion_quality_score INTEGER NOT NULL DEFAULT 0 CHECK(completion_quality_score BETWEEN 0 AND 5),
         timeliness_score        INTEGER NOT NULL DEFAULT 0 CHECK(timeliness_score BETWEEN 0 AND 5),
@@ -350,10 +353,85 @@ def _build_and_seed():
 
     # Non-destructive migrations: add columns introduced after a table was first
     # created, so existing databases gain them via ALTER (no wipe needed).
-    _ensure_column(c, "dean_assignment", "department_id", "INTEGER")
     _ensure_column(c, "events", "department", "TEXT")
     _ensure_column(c, "events", "expected_attendees", "INTEGER")
+    # Dean assignments no longer carry a department — drop it if an old DB has it.
+    if "department_id" in [r[1] for r in c.execute("PRAGMA table_info(dean_assignment)").fetchall()]:
+        try:
+            c.execute("ALTER TABLE dean_assignment DROP COLUMN department_id")
+        except Exception:
+            pass
+    # Tag a task as 'common' or 'special' — used by the appraisal module to tell
+    # the two kinds apart.
+    _ensure_column(c, "tasks", "task_category", "TEXT DEFAULT 'common'")
+    # Which role-identity an assignment targets (a person may hold several roles).
+    # NULL = legacy/any, shown regardless of the assignee's active role.
+    _ensure_column(c, "task_assignments", "target_role", "TEXT")
     conn.commit()
+
+    # Seed the role catalog (ERD: ROLES).
+    for _rn in ("admin", "principal", "coordinator", "dean", "teacher", "registrar"):
+        c.execute("INSERT OR IGNORE INTO roles (roles) VALUES (?)", (_rn,))
+    conn.commit()
+
+    # Migrate an older user_roles(role TEXT) shape to user_roles(role_id FK→roles).
+    _ur_cols = [r[1] for r in c.execute("PRAGMA table_info(user_roles)").fetchall()]
+    if "role" in _ur_cols and "role_id" not in _ur_cols:
+        c.executescript("""
+            ALTER TABLE user_roles RENAME TO _ur_old;
+            CREATE TABLE user_roles (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+                UNIQUE(user_id, role_id)
+            );
+            INSERT OR IGNORE INTO user_roles (user_id, role_id)
+                SELECT o.user_id, r.id FROM _ur_old o JOIN roles r ON r.roles = o.role;
+            DROP TABLE _ur_old;
+        """)
+        conn.commit()
+
+    # Baseline each user's primary role into the junction (idempotent). Extra
+    # roles are added via the personnel "also teaching" toggle.
+    c.execute("""INSERT OR IGNORE INTO user_roles (user_id, role_id)
+                 SELECT u.id, r.id FROM users u JOIN roles r ON r.roles = u.role
+                 WHERE u.role IS NOT NULL AND u.role != ''""")
+    conn.commit()
+
+    # Special tasks were once their own `special_tasks` table; they are now just
+    # `tasks` rows tagged 'special'. Repoint special_task_evaluations from the old
+    # table to tasks(id), then drop the legacy table. (Old eval rows keyed to the
+    # dropped special_tasks ids are discarded — they no longer have a referent.)
+    try:
+        row = c.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='special_task_evaluations'"
+        ).fetchone()
+        if row and row[0] and "special_tasks" in row[0]:
+            c.executescript("""
+                ALTER TABLE special_task_evaluations RENAME TO _ste_old;
+                CREATE TABLE special_task_evaluations (
+                    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id                 INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    evaluator_id            INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    completion_quality_score INTEGER NOT NULL DEFAULT 0 CHECK(completion_quality_score BETWEEN 0 AND 5),
+                    timeliness_score        INTEGER NOT NULL DEFAULT 0 CHECK(timeliness_score BETWEEN 0 AND 5),
+                    initiative_score        INTEGER NOT NULL DEFAULT 0 CHECK(initiative_score BETWEEN 0 AND 5),
+                    coordination_score      INTEGER NOT NULL DEFAULT 0 CHECK(coordination_score BETWEEN 0 AND 5),
+                    weighted_average        REAL,
+                    remarks                 TEXT,
+                    evaluated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(task_id)
+                );
+                INSERT INTO special_task_evaluations
+                    SELECT * FROM _ste_old
+                    WHERE task_id IN (SELECT id FROM tasks WHERE task_category='special');
+                DROP TABLE _ste_old;
+            """)
+            conn.commit()
+        c.execute("DROP TABLE IF EXISTS special_tasks")
+        conn.commit()
+    except Exception:
+        pass  # Already migrated; ignore
 
     # event_evaluations may have been created (on existing DBs) back when its FK
     # pointed at school_events; rebuild it pointed at events before dropping that table.
@@ -661,20 +739,25 @@ def _seed(conn):
     c.execute("DELETE FROM subjects WHERE subject_name='Mother Tongue'")
 
     # ── Special Tasks sample data ──────────────────────────────────────────────
+    # Special tasks are ordinary `tasks` rows tagged task_category='special'; the
+    # assignee lives in task_assignments. Fixed high ids avoid colliding with the
+    # common-task seed above.
     special_tasks = [
-        (1, 'Prepare Q3 Report',       'Submit quarterly performance report', uid['teacher1'], uid['coordinator1'], '2026-05-30', 'submitted'),
-        (2, 'Grade Level Coordination', 'Coordinate with grade level teachers', uid['dean1'],   uid['coordinator1'], '2026-06-15', 'pending'),
-        (3, 'Curriculum Review',        'Review and update lesson plans',       uid['teacher2'], uid['dean1'],       '2026-06-01', 'evaluated'),
+        (101, 'Prepare Q3 Report',        'Submit quarterly performance report', uid['teacher1'], uid['coordinator1'], '2026-05-30'),
+        (102, 'Grade Level Coordination', 'Coordinate with grade level teachers', uid['dean1'],    uid['coordinator1'], '2026-06-15'),
+        (103, 'Curriculum Review',        'Review and update lesson plans',       uid['teacher2'], uid['dean1'],        '2026-06-01'),
     ]
-    for (sid, title, desc, assignee, assigner, due, status) in special_tasks:
-        c.execute("""INSERT OR IGNORE INTO special_tasks
-                     (id, title, description, assignee_id, assigned_by, due_date, status)
-                     VALUES (?,?,?,?,?,?,?)""", (sid, title, desc, assignee, assigner, due, status))
+    for (sid, title, desc, assignee, assigner, due) in special_tasks:
+        c.execute("""INSERT OR IGNORE INTO tasks
+                     (id, title, instructions, task_category, end_date, created_by)
+                     VALUES (?,?,?, 'special', ?, ?)""", (sid, title, desc, due, assigner))
+        c.execute("""INSERT OR IGNORE INTO task_assignments (task_id, user_id, assigned_by)
+                     VALUES (?,?,?)""", (sid, assignee, assigner))
 
     c.execute("""INSERT OR IGNORE INTO special_task_evaluations
                  (task_id, evaluator_id, completion_quality_score, timeliness_score,
                   initiative_score, coordination_score, weighted_average, remarks)
-                 VALUES (3, ?, 4, 5, 3, 4, 4.05, 'Good effort on curriculum alignment.')""",
+                 VALUES (103, ?, 4, 5, 3, 4, 4.05, 'Good effort on curriculum alignment.')""",
               (uid['coordinator1'],))
 
     # ── Event Evaluation sample data (evaluates the approved EVENTS row) ───────

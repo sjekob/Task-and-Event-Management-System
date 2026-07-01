@@ -1,5 +1,6 @@
 import time
 from collections import defaultdict
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
@@ -35,6 +36,7 @@ def _check_rate_limit(key: str) -> None:
 class LoginRequest(BaseModel):
     username: str
     password: str
+    role: Optional[str] = None  # which identity to log in as (multi-role accounts)
 
 
 @router.post("/login")
@@ -44,19 +46,43 @@ def login(req: LoginRequest, request: Request):
 
     with db_session() as db:
         user = db.execute("SELECT * FROM users WHERE username=?", (req.username,)).fetchone()
+        if not user or not verify_password(req.password, user["password_hash"]):
+            _login_failures[key].append(time.time())
+            raise HTTPException(401, "Invalid credentials")
+        roles = [r["roles"] for r in db.execute(
+            """SELECT r.roles FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+               WHERE ur.user_id=? ORDER BY r.roles""", (user["id"],)
+        ).fetchall()]
 
-    if not user or not verify_password(req.password, user["password_hash"]):
-        _login_failures[key].append(time.time())
-        raise HTTPException(401, "Invalid credentials")
+    if not roles:
+        roles = [user["role"]]
 
-    # Successful login — clear any recorded failures for this key.
+    # Successful credentials — clear any recorded failures for this key.
     _login_failures.pop(key, None)
-    token = create_token(user["id"], user["role"])
+
+    # Decide the active role for this session.
+    if req.role:
+        if req.role not in roles:
+            raise HTTPException(403, "You do not have that role.")
+        active_role = req.role
+    elif len(roles) > 1:
+        # Credentials are valid but the account holds multiple identities — ask
+        # the client which one to log in as (no token issued yet).
+        return {
+            "needs_role_selection": True,
+            "available_roles": roles,
+            "full_name": user["full_name"],
+        }
+    else:
+        active_role = roles[0]
+
+    token = create_token(user["id"], active_role)
     return {"token": token, "user": {
         "id": user["id"], "username": user["username"],
-        "full_name": user["full_name"], "role": user["role"],
+        "full_name": user["full_name"], "role": active_role,
         "avatar_url": user["avatar_url"],
         "grade_level_id": user["grade_level_id"],
+        "available_roles": roles,
     }}
 
 
@@ -70,6 +96,14 @@ def me(user=Depends(get_current_user)):
                WHERE u.id=?""",
             (user["sub"],)
         ).fetchone()
-    if not u:
-        raise HTTPException(404, "User not found")
-    return dict(u)
+        if not u:
+            raise HTTPException(404, "User not found")
+        roles = [r["roles"] for r in db.execute(
+            """SELECT r.roles FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+               WHERE ur.user_id=? ORDER BY r.roles""", (user["sub"],)
+        ).fetchall()]
+    d = dict(u)
+    # The active role comes from the session token, not the stored primary role.
+    d["role"] = user.get("role", d["role"])
+    d["available_roles"] = roles or [d["role"]]
+    return d

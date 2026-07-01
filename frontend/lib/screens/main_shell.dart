@@ -18,6 +18,8 @@ class _MainShellState extends State<MainShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   NavPage _locationToPage(String loc) {
+    if (loc.startsWith('/my-special-tasks')) return NavPage.mySpecialTasks;
+    if (loc.startsWith('/special-tasks')) return NavPage.specialTasks;
     if (loc.startsWith('/tasks')) return NavPage.taskManager;
     if (loc.startsWith('/my-tasks')) return NavPage.myTasks;
     if (loc.startsWith('/activity')) return NavPage.activity;
@@ -32,6 +34,8 @@ class _MainShellState extends State<MainShell> {
       case NavPage.dashboard:         context.go('/dashboard'); break;
       case NavPage.taskManager:       context.go('/tasks'); break;
       case NavPage.myTasks:           context.go('/my-tasks'); break;
+      case NavPage.specialTasks:      context.go('/special-tasks'); break;
+      case NavPage.mySpecialTasks:    context.go('/my-special-tasks'); break;
       case NavPage.activity:          context.go('/activity'); break;
       case NavPage.personnelManagement: context.go('/personnel'); break;
       case NavPage.appraisal:         context.go('/appraisal'); break;
@@ -45,9 +49,13 @@ class _MainShellState extends State<MainShell> {
   }
 
   bool _showCreateBtn(String loc, String role) =>
-      loc == '/tasks' &&
+      (loc == '/tasks' || loc == '/special-tasks') &&
       (role == 'admin' || role == 'principal' ||
        role == 'coordinator' || role == 'dean' || role == 'registrar');
+
+  // The create target depends on which task screen we're on.
+  String _createPath(String loc) =>
+      loc.startsWith('/special-tasks') ? '/special-tasks/new' : '/tasks/new';
 
   bool _showTemplateBtn(String loc, String role) =>
       loc == '/tasks' && (role == 'admin' || role == 'principal');
@@ -96,7 +104,7 @@ class _MainShellState extends State<MainShell> {
               onNavigate: _onNavigate,
               onLogout: _logout,
               showCreateTask: _showCreateBtn(loc, role),
-              onCreateTask: () => context.go('/tasks/new'),
+              onCreateTask: () => context.go(_createPath(loc)),
             ),
           Expanded(
             child: Column(
@@ -154,14 +162,14 @@ class _MainShellState extends State<MainShell> {
           ],
           if (_showCreateBtn(loc, role))
             ElevatedButton(
-              onPressed: () => context.go('/tasks/new'),
+              onPressed: () => context.go(_createPath(loc)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.darkBanner,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              child: Text('Create Task',
+              child: Text(loc.startsWith('/special-tasks') ? 'Create Special Task' : 'Create Task',
                   style: GoogleFonts.plusJakartaSans(
                       fontWeight: FontWeight.w600, fontSize: 13)),
             ),
