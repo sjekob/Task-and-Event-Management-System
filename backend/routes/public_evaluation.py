@@ -9,13 +9,12 @@ last section of the event's own proposal (events.indicators). Each indicator is
 marked Evident / Not Evident with optional remarks. All scoring lives here in
 Python — the Dart UI only collects evident/not-evident toggles and ships them up.
 """
-import hashlib
 import json
 import re
 from datetime import date, datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from database import get_db
@@ -119,17 +118,6 @@ def _organizer_name(row, db) -> Optional[str]:
     return None
 
 
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
-def _hash_ip(ip: str) -> str:
-    return hashlib.sha256(ip.encode()).hexdigest()
-
-
 def _lock_reason(row) -> Optional[str]:
     """None if the event is open for public evaluation, else why it's locked."""
     if row["status"] != "approved":
@@ -173,8 +161,12 @@ class IndicatorResult(BaseModel):
     evident: bool
 
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
 class PublicEvalBody(BaseModel):
     evaluator_name: Optional[str] = Field(default=None, max_length=120)
+    evaluator_email: str = Field(min_length=3, max_length=200)
     evaluator_role: str
     indicators: List[IndicatorResult]
     comments: Optional[str] = Field(default=None, max_length=2000)
@@ -202,7 +194,7 @@ def _feedback_text(results: List[IndicatorResult], comments: Optional[str]) -> s
 
 
 @router.post("/events/{event_id}/evaluate", status_code=201)
-def submit_public_evaluation(event_id: int, body: PublicEvalBody, request: Request,
+def submit_public_evaluation(event_id: int, body: PublicEvalBody,
                               db=Depends(get_db)):
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     if not row:
@@ -215,6 +207,10 @@ def submit_public_evaluation(event_id: int, body: PublicEvalBody, request: Reque
     if role not in ALLOWED_EVALUATOR_ROLES:
         raise HTTPException(400, f"evaluator_role must be one of {sorted(ALLOWED_EVALUATOR_ROLES)}")
 
+    email = body.evaluator_email.strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(400, "Please enter a valid email address.")
+
     if not body.indicators:
         raise HTTPException(400, "At least one indicator must be evaluated.")
 
@@ -224,24 +220,23 @@ def submit_public_evaluation(event_id: int, body: PublicEvalBody, request: Reque
     feedback = _feedback_text(body.indicators, body.comments)
     name = (body.evaluator_name or "").strip() or "Anonymous"
 
-    # One submission per device per event — the only practical anti-abuse
-    # control available since the endpoint has no login to key off of.
-    ip_hash = _hash_ip(_client_ip(request))
+    # One evaluation per email per event — the email is the identity we throttle
+    # on so an attendee can only evaluate a given event once.
     try:
         db.execute(
-            "INSERT INTO public_submission_log (event_id, ip_hash) VALUES (?,?)",
-            (event_id, ip_hash),
+            "INSERT INTO public_submission_log (event_id, email) VALUES (?,?)",
+            (event_id, email),
         )
     except Exception:
-        raise HTTPException(409, "An evaluation was already submitted from this device for this event.")
+        raise HTTPException(409, "This email has already submitted an evaluation for this event.")
 
     db.execute(
         """INSERT INTO event_evaluations
-           (event_id, evaluator_id, evaluator_name, evaluator_role,
+           (event_id, evaluator_id, evaluator_name, evaluator_email, evaluator_role,
             planning_score, objectives_score, personnel_score,
             time_mgmt_score, engagement_score, resource_score, feedback_comments)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-        (event_id, None, name, role,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (event_id, None, name, email, role,
          score, score, score, score, score, score, feedback)
     )
     db.commit()

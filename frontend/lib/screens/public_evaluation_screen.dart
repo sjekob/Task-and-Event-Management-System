@@ -35,6 +35,7 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   Map<String, dynamic>? _event;
 
   final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _commentsCtrl = TextEditingController();
   String _role = 'student';
   List<_Indicator> _indicators = [];
@@ -49,9 +50,13 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _emailCtrl.dispose();
     _commentsCtrl.dispose();
     super.dispose();
   }
+
+  bool _validEmail(String s) =>
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(s);
 
   Future<void> _loadEvent() async {
     setState(() => _state = _ViewState.loading);
@@ -88,6 +93,12 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   bool get _allMarked => _indicators.every((i) => i.evident != null);
 
   Future<void> _submit() async {
+    if (!_validEmail(_emailCtrl.text.trim())) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please enter a valid email address.'),
+          backgroundColor: Colors.red));
+      return;
+    }
     if (!_allMarked) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Please mark every indicator as Evident or Not Evident.'),
@@ -98,6 +109,7 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     try {
       await ApiService.submitPublicEvaluation(widget.eventId, {
         'evaluator_name': _nameCtrl.text.trim().isEmpty ? null : _nameCtrl.text.trim(),
+        'evaluator_email': _emailCtrl.text.trim(),
         'evaluator_role': _role,
         'indicators': _indicators
             .map((i) => {
@@ -256,6 +268,14 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
           onChanged: (v) => setState(() => _role = v ?? _role),
         )),
       ]),
+      const SizedBox(height: 12),
+      // ── Email (required — one evaluation per email per event) ─────────────
+      TextField(
+        controller: _emailCtrl,
+        keyboardType: TextInputType.emailAddress,
+        decoration: _decor('Email (required)'),
+        style: const TextStyle(fontSize: 13),
+      ),
       const SizedBox(height: 20),
 
       // ── Indicators (the proposal's last section) ─────────────────────────

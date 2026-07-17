@@ -327,15 +327,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           _input(_titleCtrl, widget.isTemplate ? 'Template Name' : 'Task Name'),
           const SizedBox(height: 16),
 
-          // ── Task Type (common vs special — appraisal uses this tag).
-          // Hidden when the category is fixed by the route (e.g. Special Tasks). ──
-          if (!widget.isTemplate && widget.lockedCategory == null) ...[
-            _FieldLabel('Task Type'),
-            const SizedBox(height: 6),
-            _categoryField(),
-            const SizedBox(height: 16),
-          ],
-
           // ── Assign As (target identity) — only when the creator can target
           // more than one role. Switching reloads the assignable people. ──
           if (!widget.isTemplate) ...[
@@ -648,41 +639,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       );
 
   // Common vs Special task tag. Two-option toggle so the choice is obvious.
-  Widget _categoryField() {
-    Widget opt(String value, String label, IconData icon) {
-      final selected = _taskCategory == value;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => setState(() => _taskCategory = value),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: selected ? AppTheme.darkBanner : Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: selected ? AppTheme.darkBanner : AppTheme.borderColor),
-            ),
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(icon, size: 16,
-                  color: selected ? Colors.white : AppTheme.textMuted),
-              const SizedBox(width: 8),
-              Text(label,
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13, fontWeight: FontWeight.w600,
-                      color: selected ? Colors.white : AppTheme.textMuted)),
-            ]),
-          ),
-        ),
-      );
-    }
-
-    return Row(children: [
-      opt('common', 'Common Task', Icons.assignment_outlined),
-      const SizedBox(width: 10),
-      opt('special', 'Special Task', Icons.star_outline),
-    ]);
-  }
-
   String _roleLabel(String r) {
     switch (r) {
       case 'teacher': return 'Teacher';

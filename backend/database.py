@@ -343,9 +343,9 @@ def _build_and_seed():
     CREATE TABLE IF NOT EXISTS public_submission_log (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-        ip_hash      TEXT NOT NULL,
+        email        TEXT NOT NULL,
         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(event_id, ip_hash)
+        UNIQUE(event_id, email)
     );
     """)
 
@@ -361,6 +361,25 @@ def _build_and_seed():
             c.execute("ALTER TABLE dean_assignment DROP COLUMN department_id")
         except Exception:
             pass
+
+    # Public evaluation throttle moved from per-device (ip_hash) to per-email so
+    # an attendee can only evaluate an event once. Rebuild old ip-based logs.
+    _psl_cols = [r[1] for r in c.execute("PRAGMA table_info(public_submission_log)").fetchall()]
+    if "ip_hash" in _psl_cols and "email" not in _psl_cols:
+        c.executescript("""
+            DROP TABLE public_submission_log;
+            CREATE TABLE public_submission_log (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                email        TEXT NOT NULL,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(event_id, email)
+            );
+        """)
+        conn.commit()
+    # Record the evaluator's email on the evaluation itself.
+    _ensure_column(c, "event_evaluations", "evaluator_email", "TEXT")
+    conn.commit()
     # Tag a task as 'common' or 'special' — used by the appraisal module to tell
     # the two kinds apart.
     _ensure_column(c, "tasks", "task_category", "TEXT DEFAULT 'common'")

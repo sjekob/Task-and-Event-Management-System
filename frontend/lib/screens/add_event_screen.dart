@@ -826,11 +826,15 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   Future<void> _pickTargetDate() async {
     final now = DateTime.now();
-    final initial = parseEventDate(_dateCtrl.text) ?? now;
+    final today = DateTime(now.year, now.month, now.day);
+    final parsed = parseEventDate(_dateCtrl.text) ?? today;
+    // A proposal can't target a date that has already passed — start no earlier
+    // than today (the backend re-checks this and any same-day conflict).
+    final initial = parsed.isBefore(today) ? today : parsed;
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime(now.year - 1),
+      firstDate: today,
       lastDate: DateTime(now.year + 5),
     );
     if (picked != null) {

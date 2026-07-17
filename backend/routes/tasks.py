@@ -115,7 +115,10 @@ def list_tasks(user=Depends(get_current_user), search: str = "",
         q += f" AND {pref}task_category=?"
         params.append(category)
 
-    order = f" ORDER BY {pref}id DESC"
+    # Urgent-first: soonest deadline at the top; tasks without a deadline sink to
+    # the bottom, newest-created breaking ties.
+    order = (f" ORDER BY ({pref}end_date IS NULL OR {pref}end_date=''), "
+             f"{pref}end_date ASC, {pref}due_time ASC, {pref}id DESC")
     if limit and limit > 0:
         # Paginated: return an envelope with the page + total so the client can
         # decide whether to keep scrolling, instead of dumping every row.

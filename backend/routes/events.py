@@ -1,10 +1,32 @@
+from datetime import date
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, create_notification
 from auth import get_current_user, require_admin_or_principal, require_event_manager
+from date_utils import parse_event_date
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
+
+
+def _validate_target_date(db, target_date, exclude_id=None):
+    """Reject a proposed target date that has already passed or clashes with
+    another live (pending/approved) event on the same day. Unparseable dates
+    are left alone — we only gate dates we can understand."""
+    d = parse_event_date(target_date)
+    if d is None:
+        return
+    if d < date.today():
+        raise HTTPException(400, "That target date has already passed — please choose a future date.")
+    rows = db.execute(
+        "SELECT id, target_date FROM events WHERE status IN ('pending_approval','approved')"
+    ).fetchall()
+    for r in rows:
+        if exclude_id and r["id"] == exclude_id:
+            continue
+        if parse_event_date(r["target_date"]) == d:
+            raise HTTPException(
+                409, f"Another event is already scheduled on {d.isoformat()} — please pick a different date.")
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -87,6 +109,9 @@ def create_event(body: EventCreateBody, db=Depends(get_db),
     status = body.status or 'pending_approval'
     if status not in CREATE_STATUSES:
         raise HTTPException(400, f"status must be one of {CREATE_STATUSES}")
+    # Only enforce the date checks for real proposals, not saved drafts.
+    if status == 'pending_approval':
+        _validate_target_date(db, body.target_date)
     db.execute(
         """INSERT INTO events
            (title, nature, target_date, venue, proposed_budget, fund_source,
@@ -136,6 +161,8 @@ def update_event(event_id: int, body: EventCreateBody, db=Depends(get_db),
         raise HTTPException(404, "Event not found")
     if role not in ("admin",) and row["created_by"] != uid:
         raise HTTPException(403, "You can only edit events you created")
+    if body.status == 'pending_approval':
+        _validate_target_date(db, body.target_date, exclude_id=event_id)
     if body.status in CREATE_STATUSES:
         db.execute(
             """UPDATE events SET

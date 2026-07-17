@@ -72,7 +72,7 @@ class _TimingPointsTabState extends State<_TimingPointsTab> {
           Expanded(child: _AppraisalStatCard(
               value: '$totalPts pts', label: 'Total Timing Points',
               subtitle: 'Earned from all submissions',
-              icon: Icons.monetization_on_outlined, iconColor: const Color(0xFF10B981),
+              icon: Icons.timer_outlined, iconColor: const Color(0xFF10B981),
               iconBg: const Color(0xFFECFDF5))),
           const SizedBox(width: 12),
           Expanded(child: _AppraisalStatCard(
@@ -82,53 +82,9 @@ class _TimingPointsTabState extends State<_TimingPointsTab> {
               icon: Icons.trending_up, iconColor: const Color(0xFF8B5CF6),
               iconBg: const Color(0xFFF5F3FF))),
         ]),
-        const SizedBox(height: 16),
-        _buildPointsRules(),
         const SizedBox(height: 20),
         _buildComplianceSection(filtered),
         const SizedBox(height: 24),
-      ]),
-    );
-  }
-
-  Widget _buildPointsRules() {
-    Widget rule(String label, String pts, Color color) => Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-        decoration: BoxDecoration(
-            color: const Color(0xFF111827),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: color.withValues(alpha: 0.5))),
-        child: Column(children: [
-          Text(label, style: GoogleFonts.plusJakartaSans(
-              fontSize: 11, color: Colors.white70)),
-          const SizedBox(height: 6),
-          Text(pts, style: GoogleFonts.plusJakartaSans(
-              fontSize: 16, fontWeight: FontWeight.w800, color: color)),
-        ]),
-      ),
-    );
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
-              begin: Alignment.topLeft, end: Alignment.bottomRight),
-          borderRadius: BorderRadius.circular(12)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Points System Rules', style: GoogleFonts.plusJakartaSans(
-            fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-        const SizedBox(height: 14),
-        Row(children: [
-          rule('On Time', '100 pts', const Color(0xFF22C55E)),
-          const SizedBox(width: 12),
-          rule('Late ≤ 24h', '50 pts', const Color(0xFFF59E0B)),
-          const SizedBox(width: 12),
-          rule('Late > 24h / Missing', '0 pts', const Color(0xFFEF4444)),
-        ]),
-        const SizedBox(height: 12),
-        Text('Submissions are automatically computed using the server timestamp compared to the report deadline.',
-            style: GoogleFonts.plusJakartaSans(fontSize: 11, color: Colors.white54)),
       ]),
     );
   }
