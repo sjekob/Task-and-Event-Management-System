@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../services/app_state.dart';
 import '../../../models/models.dart';
+import '../../../widgets/certificates_panel.dart';
+import '../../../widgets/audit_history.dart';
 import '../providers/personnel_provider.dart';
 import '../services/personnel_service.dart';
 import '../widgets/personnel_skeleton.dart';
@@ -36,10 +38,12 @@ class PersonnelScreen extends StatelessWidget {
 class _PersonnelView extends StatelessWidget {
   const _PersonnelView();
 
-  bool _canWrite(BuildContext context) {
-    final role = context.read<AppState>().userRole;
-    return role == 'principal' || role == 'registrar' || role == 'admin';
-  }
+  // Principal/admin add users and change roles/delegations; the registrar
+  // may only deactivate/reactivate accounts (enforced server-side).
+  bool _canWrite(BuildContext context) =>
+      context.read<AppState>().can('manage_personnel');
+  bool _canToggle(BuildContext context) =>
+      context.read<AppState>().can('deactivate_personnel');
 
   Future<void> _openAdd(BuildContext context, PersonnelProvider provider) async {
     final result = await showDialog<bool>(
@@ -225,6 +229,7 @@ class _PersonnelView extends StatelessWidget {
                           tabIndex: provider.tabIndex,
                           isDeactivated: false,
                           canWrite: canWrite,
+                          canToggle: _canToggle(ctx),
                           onView: (u) => _openDetail(ctx, u),
                           onEdit: (u) => _openEdit(ctx, provider, u),
                           onToggle: (u) =>
@@ -243,6 +248,7 @@ class _PersonnelView extends StatelessWidget {
                             tabIndex: provider.tabIndex,
                             isDeactivated: true,
                             canWrite: canWrite,
+                            canToggle: _canToggle(ctx),
                             onView: (u) => _openDetail(ctx, u),
                             onEdit: (u) => _openEdit(ctx, provider, u),
                             onToggle: (u) =>
@@ -456,6 +462,7 @@ class _UserDataTable extends StatelessWidget {
   final int tabIndex;
   final bool isDeactivated;
   final bool canWrite;
+  final bool canToggle;
   final void Function(User) onView;
   final void Function(User) onEdit;
   final void Function(User) onToggle;
@@ -465,6 +472,7 @@ class _UserDataTable extends StatelessWidget {
     required this.tabIndex,
     required this.isDeactivated,
     required this.canWrite,
+    required this.canToggle,
     required this.onView,
     required this.onEdit,
     required this.onToggle,
@@ -531,6 +539,7 @@ class _UserDataTable extends StatelessWidget {
             user: u,
             isDeactivated: isDeactivated,
             canWrite: canWrite,
+            canToggle: canToggle,
             onView: onView,
             onEdit: onEdit,
             onToggle: onToggle)),
@@ -550,6 +559,7 @@ class _UserDataTable extends StatelessWidget {
             user: u,
             isDeactivated: isDeactivated,
             canWrite: canWrite,
+            canToggle: canToggle,
             onView: onView,
             onEdit: onEdit,
             onToggle: onToggle)),
@@ -609,6 +619,7 @@ class _ActionMenu extends StatelessWidget {
   final User user;
   final bool isDeactivated;
   final bool canWrite;
+  final bool canToggle;
   final void Function(User) onView;
   final void Function(User) onEdit;
   final void Function(User) onToggle;
@@ -617,6 +628,7 @@ class _ActionMenu extends StatelessWidget {
     required this.user,
     required this.isDeactivated,
     required this.canWrite,
+    required this.canToggle,
     required this.onView,
     required this.onEdit,
     required this.onToggle,
@@ -638,7 +650,11 @@ class _ActionMenu extends StatelessWidget {
           const PopupMenuItem(value: 'edit', child: Text('Edit')),
         const PopupMenuItem(
             value: 'view', child: Text('View Details')),
-        if (canWrite)
+        // Nobody deactivates themselves; principal/admin accounts only by
+        // the principal/admin.
+        if (canToggle &&
+            context.read<AppState>().currentUser?.id != user.id &&
+            (canWrite || (user.role != 'principal' && user.role != 'admin')))
           PopupMenuItem(
             value: 'toggle',
             child: Text(
@@ -663,6 +679,7 @@ class _PersonnelDetailDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final u = user;
+    final appState = context.read<AppState>();
     final subjects = u.subjects.isNotEmpty
         ? u.subjects
             .map((s) =>
@@ -773,17 +790,24 @@ class _PersonnelDetailDialog extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
                   _sectionHeader('Certifications & Eligibility'),
-                  ..._grouped(
-                    u.certificationDetails,
-                    (c) => c.category,
-                    (c) => c.issuerLabel != null
-                        ? '${c.name} (${c.issuerLabel})'
-                        : c.name,
+                  // The principal/registrar verifies or rejects uploaded
+                  // certificates here (never their own; enforced server-side).
+                  CertificatesPanel(
+                    userId: u.id,
+                    canReview: appState.can('review_certificates') &&
+                        appState.currentUser?.id != u.id,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 18),
                   _sectionHeader('Skills'),
                   ..._grouped(u.skillDetails, (s) => s.category, (s) => s.name),
                   const SizedBox(height: 8),
+                  // Timestamped account/delegation changes (principal/admin).
+                  if (appState.can('view_audit')) ...[
+                    const SizedBox(height: 16),
+                    _sectionHeader('Change History'),
+                    AuditHistory(entityType: 'user', entityId: u.id),
+                    const SizedBox(height: 8),
+                  ],
                 ],
               ),
             ),

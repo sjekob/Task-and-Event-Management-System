@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from database import get_db
-from auth import get_current_user, require_personnel_manager, hash_password
+from auth import (get_current_user, require_personnel_manager, require_personnel_deactivator,
+                  hash_password, has_permission, _held_roles)
 from qualifications import get_qualifications, education_options
+import audit
 
 router = APIRouter(tags=["Personnel"])
 
@@ -43,6 +45,38 @@ def _user_row(row, db):
     d["roles"] = sorted(roles)
     d["also_teaching"] = ("teacher" in roles) and d.get("role") != "teacher"
     return d
+
+
+def _delegation(db, uid: int) -> dict:
+    """The account/delegation fields an audit entry compares before and after."""
+    u = db.execute("""SELECT u.role, u.is_active, u.date_of_appointment, gl.grade_level
+                      FROM users u LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
+                      WHERE u.id=?""", (uid,)).fetchone()
+    if not u:
+        return {}
+    roles = sorted(r["roles"] for r in db.execute(
+        """SELECT rr.roles FROM user_roles ur JOIN roles rr ON rr.id = ur.role_id
+           WHERE ur.user_id=?""", (uid,)).fetchall())
+    ct = db.execute("SELECT coordinator_type FROM coordinator_type WHERE user_id=?",
+                    (uid,)).fetchone()
+    dean = db.execute("""SELECT gl.grade_level FROM dean_assignment da
+                         LEFT JOIN grade_levels gl ON gl.id = da.grade_level_id
+                         WHERE da.user_id=?""", (uid,)).fetchone()
+    subjects = sorted(
+        f"{r['subject']} ({r['grade_level']})" if r["grade_level"] else r["subject"]
+        for r in db.execute("""SELECT us.subject, gl.grade_level FROM user_subjects us
+                               LEFT JOIN grade_levels gl ON gl.id = us.grade_level_id
+                               WHERE us.user_id=?""", (uid,)).fetchall())
+    return {
+        "role": u["role"],
+        "roles": ", ".join(roles) or None,
+        "grade_level": u["grade_level"],
+        "date_of_appointment": u["date_of_appointment"],
+        "coordinator_type": ct["coordinator_type"] if ct else None,
+        "dean_grade_level": dean["grade_level"] if dean else None,
+        "subjects": "; ".join(subjects) or None,
+        "active": bool(u["is_active"]),
+    }
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -135,12 +169,15 @@ class DepartmentBody(BaseModel):
 
 
 @router.post("/api/personnel/departments", status_code=201)
-def create_department(body: DepartmentBody, db=Depends(get_db),
+def create_department(body: DepartmentBody, request: Request, db=Depends(get_db),
                       user=Depends(require_personnel_manager)):
     name = body.department_name.strip()
     if not name:
         raise HTTPException(400, "Department name is required")
-    db.execute("INSERT OR IGNORE INTO departments (department_name) VALUES (?)", (name,))
+    cur = db.execute("INSERT OR IGNORE INTO departments (department_name) VALUES (?)", (name,))
+    if cur.rowcount:
+        audit.record(db, user, "department.create", "department", cur.lastrowid,
+                     f"Created department {name}", entity_label=name, request=request)
     db.commit()
     row = db.execute("SELECT * FROM departments WHERE department_name=?", (name,)).fetchone()
     return dict(row)
@@ -174,7 +211,7 @@ class PersonnelCreateBody(BaseModel):
 
 
 @router.post("/api/personnel", status_code=201)
-def create_personnel(body: PersonnelCreateBody, db=Depends(get_db),
+def create_personnel(body: PersonnelCreateBody, request: Request, db=Depends(get_db),
                      user=Depends(require_personnel_manager)):
     valid_roles = ('principal', 'coordinator', 'dean', 'teacher', 'registrar')
     if body.role not in valid_roles:
@@ -191,8 +228,14 @@ def create_personnel(body: PersonnelCreateBody, db=Depends(get_db),
              body.last_name, body.suffix, body.role, body.grade_level_id,
              body.email, body.date_of_appointment)
         )
+        new_id = db.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone()["id"]
+        audit.record(db, user, "account.create", "user", new_id,
+                     f"Created account {body.username} as {body.role}",
+                     entity_label=audit.user_label(db, new_id),
+                     changes=audit.diff({}, _delegation(db, new_id)), request=request)
         db.commit()
     except Exception as e:
+        db.rollback()
         raise HTTPException(400, f"Username already exists or invalid data: {e}")
     row = db.execute("SELECT * FROM users WHERE username=?", (body.username,)).fetchone()
     return _user_row(row, db)
@@ -210,11 +253,12 @@ class PersonnelUpdateBody(BaseModel):
 
 
 @router.put("/api/personnel/{uid}")
-def update_personnel(uid: int, body: PersonnelUpdateBody, db=Depends(get_db),
-                     user=Depends(require_personnel_manager)):
+def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
+                     db=Depends(get_db), user=Depends(require_personnel_manager)):
     row = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     if not row:
         raise HTTPException(404, "User not found")
+    before = _delegation(db, uid)
 
     fields, vals = [], []
     for col, val in [
@@ -269,6 +313,15 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, db=Depends(get_db),
                        AND role_id=(SELECT id FROM roles WHERE roles='teacher')""", (uid,))
         db.commit()
 
+    changes = audit.diff(before, _delegation(db, uid))
+    if body.password:
+        changes["password"] = ["(hidden)", "reset"]  # never log the value
+    if changes:
+        audit.record(db, user, "personnel.update", "user", uid,
+                     "Changed " + ", ".join(k.replace("_", " ") for k in changes),
+                     entity_label=audit.user_label(db, uid), changes=changes, request=request)
+        db.commit()
+
     return _user_row(db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone(), db)
 
 
@@ -282,11 +335,12 @@ class SubjectsUpdateBody(BaseModel):
 
 
 @router.put("/api/personnel/{uid}/subjects")
-def update_personnel_subjects(uid: int, body: SubjectsUpdateBody,
+def update_personnel_subjects(uid: int, body: SubjectsUpdateBody, request: Request,
                               db=Depends(get_db),
                               user=Depends(require_personnel_manager)):
     if not db.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone():
         raise HTTPException(404, "User not found")
+    before = _delegation(db, uid)
     db.execute("DELETE FROM user_subjects WHERE user_id=?", (uid,))
     for s in body.subjects:
         if s.subject.strip():
@@ -294,17 +348,31 @@ def update_personnel_subjects(uid: int, body: SubjectsUpdateBody,
                 "INSERT INTO user_subjects (user_id, grade_level_id, subject) VALUES (?,?,?)",
                 (uid, s.grade_level_id, s.subject.strip())
             )
+    changes = audit.diff(before, _delegation(db, uid))
+    if changes:
+        audit.record(db, user, "personnel.subjects", "user", uid, "Changed subject-grade assignments",
+                     entity_label=audit.user_label(db, uid), changes=changes, request=request)
     db.commit()
     return _user_row(db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone(), db)
 
 
 @router.patch("/api/personnel/{uid}/status")
-def toggle_personnel_status(uid: int, db=Depends(get_db),
-                            user=Depends(require_personnel_manager)):
+def toggle_personnel_status(uid: int, request: Request, db=Depends(get_db),
+                            user=Depends(require_personnel_deactivator)):
     row = db.execute("SELECT is_active FROM users WHERE id=?", (uid,)).fetchone()
     if not row:
         raise HTTPException(404, "User not found")
+    if uid == int(user["sub"]):
+        raise HTTPException(403, "You can't deactivate your own account")
+    # Only the principal/admin may (de)activate principal or admin accounts.
+    held = _held_roles(db, uid)
+    if held and held[1] & {"principal", "admin"} and not has_permission(user, "manage_personnel"):
+        raise HTTPException(403, "Only the Principal or Admin can change this account's status")
     new_status = 0 if row["is_active"] else 1
     db.execute("UPDATE users SET is_active=? WHERE id=?", (new_status, uid))
+    audit.record(db, user, "account.reactivate" if new_status else "account.deactivate", "user", uid,
+                 "Reactivated account" if new_status else "Deactivated account",
+                 entity_label=audit.user_label(db, uid),
+                 changes={"active": [not new_status, bool(new_status)]}, request=request)
     db.commit()
     return {"id": uid, "is_active": bool(new_status)}

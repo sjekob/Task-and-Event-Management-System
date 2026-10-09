@@ -2,26 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
-/// Roles a user may assign tasks *as* (the identity the assignees receive the
-/// task under), following the hierarchy enforced by the backend
-/// (auth.ASSIGNABLE_TO): principal/admin → anyone; coordinator and registrar →
-/// deans and teachers; dean → teachers.
-List<String> assignableRoles(String assignerRole) {
-  switch (assignerRole) {
-    case 'admin':
-    case 'principal':   return ['teacher', 'dean', 'coordinator', 'registrar'];
-    case 'coordinator': return ['teacher', 'dean'];
-    case 'registrar':   return ['teacher', 'dean'];
-    case 'dean':        return ['teacher'];
-    default:            return ['teacher'];
-  }
-}
-
 String assignRoleLabel(String role) => switch (role) {
       'teacher' => 'Teacher',
       'dean' => 'Dean',
       'coordinator' => 'Coordinator',
       'registrar' => 'Registrar',
+      'principal' => 'Principal',
       _ => role,
     };
 

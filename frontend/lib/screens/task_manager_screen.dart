@@ -107,8 +107,6 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
     if (_loading) return const TaskManagerSkeleton();
     final isMobile = MediaQuery.of(context).size.width < 768;
     final role = context.read<AppState>().userRole;
-    final canManage = role == 'admin' || role == 'principal' ||
-        role == 'coordinator' || role == 'dean';
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -132,7 +130,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
               runSpacing: 10,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (role == 'principal') ...[
+                if (context.read<AppState>().can('view_all_tasks')) ...[
                   _ScopeTab(
                     label: 'My Created Tasks',
                     selected: _scope == 'mine',
@@ -154,26 +152,30 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
 
             // ── Search ──
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
               decoration: BoxDecoration(
                 color: AppTheme.cardColor,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: AppTheme.cardShadow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE3E9F3)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.search, size: 16, color: AppTheme.textLight),
-                  const SizedBox(width: 8),
+                  const Icon(Icons.search, size: 18, color: AppTheme.textLight),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: TextField(
                       onChanged: (q) => setState(() => _search = q),
                       style: GoogleFonts.plusJakartaSans(fontSize: 14),
                       decoration: InputDecoration(
-                        hintText: 'Search tasks...',
+                        hintText: 'Search tasks by title...',
                         hintStyle: AppTheme.bodyMd,
+                        // Override the app-wide filled/outlined field style.
+                        filled: false,
                         border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
                         isDense: true,
-                        contentPadding: EdgeInsets.zero,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                     ),
                   ),
@@ -218,16 +220,25 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                   child: Column(children: [
                     Icon(Icons.assignment_outlined, size: 48, color: AppTheme.textLight),
                     const SizedBox(height: 12),
-                    Text('No tasks found', style: AppTheme.bodyMd),
+                    Text(_search.isNotEmpty ? 'No tasks match "$_search"' : 'No tasks in this school year',
+                        style: AppTheme.labelMd),
+                    if (_search.isEmpty && _filter == SchoolYearFilter.current) ...[
+                      const SizedBox(height: 4),
+                      Text('Tasks from earlier school years are archived. '
+                          'Choose a year in the selector above to see them.',
+                          textAlign: TextAlign.center, style: AppTheme.bodySm),
+                    ],
                   ]),
                 ),
               ),
 
-            // ── Active Task Cards ──
+            // ── Active tasks ──
+            if (!_loading && _errorMsg == null && _active.isNotEmpty)
+              _SectionLabel(widget.category == 'special' ? 'Active special tasks' : 'Active tasks',
+                  _active.length),
             if (!_loading && _errorMsg == null)
               ..._active.map((t) => _TaskCard(
                     task: t,
-                    canManage: canManage,
                     onTap: () {
                       if (widget.onSelectTask != null) {
                         widget.onSelectTask!(t.id);
@@ -246,20 +257,15 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
 
             // ── Disabled Tasks Section ──
             if (!_loading && _errorMsg == null && _disabled.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(children: [
-                  Text('Disabled Task',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12, fontWeight: FontWeight.w600,
-                          color: AppTheme.textLight)),
-                  const SizedBox(width: 10),
-                  Expanded(child: Divider(color: AppTheme.borderColor)),
-                ]),
-              ),
-              ..._disabled.map((t) => _DisabledTaskCard(
+              const SizedBox(height: 14),
+              _SectionLabel('Disabled', _disabled.length),
+              ..._disabled.map((t) => _TaskCard(
                     task: t,
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: t.id)),
+                    ).then((_) => _load()),
+                    onEdit: () {},
+                    onDisable: () {},
                     onEnable: () => _enable(t.id),
                   )),
             ],
@@ -294,112 +300,102 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
   }
 }
 
-// ── Active Task Card ──────────────────────────────────────────────────────────
+// ── Task row card ─────────────────────────────────────────────────────────────
+
+const _monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+String _dueText(Task t) {
+  final dl = t.deadline;
+  if (dl == null) return 'No deadline';
+  final date = '${_monthsShort[dl.month - 1]} ${dl.day}, ${dl.year}';
+  final time = (t.dueTime ?? '').trim();
+  return time.isEmpty || time.toUpperCase() == '11:59 PM' ? 'Due $date' : 'Due $date, $time';
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  final int count;
+  const _SectionLabel(this.text, this.count);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 10, top: 4),
+        child: Row(children: [
+          Text(text, style: GoogleFonts.plusJakartaSans(
+              fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppTheme.borderColor)),
+            child: Text('$count', style: GoogleFonts.plusJakartaSans(
+                fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textMuted)),
+          ),
+        ]),
+      );
+}
 
 class _TaskCard extends StatelessWidget {
   final Task task;
-  final bool canManage;
   final VoidCallback onTap;
   final VoidCallback onEdit;
   final VoidCallback onDisable;
+  final VoidCallback? onEnable;
 
   const _TaskCard({
     required this.task,
-    required this.canManage,
     required this.onTap,
     required this.onEdit,
     required this.onDisable,
+    this.onEnable,
   });
 
-  bool get _hasTeam => task.teamTotal != null && (task.teamTotal! > 0);
-
-  String _fmtDate(String? d) {
-    if (d == null || d.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(d);
-      return '${dt.month.toString().padLeft(2,'0')} - ${dt.day.toString().padLeft(2,'0')} - ${dt.year}';
-    } catch (_) { return d; }
-  }
+  bool get _disabled => task.status != 'active';
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
-        decoration: BoxDecoration(
-          color: AppTheme.cardColor,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: AppTheme.cardShadow,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // ── Content ──
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(task.title,
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 3),
-                  Text(_fmtDate(task.startDate), style: AppTheme.bodySm),
-                  if (task.instructions != null && task.instructions!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      task.instructions!.replaceAll('\n', ' ').length > 80
-                          ? '${task.instructions!.replaceAll('\n', ' ').substring(0, 80)}...'
-                          : task.instructions!.replaceAll('\n', ' '),
-                      style: AppTheme.bodyMd,
-                    ),
-                  ],
-                  if (_hasTeam) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: (task.teamSubmitted ?? 0) >= (task.teamTotal ?? 1)
-                            ? AppTheme.greenColor : AppTheme.accentBlue,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.people_outlined, size: 13, color: Colors.white),
-                        const SizedBox(width: 4),
-                        Text('${task.teamSubmitted ?? 0}/${task.teamTotal} submitted',
-                            style: GoogleFonts.plusJakartaSans(
-                                fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
-                      ]),
-                    ),
-                  ] else if (task.submissionCount > 0) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: AppTheme.greenColor,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.description_outlined, size: 13, color: Colors.white),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${task.submissionCount} Submission${task.submissionCount > 1 ? "s" : ""}',
-                          style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
-                        ),
-                      ]),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final total = task.teamTotal ?? 0;
+    final done = task.teamSubmitted ?? 0;
+    final complete = total > 0 && done >= total;
+    final dl = task.deadline;
+    final overdue = !_disabled && !complete && dl != null && dl.isBefore(DateTime.now());
+    final dotColor = _disabled
+        ? AppTheme.textLight
+        : complete ? AppTheme.greenColor : overdue ? AppTheme.redColor : AppTheme.accentBlue;
+    final instructions = (task.instructions ?? '').replaceAll('\n', ' ').trim();
 
-            // ── Ellipsis menu ──
-            if (canManage) ...[
-              const SizedBox(width: 6),
-              PopupMenuButton<String>(
+    final progress = total == 0
+        ? _chip('Not assigned', AppTheme.textMuted, const Color(0xFFF1F5F9))
+        : SizedBox(
+            width: isMobile ? double.infinity : 150,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text('$done of $total submitted', style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12.5, fontWeight: FontWeight.w600,
+                  color: complete ? const Color(0xFF16A34A) : AppTheme.textMuted)),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: done / total,
+                  minHeight: 6,
+                  backgroundColor: const Color(0xFFEEF2FA),
+                  color: complete ? AppTheme.greenColor : AppTheme.accentBlue,
+                ),
+              ),
+            ]),
+          );
+
+    final menu = task.canEdit
+        ? (_disabled
+            ? TextButton(
+                onPressed: onEnable,
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFF16A34A)),
+                child: const Text('Enable'),
+              )
+            : PopupMenuButton<String>(
+                tooltip: 'Task actions',
                 icon: const Icon(Icons.more_vert, size: 20, color: AppTheme.textMuted),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 onSelected: (v) {
@@ -407,99 +403,93 @@ class _TaskCard extends StatelessWidget {
                   if (v == 'disable') onDisable();
                 },
                 itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: 'edit',
-                    child: Row(children: [
-                      const Icon(Icons.edit_outlined, size: 16, color: AppTheme.accentBlue),
-                      const SizedBox(width: 8),
-                      Text('Edit',
-                          style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13, fontWeight: FontWeight.w500,
-                              color: AppTheme.accentBlue)),
-                    ]),
-                  ),
-                  PopupMenuItem(
-                    value: 'disable',
-                    child: Row(children: [
-                      const Icon(Icons.block_outlined, size: 16, color: AppTheme.redColor),
-                      const SizedBox(width: 8),
-                      Text('Disable',
-                          style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13, fontWeight: FontWeight.w500,
-                              color: AppTheme.redColor)),
-                    ]),
-                  ),
+                  _menuItem('edit', Icons.edit_outlined, 'Edit task', AppTheme.textPrimary),
+                  _menuItem('disable', Icons.block_outlined, 'Disable task', AppTheme.redColor),
                 ],
+              ))
+        : const SizedBox(width: 8);
+
+    final info = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(task.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.plusJakartaSans(fontSize: 15.5, fontWeight: FontWeight.w700,
+              color: _disabled ? AppTheme.textMuted : AppTheme.textPrimary)),
+      const SizedBox(height: 4),
+      Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.flag_outlined, size: 14, color: overdue ? AppTheme.redColor : AppTheme.textLight),
+          const SizedBox(width: 4),
+          Text(_dueText(task), style: GoogleFonts.plusJakartaSans(fontSize: 12.5,
+              fontWeight: overdue ? FontWeight.w600 : FontWeight.w500,
+              color: overdue ? AppTheme.redColor : AppTheme.textMuted)),
+        ]),
+        if (overdue) _chip('Overdue', const Color(0xFFB91C1C), AppTheme.redBg),
+        if (complete && !_disabled) _chip('All submitted', const Color(0xFF15803D), AppTheme.greenBg),
+        if (_disabled) _chip('Disabled', AppTheme.textMuted, const Color(0xFFF1F5F9)),
+      ]),
+      if (instructions.isNotEmpty && instructions.toLowerCase() != task.title.toLowerCase()) ...[
+        const SizedBox(height: 6),
+        Text(instructions, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppTheme.bodyMd),
+      ],
+    ]);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: _disabled ? const Color(0xFFF8FAFC) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 6, 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE3E9F3)),
+            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              Container(
+                width: 10, height: 10,
+                decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: dotColor.withValues(alpha: 0.25), spreadRadius: 3)]),
               ),
-            ],
-          ],
+              const SizedBox(width: 16),
+              Expanded(
+                child: isMobile
+                    ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        info, const SizedBox(height: 10), progress,
+                      ])
+                    : Row(children: [
+                        Expanded(child: info),
+                        const SizedBox(width: 20),
+                        progress,
+                      ]),
+              ),
+              const SizedBox(width: 4),
+              menu,
+            ]),
+          ),
         ),
       ),
     );
   }
-}
 
-// ── Disabled Task Card ────────────────────────────────────────────────────────
+  static Widget _chip(String text, Color fg, Color bg) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        child: Text(text, style: GoogleFonts.plusJakartaSans(
+            fontSize: 11.5, fontWeight: FontWeight.w600, color: fg)),
+      );
 
-class _DisabledTaskCard extends StatelessWidget {
-  final Task task;
-  final VoidCallback onEnable;
-
-  const _DisabledTaskCard({required this.task, required this.onEnable});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderColor),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(task.title,
-                    style: GoogleFonts.plusJakartaSans(
-                        fontSize: 15, fontWeight: FontWeight.w600,
-                        color: AppTheme.textMuted)),
-                if (task.instructions != null && task.instructions!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    task.instructions!.replaceAll('\n', ' ').length > 80
-                        ? '${task.instructions!.replaceAll('\n', ' ').substring(0, 80)}...'
-                        : task.instructions!.replaceAll('\n', ' '),
-                    style: AppTheme.bodyMd,
-                  ),
-                ],
-              ],
-            ),
-          ),
+  static PopupMenuItem<String> _menuItem(String value, IconData icon, String label, Color color) =>
+      PopupMenuItem(
+        value: value,
+        child: Row(children: [
+          Icon(icon, size: 16, color: color),
           const SizedBox(width: 10),
-          ElevatedButton(
-            onPressed: onEnable,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.greenColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            ),
-            child: Text('Enable',
-                style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-  }
+          Text(label, style: GoogleFonts.plusJakartaSans(
+              fontSize: 13, fontWeight: FontWeight.w500, color: color)),
+        ]),
+      );
 }
 
 // ── Confirm Disable Dialog ────────────────────────────────────────────────────

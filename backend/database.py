@@ -182,6 +182,56 @@ def _build_and_seed():
         issuer_id   INTEGER REFERENCES certification_issuers(id) ON DELETE SET NULL
     );
 
+    -- Uploaded certificate files (certificate_reader.py). A file is 'pending'
+    -- until its owner confirms what it is, then 'submitted' for review, then
+    -- 'verified' or 'rejected' by the principal/registrar. Files live outside
+    -- the public uploads folder and are served only to authorized users.
+    CREATE TABLE IF NOT EXISTS certificate_files (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        certification_id  INTEGER REFERENCES certifications(id) ON DELETE SET NULL,
+        file_path         TEXT NOT NULL,
+        original_name     TEXT,
+        mime              TEXT NOT NULL,
+        sha256            TEXT NOT NULL,
+        extracted_text    TEXT,
+        detected_title    TEXT,
+        match_confidence  REAL,
+        checks            TEXT,          -- JSON list of automated checks
+        authenticity      TEXT,          -- high | medium | low (automated)
+        status            TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending','submitted','verified','rejected')),
+        review_note       TEXT,
+        reviewed_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        reviewed_at       TIMESTAMP,
+        created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Audit trail of administrative changes (roles, delegations, account
+    -- status, certificate reviews, approvals ...). Append-only: the triggers
+    -- below reject any UPDATE or DELETE, so history can't be rewritten.
+    -- Names are copied in so entries stay readable if an account is removed.
+    CREATE TABLE IF NOT EXISTS audit_log (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),  -- UTC
+        actor_id     INTEGER,
+        actor_name   TEXT,
+        actor_role   TEXT,
+        action       TEXT NOT NULL,      -- e.g. personnel.update, account.deactivate
+        entity_type  TEXT NOT NULL,      -- user | certificate | school_year | event | task
+        entity_id    INTEGER,
+        entity_label TEXT,
+        summary      TEXT NOT NULL,
+        changes      TEXT,               -- JSON {field: [before, after]}
+        ip_address   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_actor  ON audit_log(actor_id);
+    CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log
+    BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
+    BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+
     CREATE TABLE IF NOT EXISTS user_skills (
         id       INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

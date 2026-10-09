@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+import audit
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from database import connect_db
@@ -116,7 +117,8 @@ class CreateUserRequest(BaseModel):
 
 
 @router.post("/api/users")
-def create_user(req: CreateUserRequest, user=Depends(require_admin_or_principal)):
+def create_user(req: CreateUserRequest, request: Request,
+                user=Depends(require_admin_or_principal)):
     valid_roles = {"admin", "principal", "coordinator", "dean", "teacher", "registrar"}
     if req.role not in valid_roles:
         raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
@@ -126,8 +128,12 @@ def create_user(req: CreateUserRequest, user=Depends(require_admin_or_principal)
             "INSERT INTO users (username,password_hash,full_name,role,grade_level_id) VALUES (?,?,?,?,?)",
             (req.username, hash_password(req.password), req.full_name, req.role, req.grade_level_id)
         )
-        db.commit()
         new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        audit.record(db, user, "account.create", "user", new_id,
+                     f"Created account {req.username} as {req.role}",
+                     entity_label=audit.user_label(db, new_id),
+                     changes={"role": [None, req.role]}, request=request)
+        db.commit()
         db.close()
         return {"id": new_id, "message": "User created"}
     except Exception as e:
@@ -196,7 +202,7 @@ def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user))
         try:
             if req.education is not None:
                 validate_education(req.education.dict())
-            validate_catalog_names(db, req.skills, req.certifications)
+            validate_catalog_names(db, req.skills, None)
         except ValueError as e:
             raise HTTPException(400, str(e))
         uid = int(user["sub"])
@@ -222,8 +228,8 @@ def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user))
                        list(updates.values()) + [uid])
         if req.skills is not None:
             set_skills(db, uid, req.skills)
-        if req.certifications is not None:
-            set_certifications(db, uid, req.certifications)
+        # Certifications are added only by uploading a certificate
+        # (/api/certificates), so they can be checked and verified.
         if req.education is not None:
             set_education(db, uid, req.education.dict())
         db.commit()

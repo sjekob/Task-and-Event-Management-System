@@ -93,8 +93,13 @@ class CertificationInfo {
   final String? category;
   final String? issuer;
   final String? issuerAcronym;
+  /// verified | submitted (awaiting review) | rejected | self_declared (no file).
+  final String credibility;
+  /// Result of the automated checks on the uploaded file: high | medium | low.
+  final String? authenticity;
   const CertificationInfo(
-      {required this.name, this.category, this.issuer, this.issuerAcronym});
+      {required this.name, this.category, this.issuer, this.issuerAcronym,
+       this.credibility = 'self_declared', this.authenticity});
 
   factory CertificationInfo.fromJson(Map<String, dynamic> json) =>
       CertificationInfo(
@@ -102,10 +107,115 @@ class CertificationInfo {
         category: json['category']?.toString(),
         issuer: json['issuer']?.toString(),
         issuerAcronym: json['issuer_acronym']?.toString(),
+        credibility: (json['credibility'] ?? 'self_declared').toString(),
+        authenticity: json['authenticity']?.toString(),
       );
 
   /// Short issuer label, e.g. "PRC" or "Philippine Red Cross".
   String? get issuerLabel => issuerAcronym ?? issuer;
+}
+
+/// One automated check run on an uploaded certificate.
+class CertificateCheck {
+  final String key;
+  final String label;
+  final String status; // pass | warn | fail | info
+  final String detail;
+  const CertificateCheck(
+      {required this.key, required this.label, required this.status, required this.detail});
+
+  factory CertificateCheck.fromJson(Map<String, dynamic> json) => CertificateCheck(
+        key: (json['key'] ?? '').toString(),
+        label: (json['label'] ?? '').toString(),
+        status: (json['status'] ?? 'info').toString(),
+        detail: (json['detail'] ?? '').toString(),
+      );
+}
+
+/// An uploaded certificate (PDF/photo), what was read from it and its review
+/// state. Self-declared certifications (listed without a file) have no [id].
+class CertificateFile {
+  final int? id;
+  final int? certificationId;
+  final String? title;
+  final String? detectedTitle;
+  final String? issuer;
+  final String? issuerAcronym;
+  final String? category;
+  final String description;
+  final String? originalName;
+  final String? mime;
+  final String? authenticity; // high | medium | low
+  final String status; // pending | submitted | verified | rejected | self_declared
+  final List<CertificateCheck> checks;
+  final String? reviewNote;
+  final String? reviewedByName;
+
+  const CertificateFile({
+    this.id, this.certificationId, this.title, this.detectedTitle, this.issuer,
+    this.issuerAcronym, this.category, this.description = '', this.originalName,
+    this.mime, this.authenticity, required this.status, this.checks = const [],
+    this.reviewNote, this.reviewedByName,
+  });
+
+  factory CertificateFile.fromJson(Map<String, dynamic> json) => CertificateFile(
+        id: (json['id'] as num?)?.toInt(),
+        certificationId: (json['certification_id'] as num?)?.toInt(),
+        title: json['title']?.toString(),
+        detectedTitle: json['detected_title']?.toString(),
+        issuer: json['issuer']?.toString(),
+        issuerAcronym: json['issuer_acronym']?.toString(),
+        category: json['category']?.toString(),
+        description: (json['description'] ?? '').toString(),
+        originalName: json['original_name']?.toString(),
+        mime: json['mime']?.toString(),
+        authenticity: json['authenticity']?.toString(),
+        status: (json['status'] ?? 'pending').toString(),
+        checks: _objList(json['checks'], CertificateCheck.fromJson),
+        reviewNote: json['review_note']?.toString(),
+        reviewedByName: json['reviewed_by_name']?.toString(),
+      );
+
+  bool get hasFile => id != null;
+  String? get issuerLabel => issuer ?? issuerAcronym;
+}
+
+/// A person's certifications: uploaded ones, ones listed without a file, and
+/// uploads still waiting for the owner to confirm what they are.
+class CertificateSet {
+  final List<CertificateFile> certificates;
+  final List<CertificateFile> selfDeclared;
+  final List<CertificateFile> pending;
+  const CertificateSet(
+      {this.certificates = const [], this.selfDeclared = const [], this.pending = const []});
+
+  factory CertificateSet.fromJson(Map<String, dynamic> json) => CertificateSet(
+        certificates: _objList(json['certificates'], CertificateFile.fromJson),
+        selfDeclared: _objList(json['self_declared'], CertificateFile.fromJson),
+        pending: _objList(json['pending'], CertificateFile.fromJson),
+      );
+
+  bool get isEmpty => certificates.isEmpty && selfDeclared.isEmpty && pending.isEmpty;
+}
+
+/// A catalog certification that an upload can be identified as.
+class CertificationCatalogItem {
+  final int id;
+  final String name;
+  final String? category;
+  final String? issuer;
+  final String description;
+  const CertificationCatalogItem(
+      {required this.id, required this.name, this.category, this.issuer, this.description = ''});
+
+  factory CertificationCatalogItem.fromJson(Map<String, dynamic> json) =>
+      CertificationCatalogItem(
+        id: (json['id'] as num).toInt(),
+        name: (json['cert_name'] ?? '').toString(),
+        category: json['category_name']?.toString(),
+        issuer: (json['issuer_name'] ?? json['acronym'])?.toString(),
+        description: (json['description'] ?? '').toString(),
+      );
 }
 
 List<T> _objList<T>(dynamic v, T Function(Map<String, dynamic>) parse) =>
@@ -131,6 +241,11 @@ class User {
   final List<SkillInfo> skillDetails;
   final List<CertificationInfo> certificationDetails;
   final Education education;
+  /// What this session may do, decided by the backend (login / /api/auth/me).
+  /// Empty for users loaded from other endpoints (e.g. personnel lists).
+  final Set<String> permissions;
+  /// Roles this session may assign tasks to ("Assign as"), from the backend.
+  final List<String> assignableRoles;
   final String? dateOfAppointment;
   final String? birthdate;
   final String? address;
@@ -163,6 +278,8 @@ class User {
     this.skillDetails = const [],
     this.certificationDetails = const [],
     this.education = const Education(),
+    this.permissions = const {},
+    this.assignableRoles = const [],
     this.dateOfAppointment,
     this.birthdate,
     this.address,
@@ -204,6 +321,8 @@ class User {
       certificationDetails:
           _objList(json['certification_details'], CertificationInfo.fromJson),
       education: Education.fromJson(json['education'] as Map<String, dynamic>?),
+      permissions: _stringList(json['permissions']).toSet(),
+      assignableRoles: _stringList(json['assignable_roles']),
       dateOfAppointment: json['date_of_appointment']?.toString(),
       birthdate: json['birthdate']?.toString(),
       address: json['address']?.toString(),
@@ -225,12 +344,13 @@ class User {
   bool get isTeacher => role == 'teacher';
   bool get isRegistrar => role == 'registrar';
 
-  // Can create/manage tasks at the top level
-  bool get isManager => isAdmin || isPrincipal || isCoordinator;
-  // Can review submissions from their assigned subordinates
-  bool get canReviewSubmissions => isAdmin || isPrincipal || isCoordinator || isDean;
-  // Can assign tasks to others
-  bool get canAssign => isAdmin || isPrincipal || isCoordinator || isDean;
+  /// Whether the backend granted this session [permission]. Only meaningful
+  /// for the signed-in user; the server enforces every one of these anyway.
+  bool can(String permission) => permissions.contains(permission);
+
+  bool get isManager => can('create_tasks');
+  bool get canReviewSubmissions => can('review_submissions');
+  bool get canAssign => can('assign_tasks');
 
   String get initials => fullName.isNotEmpty ? fullName[0].toUpperCase() : 'U';
 
@@ -258,6 +378,8 @@ class AssigneeSuggestion {
   final List<String> loadFactors;
   final List<String> matchedSkills;
   final List<String> matchedCertifications;
+  /// Certifications in a category related to the task (count less than a direct match).
+  final List<String> relatedCertifications;
   final int openTasks;
 
   AssigneeSuggestion({
@@ -268,6 +390,7 @@ class AssigneeSuggestion {
     this.loadFactors = const [],
     this.matchedSkills = const [],
     this.matchedCertifications = const [],
+    this.relatedCertifications = const [],
     this.openTasks = 0,
   });
 
@@ -280,6 +403,7 @@ class AssigneeSuggestion {
         loadFactors: _stringList(json['load_factors']),
         matchedSkills: _stringList(json['matched_skills']),
         matchedCertifications: _stringList(json['matched_certifications']),
+        relatedCertifications: _stringList(json['related_certifications']),
         openTasks: (json['open_tasks'] as num?)?.toInt() ?? 0,
       );
 }
@@ -441,6 +565,8 @@ class Task {
   final List<Report> reports;
   /// Assignees who have submitted (task log or report), for reviewers.
   final Set<int> submittedAssigneeIds;
+  /// Server-decided: may the current user edit/disable/delete this task.
+  final bool canEdit;
   /// Who assigned each assignee (user id → assigner id).
   final Map<int, int?> assignedByOf;
   /// Whose progress teamTotal/teamSubmitted cover: 'all' assignees (task
@@ -471,6 +597,7 @@ class Task {
     this.teamSubmitted,
     required this.reports,
     this.submittedAssigneeIds = const {},
+    this.canEdit = false,
     this.assignedByOf = const {},
     this.teamScope,
   });
@@ -540,6 +667,7 @@ class Task {
       teamSubmitted: (json['team_submitted'] ?? json['teacher_submitted']) as int?,
       reports: reports,
       submittedAssigneeIds: submittedIds,
+      canEdit: json['can_edit'] == true,
       assignedByOf: assignedBy,
       teamScope: json['team_scope']?.toString(),
     );

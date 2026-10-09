@@ -1,9 +1,11 @@
 from datetime import date
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+import audit
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, create_notification
-from auth import get_current_user, require_admin_or_principal, require_event_manager
+from auth import (get_current_user, require_event_manager, require_event_approver,
+                  has_permission)
 from date_utils import parse_event_date
 from school_calendar import resolve_window, in_window
 
@@ -246,44 +248,72 @@ def update_event(event_id: int, body: EventCreateBody, db=Depends(get_db),
 
 
 @router.patch("/{event_id}/approve")
-def approve_event(event_id: int, db=Depends(get_db), user=Depends(require_admin_or_principal)):
-    if not db.execute("SELECT id FROM events WHERE id=?", (event_id,)).fetchone():
+def approve_event(event_id: int, request: Request, db=Depends(get_db),
+                  user=Depends(require_event_approver)):
+    ev = db.execute("SELECT title, status FROM events WHERE id=?", (event_id,)).fetchone()
+    if not ev:
         raise HTTPException(404, "Event not found")
     db.execute("UPDATE events SET status='approved' WHERE id=?", (event_id,))
+    _audit_status(db, user, request, event_id, ev, "approved", "Approved event")
     db.commit()
     return {"message": "Event approved"}
 
 
-@router.patch("/{event_id}/disable")
-def disable_event(event_id: int, db=Depends(get_db), user=Depends(require_event_manager)):
-    if not db.execute("SELECT id FROM events WHERE id=?", (event_id,)).fetchone():
+def _require_event_control(db, event_id: int, user: dict):
+    """Disabling/re-enabling an event: its creator, or principal/admin."""
+    row = db.execute("SELECT created_by FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
         raise HTTPException(404, "Event not found")
+    if not (has_permission(user, "approve_events")
+            or (has_permission(user, "manage_events") and row["created_by"] == int(user["sub"]))):
+        raise HTTPException(403, "Only the event's proposer or the principal can do this")
+
+
+def _audit_status(db, user, request, event_id: int, ev, new_status: str, summary: str):
+    audit.record(db, user, f"event.{new_status}", "event", event_id,
+                 f"{summary} {ev['title']}", entity_label=ev["title"],
+                 changes={"status": [ev["status"], new_status]}, request=request)
+
+
+@router.patch("/{event_id}/disable")
+def disable_event(event_id: int, request: Request, db=Depends(get_db),
+                  user=Depends(get_current_user)):
+    _require_event_control(db, event_id, user)
+    ev = db.execute("SELECT title, status FROM events WHERE id=?", (event_id,)).fetchone()
     db.execute("UPDATE events SET status='disabled' WHERE id=?", (event_id,))
+    _audit_status(db, user, request, event_id, ev, "disabled", "Disabled event")
     db.commit()
     return {"message": "Event disabled"}
 
 
 @router.patch("/{event_id}/enable")
-def enable_event(event_id: int, db=Depends(get_db), user=Depends(require_event_manager)):
-    row = db.execute("SELECT id, target_date FROM events WHERE id=?", (event_id,)).fetchone()
-    if not row:
-        raise HTTPException(404, "Event not found")
+def enable_event(event_id: int, request: Request, db=Depends(get_db),
+                 user=Depends(get_current_user)):
+    _require_event_control(db, event_id, user)
+    row = db.execute("SELECT id, title, status, target_date FROM events WHERE id=?",
+                     (event_id,)).fetchone()
     # Re-enabling puts it back on the calendar, so the date must still be free.
     _validate_target_date(db, row["target_date"], exclude_id=event_id)
     db.execute("UPDATE events SET status='pending_approval' WHERE id=?", (event_id,))
+    _audit_status(db, user, request, event_id, row, "pending_approval", "Re-enabled event")
     db.commit()
     return {"message": "Event re-enabled"}
 
 
 @router.delete("/{event_id}")
-def delete_event(event_id: int, db=Depends(get_db), user=Depends(require_event_manager)):
+def delete_event(event_id: int, request: Request, db=Depends(get_db),
+                 user=Depends(require_event_manager)):
     uid = int(user["sub"])
     role = user["role"]
-    row = db.execute("SELECT created_by FROM events WHERE id=?", (event_id,)).fetchone()
+    row = db.execute("SELECT created_by, title, status FROM events WHERE id=?",
+                     (event_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Event not found")
     if role not in ("admin", "principal") and row["created_by"] != uid:
         raise HTTPException(403, "You can only delete events you created")
     db.execute("DELETE FROM events WHERE id=?", (event_id,))
+    audit.record(db, user, "event.delete", "event", event_id, f"Deleted event {row['title']}",
+                 entity_label=row["title"], changes={"status": [row["status"], "deleted"]},
+                 request=request)
     db.commit()
     return {"message": "Event deleted"}

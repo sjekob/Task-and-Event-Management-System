@@ -24,6 +24,13 @@ class AppState extends ChangeNotifier {
   bool get canReviewSubmissions => currentUser?.canReviewSubmissions ?? false;
   bool get canAssign => currentUser?.canAssign ?? false;
 
+  /// Server-granted permission check for showing/hiding UI. The backend
+  /// enforces the same permissions on every request.
+  bool can(String permission) => currentUser?.can(permission) ?? false;
+
+  /// Roles this session may assign tasks to, as decided by the backend.
+  List<String> get assignableRoles => currentUser?.assignableRoles ?? const [];
+
   String get userRole => currentUser?.role ?? '';
 
   // ── Draft auto-save hook ────────────────────────────────────────────────────

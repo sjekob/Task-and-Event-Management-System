@@ -25,7 +25,9 @@ x-backend-common: &backend-common
     # MUST be shared by every service — each one validates JWTs with this key.
     # If unset, each service generates its own random key and rejects tokens
     # issued by the auth service (401 on every non-auth endpoint).
-    JWT_SECRET_KEY: ${JWT_SECRET_KEY:-tasknet-dev-jwt-secret-change-in-prod}
+    # Signs login tokens. No default on purpose: a known key would let anyone
+    # forge a token for any account/role. Set it in .env (see .env.example).
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env - see .env.example}
     # Data layer. Defaults to the shared sqlite file during the SQLAlchemy
     # migration. Final cutover = set DATABASE_URL to the Postgres URL below:
     #   postgresql+psycopg2://tasknet:tasknet@postgres:5432/tasknet

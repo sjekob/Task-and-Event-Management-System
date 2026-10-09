@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
+import 'certificates_panel.dart';
 
 /// Personnel picker used when assigning a task. When [loadSuggestions] is
 /// given, people are ranked for the task (skills/certifications that match it
@@ -184,6 +185,14 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
     final checked = _local.contains(u.id);
     final s = _ranked[u.id];
     final isTop = s != null && s.isMatch && _ranked.keys.first == u.id;
+    // Certifications are shown as chips with their credibility, so drop the
+    // text reasons that repeat them ("Certified (verified): ...").
+    final reasons = s?.reasons
+            .where((r) => !r.startsWith('Certified (') && !r.startsWith('Related certification'))
+            .toList() ??
+        const [];
+    final certs = s == null ? const <CertificationInfo>[] : _certsFor(s);
+    final hasDetail = s != null && (reasons.isNotEmpty || s.loadFactors.isNotEmpty || certs.isNotEmpty);
     return CheckboxListTile(
       value: checked,
       onChanged: (_) => setState(() => checked ? _local.remove(u.id) : _local.add(u.id)),
@@ -201,10 +210,18 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
         children: [
           Text('${u.roleLabel}${u.gradeLevel != null ? ' · ${u.gradeLevel}' : ''}',
               style: AppTheme.bodySm),
-          if (s != null && (s.reasons.isNotEmpty || s.loadFactors.isNotEmpty)) ...[
+          if (certs.isNotEmpty) ...[
             const SizedBox(height: 4),
             Wrap(spacing: 4, runSpacing: 4, children: [
-              for (final r in s.reasons)
+              for (final c in certs)
+                _certChip(c, s!.matchedCertifications.contains(c.name) ||
+                    s.relatedCertifications.contains(c.name)),
+            ]),
+          ],
+          if (s != null && (reasons.isNotEmpty || s.loadFactors.isNotEmpty)) ...[
+            const SizedBox(height: 4),
+            Wrap(spacing: 4, runSpacing: 4, children: [
+              for (final r in reasons)
                 _badge(r, const Color(0xFF15803D), AppTheme.greenBg),
               for (final l in s.loadFactors)
                 _badge(l, const Color(0xFFB45309), AppTheme.amberBg),
@@ -212,7 +229,7 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
           ],
         ],
       ),
-      isThreeLine: s != null && (s.reasons.isNotEmpty || s.loadFactors.isNotEmpty),
+      isThreeLine: hasDetail,
       secondary: CircleAvatar(radius: 18, backgroundColor: AppTheme.sidebarActive,
           child: Text(u.initials, style: const TextStyle(color: Colors.white,
               fontSize: 13, fontWeight: FontWeight.w700))),
@@ -220,6 +237,47 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
       controlAffinity: ListTileControlAffinity.trailing,
     );
   }
+
+  /// Certifications worth showing for this task: the ones matching it, then
+  /// related ones, then any others that are verified or awaiting review (max 4).
+  List<CertificationInfo> _certsFor(AssigneeSuggestion s) {
+    final all = s.user.certificationDetails.where((c) => c.credibility != 'rejected');
+    bool fits(CertificationInfo c) =>
+        s.matchedCertifications.contains(c.name) || s.relatedCertifications.contains(c.name);
+    final matched = all.where((c) => s.matchedCertifications.contains(c.name));
+    final related = all.where((c) => s.relatedCertifications.contains(c.name));
+    final others = all.where((c) => !fits(c) && c.credibility != 'self_declared');
+    return [...matched, ...related, ...others].take(4).toList();
+  }
+
+  Widget _certChip(CertificationInfo c, bool matched) => Tooltip(
+      message: [
+        c.issuerLabel,
+        c.category,
+        if (matched) 'fits this task',
+      ].whereType<String>().join(' · '),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(6, 2, 3, 2),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+              color: matched ? AppTheme.greenColor.withValues(alpha: 0.6) : AppTheme.borderColor),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.workspace_premium_outlined, size: 12,
+              color: matched ? AppTheme.greenColor : AppTheme.textMuted),
+          const SizedBox(width: 3),
+          Flexible(
+            child: Text(c.name,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+          ),
+          const SizedBox(width: 4),
+          CredibilityBadge(credibility: c.credibility, authenticity: c.authenticity, compact: true),
+        ]),
+      ));
 
   Widget _badge(String text, Color fg, Color bg) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

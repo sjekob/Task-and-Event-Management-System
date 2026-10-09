@@ -10,6 +10,7 @@ import '../widgets/skeleton_widgets.dart';
 import '../utils/input_formatters.dart';
 import '../features/personnel/services/personnel_service.dart';
 import '../widgets/catalog_multi_select.dart';
+import '../widgets/certificates_panel.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -201,12 +202,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       value: p.education.postgraduateFocus, span: 2),
                 ]),
 
-                const _SectionHeader(icon: Icons.workspace_premium_outlined, title: 'Certifications & Skills'),
-                _chipGroup('Certifications & Eligibility', [
-                  for (final c in p.certificationDetails)
-                    c.issuerLabel != null ? '${c.name} · ${c.issuerLabel}' : c.name,
-                ]),
-                const SizedBox(height: 14),
+                const _SectionHeader(icon: Icons.workspace_premium_outlined, title: 'Certifications & Eligibility'),
+                const CertificatesPanel(canUpload: true),
+
+                const _SectionHeader(icon: Icons.psychology_outlined, title: 'Skills'),
                 _chipGroup('Skills', p.skills),
               ],
             ),
@@ -224,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _card({required Widget child}) => Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
           color: AppTheme.cardColor,
           borderRadius: BorderRadius.circular(14),
@@ -237,12 +236,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// wide screens, 2 on medium, 1 on phones. A field's `span` widens it.
   Widget _infoGrid(bool isMobile, List<_InfoField> fields) {
     return LayoutBuilder(builder: (context, c) {
-      const gap = 24.0;
+      const gap = 32.0;
       final cols = isMobile ? 1 : c.maxWidth >= 900 ? 4 : 2;
       final colW = (c.maxWidth - gap * (cols - 1)) / cols;
       return Wrap(
         spacing: gap,
-        runSpacing: 16,
+        runSpacing: 24,
         children: [
           for (final f in fields)
             SizedBox(
@@ -337,11 +336,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 class _SectionHeader extends StatelessWidget {
   final IconData icon;
   final String title;
-  const _SectionHeader({required this.icon, required this.title});
+  /// Tighter spacing, used inside the Edit Profile dialog.
+  final bool dense;
+  const _SectionHeader({required this.icon, required this.title, this.dense = false});
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 22, bottom: 14),
+        padding: EdgeInsets.only(top: dense ? 22 : 36, bottom: dense ? 14 : 20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
             Container(
@@ -354,7 +355,7 @@ class _SectionHeader extends StatelessWidget {
             Text(title, style: GoogleFonts.plusJakartaSans(
                 fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           const Divider(height: 1, color: AppTheme.borderColor),
         ]),
       );
@@ -374,13 +375,13 @@ class _InfoField extends StatelessWidget {
       children: [
         Text(label,
             style: GoogleFonts.plusJakartaSans(
-                fontSize: 11, fontWeight: FontWeight.w500,
+                fontSize: 12, fontWeight: FontWeight.w500,
                 color: AppTheme.textLight)),
-        const SizedBox(height: 2),
+        const SizedBox(height: 6),
         Text(
           value?.isNotEmpty == true ? value! : '—',
           style: GoogleFonts.plusJakartaSans(
-              fontSize: 13, fontWeight: FontWeight.w600,
+              fontSize: 14, fontWeight: FontWeight.w600,
               color: AppTheme.textPrimary),
         ),
       ],
@@ -435,9 +436,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   Map<String, List<String>> _eduOptions = {};
   late final Map<String, String?> _edu;
   late List<String> _skills;
-  late List<String> _certifications;
   List<CatalogOption> _skillOptions = [];
-  List<CatalogOption> _certOptions = [];
 
   @override
   void initState() {
@@ -462,22 +461,15 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       'specialization':       p.education.specialization,
     };
     _skills = List.of(p.skills);
-    _certifications = List.of(p.certifications);
     PersonnelService.educationOptions().then((o) {
       if (mounted) setState(() => _eduOptions = o);
     });
-    Future.wait([PersonnelService.skillsMeta(), PersonnelService.certificationsMeta()])
-        .then((r) {
+    PersonnelService.skillsMeta().then((r) {
       if (!mounted) return;
       setState(() {
-        _skillOptions = r[0]
+        _skillOptions = r
             .map((m) => CatalogOption(m['skill_name'] as String,
                 group: m['category_name'] as String?))
-            .toList();
-        _certOptions = r[1]
-            .map((m) => CatalogOption(m['cert_name'] as String,
-                group: m['category_name'] as String?,
-                detail: (m['issuer_name'] ?? m['acronym']) as String?))
             .toList();
       });
     });
@@ -502,7 +494,6 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
             int.tryParse(_ctrl['number_of_children']!.text.trim()) ?? 0,
         // Always sent so entries can be cleared.
         'skills': _skills,
-        'certifications': _certifications,
         'education': Education(
           highestAttainment: _edu['highest_attainment'],
           undergraduateDegree: _edu['undergraduate_degree'],
@@ -550,7 +541,8 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                       fontSize: 20, fontWeight: FontWeight.w700,
                       color: AppTheme.textPrimary)),
               const SizedBox(height: 4),
-              Text('Your education, certifications and skills are used to suggest you for matching tasks.',
+              Text('Your education and skills are used to suggest you for matching tasks. '
+                  'Certifications are added by uploading the certificate on your profile.',
                   style: AppTheme.bodySm),
               const SizedBox(height: 4),
               Expanded(
@@ -559,25 +551,23 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const _SectionHeader(icon: Icons.badge_outlined, title: 'Basic Information'),
+                      const _SectionHeader(dense: true, icon: Icons.badge_outlined, title: 'Basic Information'),
                       _row([_field('first_name', 'First Name'), _field('middle_name', 'Middle Name')]),
                       _row([_field('last_name', 'Last Name'), _field('suffix', 'Suffix')]),
-                      const _SectionHeader(icon: Icons.contact_mail_outlined, title: 'Contact Information'),
+                      const _SectionHeader(dense: true, icon: Icons.contact_mail_outlined, title: 'Contact Information'),
                       _row([_field('email', 'Email'), _field('phone_number', 'Phone Number')]),
                       _row([_field('address', 'Address')]),
-                      const _SectionHeader(icon: Icons.family_restroom_outlined, title: 'Personal Details'),
+                      const _SectionHeader(dense: true, icon: Icons.family_restroom_outlined, title: 'Personal Details'),
                       _row([_field('birthdate', 'Birthdate (YYYY-MM-DD)'),
                             _field('number_of_children', 'Number of Children')]),
-                      const _SectionHeader(icon: Icons.work_outline, title: 'Employment'),
+                      const _SectionHeader(dense: true, icon: Icons.work_outline, title: 'Employment'),
                       _row([_field('date_of_appointment', 'Date of Appointment')]),
-                      const _SectionHeader(icon: Icons.school_outlined, title: 'Educational Background'),
+                      const _SectionHeader(dense: true, icon: Icons.school_outlined, title: 'Educational Background'),
                       _row([_eduDropdown('highest_attainment', 'Highest Educational Attainment'),
                             _eduDropdown('undergraduate_degree', 'Undergraduate Degree')]),
                       _row([_eduDropdown('specialization', 'Area of Specialization'),
                             _field('postgraduate_focus', 'Postgraduate Program Focus')]),
-                      const _SectionHeader(icon: Icons.workspace_premium_outlined, title: 'Certifications & Skills'),
-                      _row([_catalogSelect('Certifications & Eligibility', _certifications,
-                          _certOptions, (v) => setState(() => _certifications = v))]),
+                      const _SectionHeader(dense: true, icon: Icons.psychology_outlined, title: 'Skills'),
                       _row([_catalogSelect('Skills', _skills, _skillOptions,
                           (v) => setState(() => _skills = v))]),
                     ],

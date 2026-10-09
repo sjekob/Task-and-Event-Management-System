@@ -11,6 +11,8 @@ backend/dev.db
 *.sqlite
 .env
 backend/.env
+# Uploaded certificates (personal documents) — never commit.
+backend/private/
 *.env.local
 
 # ── Python Build & Cache Artifacts ────────────────────────────────────────────

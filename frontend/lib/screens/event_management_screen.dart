@@ -176,18 +176,13 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     }
   }
 
-  bool get _canManage {
-    final role = context.read<AppState>().userRole;
-    return role == 'coordinator' || role == 'dean' || role == 'teacher' ||
-        role == 'registrar' || role == 'admin';
-  }
+  // Permissions come from the backend, which enforces them on every action.
+  bool get _canManage => context.read<AppState>().can('manage_events');
 
-  bool get _canApprove {
-    final role = context.read<AppState>().userRole;
-    return role == 'principal' || role == 'admin';
-  }
+  bool get _canApprove => context.read<AppState>().can('approve_events');
 
-  bool get _isPrincipal => context.read<AppState>().userRole == 'principal';
+  // Oversight-only accounts (approve but don't propose events).
+  bool get _isPrincipal => _canApprove && !_canManage;
 
   List<_CalEvent> get _activeEvents => _events
       .where((e) => e.status != _EventStatus.disabled && e.status != _EventStatus.draft)

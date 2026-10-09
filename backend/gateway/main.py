@@ -4,7 +4,8 @@ Run from backend/: uvicorn gateway.main:app --port 8000
 
 Service map:
   8001  auth       /api/auth, /api/users, /api/subjects, /api/grade-levels, /api/task-types,
-                   /api/school-years, /api/notifications
+                   /api/school-years, /api/notifications,
+                   /api/certificates
   8002  personnel  /api/personnel
   8003  tasks      /api/tasks, /api/templates, /api/reports, /api/comments, /uploads
   8004  events     /api/events
@@ -33,6 +34,8 @@ ROUTE_MAP: list[tuple[str, str]] = [
     ("/api/users",       AUTH_URL),
     ("/api/school-years", AUTH_URL),
     ("/api/notifications", AUTH_URL),
+    ("/api/certificates", AUTH_URL),
+    ("/api/audit", AUTH_URL),
     ("/api/subjects",    AUTH_URL),
     ("/api/grade-levels", AUTH_URL),
     ("/api/task-types",  AUTH_URL),

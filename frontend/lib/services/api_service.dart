@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
+import '../widgets/audit_history.dart' show AuditEntry;
 
 /// Token-bucket limiter: smooths request bursts so a runaway loop or rapid
 /// double-submits can't flood the backend. Excess requests are *delayed*, not
@@ -382,6 +383,122 @@ class ApiService {
       'url': '$baseUrl${json['url']}',
       'name': json['name'] as String? ?? filename,
     };
+  }
+
+  // ── Audit trail (principal/admin) ──
+  static Future<({List<AuditEntry> items, int total})> getAuditLog({
+    String? entityType, int? entityId, String? action, String? query,
+    int limit = 50, int offset = 0,
+  }) async {
+    final params = {
+      if (entityType != null) 'entity_type': entityType,
+      if (entityId != null) 'entity_id': '$entityId',
+      if (action != null) 'action': action,
+      if (query != null && query.isNotEmpty) 'q': query,
+      'limit': '$limit',
+      'offset': '$offset',
+    };
+    final res = await _client.get(
+        Uri.parse('$baseUrl/api/audit').replace(queryParameters: params),
+        headers: await _headers);
+    if (res.statusCode != 200) {
+      throw Exception(_errorDetail(res.body, 'Failed to load the audit log'));
+    }
+    final d = jsonDecode(res.body) as Map<String, dynamic>;
+    return (
+      items: (d['items'] as List)
+          .map((e) => AuditEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      total: (d['total'] as num).toInt(),
+    );
+  }
+
+  // ── Certificates ──
+  static String _errorDetail(String body, String fallback) {
+    try {
+      final d = jsonDecode(body);
+      if (d is Map && d['detail'] is String) return d['detail'] as String;
+    } catch (_) {}
+    return fallback;
+  }
+
+  static Future<List<CertificationCatalogItem>> getCertificationCatalog() async {
+    final res = await _client.get(Uri.parse('$baseUrl/api/certificates/catalog'),
+        headers: await _headers);
+    if (res.statusCode != 200) throw Exception('Failed to load certifications');
+    return (jsonDecode(res.body) as List)
+        .map((e) => CertificationCatalogItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// [userId] null: the signed-in person's own certificates.
+  static Future<CertificateSet> getCertificates({int? userId}) async {
+    final path = userId == null ? 'mine' : 'user/$userId';
+    final res = await _client.get(Uri.parse('$baseUrl/api/certificates/$path'),
+        headers: await _headers);
+    if (res.statusCode != 200) {
+      throw Exception(_errorDetail(res.body, 'Failed to load certificates'));
+    }
+    return CertificateSet.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  /// Upload a certificate PDF/photo; the server reads and checks it.
+  static Future<CertificateFile> analyzeCertificate(List<int> bytes, String filename) async {
+    final t = await token;
+    final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/certificates/analyze'));
+    if (t != null) req.headers['Authorization'] = 'Bearer $t';
+    req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+    final streamed = await _client.send(req).timeout(const Duration(seconds: 90),
+        onTimeout: () => throw Exception('Reading the certificate took too long. Try a smaller file.'));
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode != 201) {
+      throw Exception(_errorDetail(body, 'Could not read the certificate'));
+    }
+    return CertificateFile.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  static Future<CertificateFile> confirmCertificate(int id, int certificationId) async {
+    final res = await _client.post(Uri.parse('$baseUrl/api/certificates/$id/confirm'),
+        headers: await _headers, body: jsonEncode({'certification_id': certificationId}));
+    if (res.statusCode != 200) {
+      throw Exception(_errorDetail(res.body, 'Could not add the certificate'));
+    }
+    return CertificateFile.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  static Future<void> deleteCertificate(int id) async {
+    final res = await _client.delete(Uri.parse('$baseUrl/api/certificates/$id'),
+        headers: await _headers);
+    if (res.statusCode != 200) {
+      throw Exception(_errorDetail(res.body, 'Could not remove the certificate'));
+    }
+  }
+
+  static Future<void> removeSelfDeclaredCertification(int certificationId) async {
+    final res = await _client.delete(
+        Uri.parse('$baseUrl/api/certificates/declared/$certificationId'),
+        headers: await _headers);
+    if (res.statusCode != 200) throw Exception('Could not remove the certification');
+  }
+
+  static Future<CertificateFile> reviewCertificate(int id, String status, {String? note}) async {
+    final res = await _client.patch(Uri.parse('$baseUrl/api/certificates/$id/review'),
+        headers: await _headers,
+        body: jsonEncode({'status': status, if (note != null && note.isNotEmpty) 'note': note}));
+    if (res.statusCode != 200) {
+      throw Exception(_errorDetail(res.body, 'Could not save the review'));
+    }
+    return CertificateFile.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  /// The certificate file itself (needs the token, so it can't be a plain link).
+  static Future<List<int>> getCertificateBytes(int id) async {
+    final res = await _client.get(Uri.parse('$baseUrl/api/certificates/$id/file'),
+        headers: await _headers);
+    if (res.statusCode != 200) {
+      throw Exception(_errorDetail(res.body, 'Could not open the certificate'));
+    }
+    return res.bodyBytes;
   }
 
   static Future<void> uploadReportFile(

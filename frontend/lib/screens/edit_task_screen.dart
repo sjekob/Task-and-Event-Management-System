@@ -55,7 +55,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _dueTime = _parseTime(t.dueTime);
     _selectedIds = t.assignedUsers.map((u) => u.id).toSet();
     _originalIds = Set.of(_selectedIds);
-    _targetRole = assignableRoles(context.read<AppState>().userRole).first;
+    final roles = context.read<AppState>().assignableRoles;
+    _targetRole = roles.isEmpty ? null : roles.first;
     _loadUsers();
   }
 
@@ -92,27 +93,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       final users = await ApiService.getAssignableUsers(targetRole: _targetRole);
       if (mounted) setState(() { _allAssignable = users; _loadingUsers = false; });
     } catch (_) {
-      try {
-        final currentUser = context.read<AppState>().currentUser;
-        final all = await ApiService.getUsers();
-        final filtered = _filterByRole(all, currentUser);
-        if (mounted) setState(() { _allAssignable = filtered; _loadingUsers = false; });
-      } catch (_) {
-        if (mounted) setState(() => _loadingUsers = false);
-      }
+      // Who may be assigned is decided by the server only.
+      if (mounted) setState(() { _allAssignable = []; _loadingUsers = false; });
     }
-  }
-
-  List<User> _filterByRole(List<User> all, User? currentUser) {
-    final role = currentUser?.role ?? '';
-    final glId = currentUser?.gradeLevelId;
-    if (role == 'dean') {
-      return all.where((u) => u.role == 'teacher' && (glId == null || u.gradeLevelId == glId)).toList();
-    }
-    if (role == 'coordinator') {
-      return all.where((u) => {'coordinator', 'dean', 'teacher'}.contains(u.role)).toList();
-    }
-    return all.where((u) => {'coordinator', 'dean', 'teacher', 'registrar'}.contains(u.role)).toList();
   }
 
   Future<void> _pickDate(bool isStart) async {
@@ -152,7 +135,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         onChanged: (ids) => setState(() {
           _selectedIds..clear()..addAll(ids);
           for (final id in ids) {
-            if (!_originalIds.contains(id)) _addedAs.putIfAbsent(id, () => _targetRole!);
+            if (!_originalIds.contains(id) && _targetRole != null) {
+              _addedAs.putIfAbsent(id, () => _targetRole!);
+            }
           }
           _addedAs.removeWhere((id, _) => !ids.contains(id));
         }),
@@ -304,7 +289,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
               // ── Assign as (identity new assignees receive the task under) ──
               Builder(builder: (ctx) {
-                final opts = assignableRoles(ctx.read<AppState>().userRole);
+                final opts = ctx.read<AppState>().assignableRoles;
                 if (opts.length < 2) return const SizedBox.shrink();
                 return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   _FieldLabel('Assign As'),

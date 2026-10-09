@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+import audit
 from pydantic import BaseModel
 from typing import Optional, List
 from database import connect_db, create_notification
 from auth import (get_current_user, require_task_creator, require_can_assign,
-                  TASK_CREATORS, can_assign)
+                  TASK_CREATORS, can_assign, has_permission)
 from date_utils import task_deadline
 from datetime import datetime
 from school_calendar import resolve_window, task_in_window
@@ -43,6 +44,10 @@ def _task_row(row, db, current_user_id: int, current_role: str):
         (d["id"], current_user_id)
     ).fetchone()
     d["my_assigned_by"] = my_assignment["assigned_by"] if my_assignment else None
+    # Decided here so the client never infers it: may this caller edit,
+    # disable or delete the task (its creator, or principal/admin)?
+    d["can_edit"] = (d.get("created_by") == current_user_id
+                     or has_permission({"role": current_role}, "moderate"))
 
     # The caller's own submission state — for anyone assigned this task, so a
     # dean/coordinator/registrar's My Tasks shows it too (not only teachers).
@@ -81,6 +86,43 @@ def _task_row(row, db, current_user_id: int, current_role: str):
         d["team_scope"] = "all" if whole_task else "mine"
 
     return d
+
+
+def task_relation(db, task_id: int, uid: int) -> Optional[dict]:
+    """How the caller relates to a task: {creator, assigned, assigner}, or None
+    if the task doesn't exist."""
+    row = db.execute("SELECT created_by FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if not row:
+        return None
+    return {
+        "creator": row["created_by"] == uid,
+        "assigned": db.execute("SELECT 1 FROM task_assignments WHERE task_id=? AND user_id=?",
+                               (task_id, uid)).fetchone() is not None,
+        "assigner": db.execute("SELECT 1 FROM task_assignments WHERE task_id=? AND assigned_by=?",
+                               (task_id, uid)).fetchone() is not None,
+    }
+
+
+def require_task_access(db, task_id: int, user: dict) -> dict:
+    """404 if the task doesn't exist; 403 unless the caller may see it: its
+    creator, someone assigned to it or who assigned others to it, or a role
+    that oversees every task (principal/admin)."""
+    rel = task_relation(db, task_id, int(user["sub"]))
+    if rel is None:
+        raise HTTPException(404, "Task not found")
+    if not (has_permission(user, "view_all_tasks") or any(rel.values())):
+        raise HTTPException(403, "You do not have access to this task")
+    return rel
+
+
+def require_task_owner(db, task_id: int, user: dict) -> dict:
+    """Editing/deleting a task: its creator, or principal/admin."""
+    rel = task_relation(db, task_id, int(user["sub"]))
+    if rel is None:
+        raise HTTPException(404, "Task not found")
+    if not (rel["creator"] or has_permission(user, "moderate")):
+        raise HTTPException(403, "Only the task's creator or the principal can change this task")
+    return rel
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -184,14 +226,11 @@ def get_task(task_id: int, user=Depends(get_current_user)):
         db.close()
         raise HTTPException(404, "Task not found")
 
-    if role not in TASK_CREATORS and role != "admin":
-        assigned = db.execute(
-            "SELECT 1 FROM task_assignments WHERE task_id=? AND user_id=?",
-            (task_id, uid)
-        ).fetchone()
-        if not assigned:
-            db.close()
-            raise HTTPException(403, "Not assigned to this task")
+    try:
+        require_task_access(db, task_id, user)
+    except HTTPException:
+        db.close()
+        raise
 
     d = _task_row(row, db, uid, role)
 
@@ -371,6 +410,14 @@ class UpdateTaskRequest(BaseModel):
 @router.put("/api/tasks/{task_id}")
 def update_task(task_id: int, req: UpdateTaskRequest, user=Depends(require_task_creator)):
     db = connect_db()
+    try:
+        require_task_owner(db, task_id, user)
+    except HTTPException:
+        db.close()
+        raise
+    if req.status is not None and req.status not in ("active", "disabled"):
+        db.close()
+        raise HTTPException(400, "status must be 'active' or 'disabled'")
     fields, vals = [], []
     for f, v in [("title", req.title), ("subject", req.subject),
                  ("task_type_id", req.task_type_id), ("start_date", req.start_date),
@@ -388,9 +435,17 @@ def update_task(task_id: int, req: UpdateTaskRequest, user=Depends(require_task_
 
 
 @router.delete("/api/tasks/{task_id}")
-def delete_task(task_id: int, user=Depends(require_task_creator)):
+def delete_task(task_id: int, request: Request, user=Depends(require_task_creator)):
     db = connect_db()
+    try:
+        require_task_owner(db, task_id, user)
+    except HTTPException:
+        db.close()
+        raise
+    t = db.execute("SELECT title FROM tasks WHERE id=?", (task_id,)).fetchone()
     db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    audit.record(db, user, "task.delete", "task", task_id, f"Deleted task {t['title'] if t else ''}",
+                 entity_label=t["title"] if t else None, request=request)
     db.commit()
     db.close()
     return {"message": "Deleted"}
@@ -404,7 +459,8 @@ class AssignRequest(BaseModel):
 
 
 @router.post("/api/tasks/{task_id}/assign")
-def assign_task(task_id: int, req: AssignRequest, user=Depends(require_can_assign)):
+def assign_task(task_id: int, req: AssignRequest, request: Request,
+                user=Depends(require_can_assign)):
     db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
@@ -426,19 +482,43 @@ def assign_task(task_id: int, req: AssignRequest, user=Depends(require_can_assig
     added, skipped = _assign_users(db, task_id, uid, role, req.user_ids, req.target_role,
                                    task["title"] if task else "a task",
                                    (task["instructions"] or "") if task else "")
+    if added:
+        names = [audit.user_label(db, i) or str(i) for i in added]
+        audit.record(db, user, "task.assign", "task", task_id,
+                     f"Assigned {', '.join(names)}" + (f" as {req.target_role}" if req.target_role else ""),
+                     entity_label=task["title"] if task else None,
+                     changes={"assignees": [None, ", ".join(names)]}, request=request)
     db.commit()
     db.close()
     return {"assigned": added, "skipped": skipped}
 
 
 @router.delete("/api/tasks/{task_id}/assign/{user_id}")
-def unassign_task(task_id: int, user_id: int, user=Depends(require_can_assign)):
+def unassign_task(task_id: int, user_id: int, request: Request,
+                  user=Depends(require_can_assign)):
+    """The task's creator and principal/admin may remove anyone; others only
+    the people they assigned."""
     db = connect_db()
     uid = int(user["sub"])
-    db.execute(
-        "DELETE FROM task_assignments WHERE task_id=? AND user_id=? AND assigned_by=?",
-        (task_id, user_id, uid)
-    )
+    rel = task_relation(db, task_id, uid)
+    if rel is None:
+        db.close()
+        raise HTTPException(404, "Task not found")
+    if rel["creator"] or has_permission(user, "moderate"):
+        cur = db.execute("DELETE FROM task_assignments WHERE task_id=? AND user_id=?",
+                         (task_id, user_id))
+    else:
+        cur = db.execute(
+            "DELETE FROM task_assignments WHERE task_id=? AND user_id=? AND assigned_by=?",
+            (task_id, user_id, uid))
+    if cur.rowcount:
+        t = db.execute("SELECT title FROM tasks WHERE id=?", (task_id,)).fetchone()
+        name = audit.user_label(db, user_id) or str(user_id)
+        audit.record(db, user, "task.unassign", "task", task_id, f"Removed {name}",
+                     entity_label=t["title"] if t else None,
+                     changes={"assignees": [name, None]}, request=request)
     db.commit()
     db.close()
+    if cur.rowcount == 0:
+        raise HTTPException(403, "You can only remove people you assigned")
     return {"message": "Unassigned"}

@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile
 from pydantic import BaseModel
 from typing import Optional
 from database import connect_db
-from auth import get_current_user, TASK_CREATORS
+from auth import get_current_user, TASK_CREATORS, has_permission
 from files import save_upload
 
 router = APIRouter(tags=["Reports"])
@@ -176,19 +176,28 @@ def update_report_status(report_id: int, req: UpdateReportStatusRequest,
     uid = int(user["sub"])
     role = user["role"]
 
-    if role in TASK_CREATORS or role == "admin":
-        pass
-    elif role in ("coordinator", "dean"):
-        sl = db.execute(
-            "SELECT 1 FROM submission_log WHERE report_id=? AND receiver_personnel_id=?",
-            (report_id, uid)
-        ).fetchone()
-        if not sl:
-            db.close()
-            raise HTTPException(403, "Not authorized to update this report")
-    else:
+    # Reviewers of this submission only: principal/admin, the task's creator,
+    # whoever assigned the submitter, or the recorded receiver of the report.
+    rep = db.execute(
+        """SELECT r.personnel_id, t.created_by, t.id AS task_id FROM reports r
+           JOIN tasks t ON t.id = r.task_id WHERE r.id=?""", (report_id,)).fetchone()
+    if not rep:
         db.close()
-        raise HTTPException(403, "Cannot update report status")
+        raise HTTPException(404, "Report not found")
+    allowed = (
+        has_permission(user, "moderate")
+        or rep["created_by"] == uid
+        or db.execute("SELECT 1 FROM task_assignments WHERE task_id=? AND user_id=? AND assigned_by=?",
+                      (rep["task_id"], rep["personnel_id"], uid)).fetchone() is not None
+        or db.execute("SELECT 1 FROM submission_log WHERE report_id=? AND receiver_personnel_id=?",
+                      (report_id, uid)).fetchone() is not None
+    )
+    if not allowed:
+        db.close()
+        raise HTTPException(403, "Not authorized to update this report")
+    if req.report_status not in ("Completed", "Pending", "Missing"):
+        db.close()
+        raise HTTPException(400, "report_status must be Completed, Pending or Missing")
 
     db.execute("UPDATE reports SET report_status=? WHERE id=?", (req.report_status, report_id))
     db.execute("UPDATE submission_log SET status=? WHERE report_id=?", (req.report_status, report_id))

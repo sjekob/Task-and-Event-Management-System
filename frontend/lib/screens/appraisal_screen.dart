@@ -43,16 +43,13 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
 
   // School year / term every tab covers (default: current; ended years are archived).
   SchoolYearFilter _filter = SchoolYearFilter.current;
-  late String _role;
 
   @override
   void initState() {
     super.initState();
-    final role = context.read<AppState>().userRole;
-    _role = role;
-    if (role == 'dean' || role == 'teacher') {
-      // Teachers see their own records only; deans see their grade level. Neither
-      // gets the school-wide Analytics tab.
+    if (!context.read<AppState>().can('view_all_appraisals')) {
+      // Without school-wide appraisal access (server permission), people see
+      // their own / their grade level's records and no Analytics tab.
       _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.badges];
     } else {
       _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.badges, _AppraisalTab.analytics];
@@ -205,9 +202,8 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     _AppraisalTab.badges => _BadgesTab(
         filter: _filter,
         // Principal/admin aren't appraised themselves; supervisors also rank staff.
-        showOwn: _role != 'principal' && _role != 'admin',
-        showLeaderboard: _role == 'principal' || _role == 'admin' ||
-            _role == 'coordinator' || _role == 'dean'),
+        showOwn: context.read<AppState>().can('receive_tasks'),
+        showLeaderboard: context.read<AppState>().can('evaluate_appraisal')),
     _AppraisalTab.analytics => _AnalyticsTab(tasks: _tasks, events: _events),
   };
 }

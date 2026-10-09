@@ -5,7 +5,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from database import db_session
-from auth import verify_password, create_token, get_current_user
+from auth import (verify_password, create_token, get_current_user,
+                  permissions_for, assignable_roles_for)
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -49,6 +50,8 @@ def login(req: LoginRequest, request: Request):
         if not user or not verify_password(req.password, user["password_hash"]):
             _login_failures[key].append(time.time())
             raise HTTPException(401, "Invalid credentials")
+        if not user["is_active"]:
+            raise HTTPException(403, "This account has been deactivated. Please contact the principal.")
         roles = [r["roles"] for r in db.execute(
             """SELECT r.roles FROM user_roles ur JOIN roles r ON r.id = ur.role_id
                WHERE ur.user_id=? ORDER BY r.roles""", (user["id"],)
@@ -83,6 +86,9 @@ def login(req: LoginRequest, request: Request):
         "avatar_url": user["avatar_url"],
         "grade_level_id": user["grade_level_id"],
         "available_roles": roles,
+        # Decided here, not by the client: what this session may do.
+        "permissions": permissions_for(active_role),
+        "assignable_roles": assignable_roles_for(active_role),
     }}
 
 
@@ -106,4 +112,6 @@ def me(user=Depends(get_current_user)):
     # The active role comes from the session token, not the stored primary role.
     d["role"] = user.get("role", d["role"])
     d["available_roles"] = roles or [d["role"]]
+    d["permissions"] = permissions_for(d["role"])
+    d["assignable_roles"] = assignable_roles_for(d["role"])
     return d

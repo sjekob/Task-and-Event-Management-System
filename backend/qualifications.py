@@ -49,6 +49,23 @@ POSTGRAD_GOVERNANCE_WEIGHT = 5.0  # any postgraduate focus on a governance task
 ELEMENTARY_DEGREE_WEIGHT = 3.0
 MIN_MATCH = 0.5            # a name counts once half its keywords appear
 
+# How much a certification counts, by how credible it is: verified by the
+# principal/registrar counts fully; an uploaded certificate awaiting review
+# counts by how well it passed the automated checks; a self-declared one (no
+# file) counts little; a rejected one not at all.
+CREDIBILITY_WEIGHT = {
+    "verified": 1.0,
+    "submitted:high": 0.7, "submitted:medium": 0.5, "submitted:low": 0.25,
+    "self_declared": 0.3,
+    "rejected": 0.0,
+}
+CREDIBILITY_LABEL = {
+    "verified": "verified",
+    "submitted": "pending review",
+    "self_declared": "self-declared, no certificate",
+    "rejected": "rejected",
+}
+
 CHILD_PENALTY = {"special": 2.0, "common": 1.0}
 MAX_CHILDREN_COUNTED = 4
 OPEN_TASK_PENALTY = 1.0
@@ -196,12 +213,14 @@ def get_qualifications(db, uid: int) -> dict:
            LEFT JOIN skill_categories sc ON sc.id = s.category_id
            WHERE us.user_id=? ORDER BY us.id""", (uid,))]
     certs = [dict(r) for r in db.execute(
-        """SELECT c.cert_name AS name, cc.category_name AS category,
+        """SELECT c.id AS certification_id, c.cert_name AS name, cc.category_name AS category,
                   ci.issuer_name AS issuer, ci.acronym AS issuer_acronym
            FROM user_certifications uc JOIN certifications c ON c.id = uc.certification_id
            LEFT JOIN certification_categories cc ON cc.id = c.category_id
            LEFT JOIN certification_issuers ci ON ci.id = c.issuer_id
            WHERE uc.user_id=? ORDER BY uc.id""", (uid,))]
+    for c in certs:
+        c.update(certification_credibility(db, uid, c["certification_id"]))
     edu = db.execute(
         f"SELECT {', '.join(_EDU_FIELDS)} FROM education_background WHERE user_id=?", (uid,)
     ).fetchone()
@@ -224,6 +243,28 @@ def validate_catalog_names(db, skills: Optional[Iterable[str]] = None,
         if unknown:
             raise ValueError(f"Unknown {label}(s): {', '.join(unknown)}. "
                              f"Choose from the {label} list.")
+
+
+def certification_credibility(db, uid: int, certification_id: int) -> dict:
+    """{credibility, authenticity, certificate_id} from the person's best
+    uploaded certificate for this certification (verified > awaiting review >
+    rejected); 'self_declared' when they listed it without a file."""
+    rows = db.execute(
+        """SELECT id, status, authenticity FROM certificate_files
+           WHERE user_id=? AND certification_id=? AND status != 'pending'""",
+        (uid, certification_id)).fetchall()
+    rank = {"verified": 0, "submitted": 1, "rejected": 2}
+    best = min(rows, key=lambda r: rank.get(r["status"], 9), default=None)
+    if best is None:
+        return {"credibility": "self_declared", "authenticity": None, "certificate_id": None}
+    return {"credibility": best["status"], "authenticity": best["authenticity"],
+            "certificate_id": best["id"]}
+
+
+def credibility_weight(cert: dict) -> float:
+    cred = cert.get("credibility") or "self_declared"
+    key = f"submitted:{cert.get('authenticity') or 'low'}" if cred == "submitted" else cred
+    return CREDIBILITY_WEIGHT.get(key, 0.0)
 
 
 def set_skills(db, uid: int, skills: Iterable[str]):
@@ -330,14 +371,19 @@ def score_candidates(db, candidates: List[dict], task_text: str,
             score += SPECIALIZATION_WEIGHT
             reasons.append(f"Specialization: {spec}")
 
-        matched_certs = []
+        # Certifications count by credibility (see CREDIBILITY_WEIGHT); the
+        # reason says how credible each one is.
+        matched_certs, by_cred = [], {}
         for c in prof["certification_details"]:
+            weight = credibility_weight(c)
             m = _match(c["name"], task_words)
-            if m >= MIN_MATCH:
-                score += CERT_WEIGHT * m
+            if m >= MIN_MATCH and weight > 0:
+                score += CERT_WEIGHT * m * weight
                 matched_certs.append(c["name"])
-        if matched_certs:
-            reasons.append("Certified: " + ", ".join(matched_certs))
+                by_cred.setdefault(c.get("credibility") or "self_declared", []).append(c["name"])
+        for cred in ("verified", "submitted", "self_declared"):
+            if by_cred.get(cred):
+                reasons.append(f"Certified ({CREDIBILITY_LABEL[cred]}): " + ", ".join(by_cred[cred]))
 
         matched_skills = []
         for s in prof["skill_details"]:
@@ -350,6 +396,7 @@ def score_candidates(db, candidates: List[dict], task_text: str,
 
         # Supporting signals: category → task mapping, counted once per
         # category, for items not already matched by name.
+        related_certs = []
         for label, items, matched, kw, weight in (
                 ("certification", prof["certification_details"], matched_certs,
                  cert_cat_kw, CERT_CATEGORY_WEIGHT),
@@ -358,11 +405,16 @@ def score_candidates(db, candidates: List[dict], task_text: str,
             by_cat = {}
             for it in items:
                 if it["category"] and it["name"] not in matched:
-                    by_cat.setdefault(it["category"], []).append(it["name"])
-            for cat, names in by_cat.items():
+                    # Certifications only count as credibly as they are held.
+                    w = credibility_weight(it) if label == "certification" else 1.0
+                    if w > 0:
+                        by_cat.setdefault(it["category"], []).append((it["name"], w))
+            for cat, entries in by_cat.items():
                 if _fits(kw.get(cat, []), task_words):
-                    score += weight
-                    reasons.append(f"Related {label} ({cat}): {', '.join(names)}")
+                    score += weight * max(w for _, w in entries)
+                    reasons.append(f"Related {label} ({cat}): {', '.join(n for n, _ in entries)}")
+                    if label == "certification":
+                        related_certs.extend(n for n, _ in entries)
 
         attainment = edu.get("highest_attainment")
         if leadership_task and attainment in dp.HIGHEST_ATTAINMENT:
@@ -399,6 +451,7 @@ def score_candidates(db, candidates: List[dict], task_text: str,
             "open_tasks": open_tasks,
             "matched_skills": matched_skills,
             "matched_certifications": matched_certs,
+            "related_certifications": related_certs,
             "specialization_match": spec_match,
             "is_match": bool(spec_match or matched_skills or matched_certs),
             "score": round(score, 2),

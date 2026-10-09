@@ -129,6 +129,84 @@ CERTIFICATIONS = [
      "Health, Safety & Disaster Risk", "DepEd Disaster Risk Reduction and Management Service"),
 ]
 
+# Certificate reader (certificate_reader.py): what each certification is, and
+# other wordings it appears under on actual certificates.
+CERTIFICATION_INFO = {
+    "Licensure Examination for Teachers (LET)": (
+        "Professional license for teachers in the Philippines, granted after passing the "
+        "Licensure Examination for Teachers administered by the PRC.",
+        ["licensure examination for teachers", "professional teacher", "board of professional teachers"]),
+    "Professional Board Examination for Teachers (PBET)": (
+        "The board examination for teachers that preceded the LET; holders are recognized "
+        "as licensed professional teachers.",
+        ["professional board examination for teachers", "pbet"]),
+    "Licensed Professional Teacher": (
+        "PRC registration as a professional teacher (license / professional ID).",
+        ["professional teacher", "certificate of registration"]),
+    "Civil Service Professional Eligibility": (
+        "Civil Service Commission eligibility for second-level (professional) government "
+        "positions, earned by passing the Career Service Professional examination.",
+        ["career service professional", "civil service eligibility", "professional eligibility"]),
+    "Higher-Order Thinking Skills (HOTS) Facilitator": (
+        "NEAP-accredited training qualifying the teacher to facilitate Higher-Order Thinking "
+        "Skills professional development sessions.",
+        ["higher-order thinking skills", "higher order thinking skills", "hots"]),
+    "Early Language, Literacy, and Numeracy (ELLN)": (
+        "DepEd/NEAP training program on teaching early language, literacy and numeracy in "
+        "Kindergarten to Grade 3.",
+        ["early language, literacy and numeracy", "early language literacy and numeracy", "elln"]),
+    "Comprehensive Sexuality Education (CSE) Core Trainer": (
+        "NEAP-accredited core trainer for DepEd's Comprehensive Sexuality Education program.",
+        ["comprehensive sexuality education"]),
+    "Trainers Methodology Level I (TM I)": (
+        "TESDA qualification certifying the holder to conduct competency-based technical-"
+        "vocational training and assessment.",
+        ["trainers methodology", "tm i", "tm1"]),
+    "NC II in Computer Systems Servicing": (
+        "TESDA National Certificate II for installing, configuring and maintaining computer "
+        "systems and networks.",
+        ["computer systems servicing", "css nc ii"]),
+    "NC II in Visual Graphic Design": (
+        "TESDA National Certificate II for producing graphic layouts, posters and digital "
+        "visual materials.",
+        ["visual graphic design"]),
+    "National Certificate II in Events Management": (
+        "TESDA National Certificate II for planning, coordinating and running events.",
+        ["events management services", "events management"]),
+    "Standard First Aid": (
+        "Philippine Red Cross training in giving first aid for injuries and emergencies.",
+        ["standard first aid", "first aid training"]),
+    "Basic Life Support": (
+        "Training in CPR and life support for cardiac and breathing emergencies.",
+        ["basic life support", "cardiopulmonary resuscitation", "bls"]),
+    "School Disaster Risk Reduction & Management (SDRRM) Officer": (
+        "DepEd designation/training for leading the school's disaster preparedness, drills "
+        "and emergency response.",
+        ["disaster risk reduction", "drrm", "sdrrm"]),
+    "Google Certified Educator": (
+        "Google for Education certification in using Google tools for teaching.",
+        ["google certified educator"]),
+    "Basic Scouting Leadership": (
+        "Boy Scouts of the Philippines leadership training for scout leaders.",
+        ["basic training course", "scout leaders", "basic scouting"]),
+}
+
+# Other names issuers appear under on certificates.
+ISSUER_ALIASES = {
+    "Professional Regulation Commission": ["professional regulation commission"],
+    "Civil Service Commission": ["civil service commission"],
+    "National Educators Academy of the Philippines": ["national educators academy", "neap"],
+    "Technical Education and Skills Development Authority": [
+        "technical education and skills development authority", "tesda"],
+    "Philippine Red Cross": ["philippine red cross", "red cross"],
+    "Municipal Disaster Risk Reduction and Management Office": [
+        "disaster risk reduction and management office", "mdrrmo"],
+    "DepEd Disaster Risk Reduction and Management Service": [
+        "disaster risk reduction and management service", "drrms"],
+    "Google for Education": ["google for education", "google"],
+    "Boy Scouts of the Philippines": ["boy scouts of the philippines", "bsp"],
+}
+
 # ── 3. Skills taxonomy (SKILL & SKILL_CATEGORY), aligned with PPST domains ─────
 
 # name → (description, task phrases, skills)

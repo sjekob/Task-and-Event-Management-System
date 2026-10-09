@@ -85,181 +85,361 @@ class _EventDetailPage extends StatelessWidget {
     this.onDisable,
   });
 
+  static String _money(dynamic v) {
+    final s = (v ?? '').toString().trim();
+    final n = double.tryParse(s.replaceAll(',', '').replaceAll('₱', '').trim());
+    if (n == null) return s;
+    final parts = n.toStringAsFixed(2).split('.');
+    final whole = parts[0].replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+    return '₱$whole.${parts[1]}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final raw = event.raw;
+    final width = MediaQuery.of(context).size.width;
+    final wide = width >= 900;
+    final pending = event.status == _EventStatus.pendingApproval;
+    final showApprove = canApprove && pending;
+    final showDisable = isPrincipal && pending;
+
+    final hasFocal = _notEmpty(raw['focal_name']);
+    final hasParticipants = _notEmpty(raw['participants']);
+    final focalCard = _DetailCard(
+      icon: Icons.badge_outlined,
+      title: 'Focal person',
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _PropField('Name', raw['focal_name']),
+        _PropField('Role', raw['focal_role']),
+        _PropField('Contact', raw['focal_contact']),
+      ]),
+    );
+    final participantsCard = _DetailCard(
+      icon: Icons.groups_outlined,
+      title: 'Target participants',
+      child: _buildParticipantsWidget((raw['participants'] ?? '').toString()),
+    );
+
+    // Numbered proposal sections, only those with content.
+    final sections = <(String, IconData, Widget)>[
+      if (_notEmpty(raw['rationale']))
+        ('Rationale', Icons.lightbulb_outline, _PropBody(raw['rationale'].toString())),
+      if (_notEmpty(raw['objectives']))
+        ('Objectives', Icons.flag_outlined, _PropBullets(raw['objectives'].toString())),
+      if (_notEmpty(raw['phase1']) || _notEmpty(raw['phase2']) || _notEmpty(raw['phase3']))
+        ('Methodology / Work plan', Icons.route_outlined, Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_notEmpty(raw['phase1'])) _buildMethodology(raw['phase1'].toString()),
+            if (_notEmpty(raw['phase2'])) _PropField('Phase 2', raw['phase2']),
+            if (_notEmpty(raw['phase3'])) _PropField('Phase 3', raw['phase3']),
+          ],
+        )),
+      if (_notEmpty(raw['activity_matrix']))
+        ('Activity matrix', Icons.view_timeline_outlined,
+            _buildActivityMatrix(raw['activity_matrix'].toString())),
+      if (_notEmpty(raw['training_materials']) || _notEmpty(raw['snacks']))
+        ('Budget', Icons.payments_outlined, Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_notEmpty(raw['training_materials'])) ...[
+              const _SubHeading('Training materials'),
+              _buildBudgetTable(raw['training_materials'].toString(),
+                  [('item', 'Item'), ('qty', 'Qty'), ('cost', 'Cost'), ('total', 'Total')]),
+            ],
+            if (_notEmpty(raw['snacks'])) ...[
+              const SizedBox(height: 16),
+              const _SubHeading('Meals / snacks'),
+              _buildBudgetTable(raw['snacks'].toString(),
+                  [('item', 'Item'), ('pax', 'Participants'), ('cost', 'Cost/Day'), ('total', 'Total')]),
+            ],
+          ],
+        )),
+      if (_notEmpty(raw['exec_committee']) || _notEmpty(raw['twg_groups']))
+        ('Committees', Icons.account_tree_outlined, Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_notEmpty(raw['exec_committee'])) ...[
+              const _SubHeading('Executive committee'),
+              _buildCommitteeList(raw['exec_committee'].toString()),
+            ],
+            if (_notEmpty(raw['twg_groups'])) ...[
+              const SizedBox(height: 14),
+              const _SubHeading('Technical working groups'),
+              _buildTwgGroups(raw['twg_groups'].toString()),
+            ],
+          ],
+        )),
+      if (_notEmpty(raw['monitoring_criteria']) || _notEmpty(raw['indicators']))
+        ('Monitoring & evaluation', Icons.fact_check_outlined, Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_notEmpty(raw['monitoring_criteria'])) _PropBody(raw['monitoring_criteria'].toString()),
+            if (_notEmpty(raw['indicators'])) ...[
+              const _SubHeading('Indicators'),
+              _buildIndicators(raw['indicators'].toString()),
+            ],
+          ],
+        )),
+      if (_notEmpty(raw['comments']))
+        ('Signatories', Icons.draw_outlined, _buildSignatories(raw['comments'].toString())),
+    ];
+
+    final facts = [
+      ('Nature', Icons.category_outlined, (raw['nature'] ?? '').toString()),
+      ('Venue', Icons.place_outlined, (raw['venue'] ?? '').toString()),
+      ('Proposed budget', Icons.account_balance_wallet_outlined, _money(raw['proposed_budget'])),
+      ('Fund source', Icons.savings_outlined, (raw['fund_source'] ?? '').toString()),
+    ];
+
+    final pad = width < 600 ? 16.0 : 28.0;
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        foregroundColor: const Color(0xFF1A1A2E),
-        titleSpacing: 0,
-        title: Text(event.title,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(child: _StatusBadge(status: event.status)),
-          ),
-        ],
-      ),
-      body: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 32),
-              children: [
-                // Creator & date meta
-                if (event.creatorName.isNotEmpty)
-                  _PropMeta(Icons.person_outline, 'Proposed by ${event.creatorName}'),
-                if ((raw['target_date'] ?? '').toString().isNotEmpty)
-                  _PropMeta(Icons.calendar_today_outlined, raw['target_date'].toString()),
+      backgroundColor: const Color(0xFFF1F5FB),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(pad, 20, pad, 32),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1100),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                // ── Header ──
+                _Panel(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      IconButton(
+                        tooltip: 'Back to events',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFFF1F5F9),
+                            foregroundColor: const Color(0xFF1A1A2E)),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('EVENT PROPOSAL', style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8,
+                              color: const Color(0xFF718096))),
+                          const SizedBox(height: 4),
+                          Text(event.title, style: GoogleFonts.plusJakartaSans(
+                              fontSize: 24, fontWeight: FontWeight.w800,
+                              color: const Color(0xFF1A1A2E), height: 1.2)),
+                        ]),
+                      ),
+                      const SizedBox(width: 12),
+                      _StatusBadge(status: event.status),
+                    ]),
+                    const SizedBox(height: 16),
+                    Wrap(spacing: 22, runSpacing: 10, children: [
+                      if (event.creatorName.isNotEmpty)
+                        _PropMeta(Icons.person_outline, 'Proposed by ${event.creatorName}'),
+                      if (_notEmpty(raw['target_date']))
+                        _PropMeta(Icons.event_outlined, raw['target_date'].toString()),
+                      if (_notEmpty(raw['venue']))
+                        _PropMeta(Icons.place_outlined, raw['venue'].toString()),
+                    ]),
+                    ...[
+                      const SizedBox(height: 18),
+                      const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                      const SizedBox(height: 14),
+                      Wrap(spacing: 10, runSpacing: 10, children: [
+                        if (showApprove)
+                          FilledButton.icon(
+                            onPressed: () { Navigator.pop(context); onApprove?.call(); },
+                            icon: const Icon(Icons.check_circle_outline, size: 18),
+                            label: const Text('Approve event'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF16A34A),
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        if (showDisable)
+                          OutlinedButton.icon(
+                            onPressed: () { Navigator.pop(context); onDisable?.call(); },
+                            icon: const Icon(Icons.block, size: 18),
+                            label: const Text('Disable event'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFDC2626),
+                              side: const BorderSide(color: Color(0xFFFCA5A5)),
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        OutlinedButton.icon(
+                          onPressed: () => EventPrintHelper.printEvent(context, raw),
+                          icon: const Icon(Icons.print_outlined, size: 18),
+                          label: const Text('Print proposal'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1A1A2E),
+                            side: const BorderSide(color: Color(0xFFE2E8F0)),
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ]),
+                    ],
+                  ]),
+                ),
                 const SizedBox(height: 16),
 
-                // I. Proposal Brief
-                _ProposalSection(title: 'I. Proposal Brief', children: [
-                  _PropField('Nature', raw['nature']),
-                  _PropField('Venue', raw['venue']),
-                  _PropField('Proposed Budget', raw['proposed_budget']),
-                  _PropField('Fund Source', raw['fund_source']),
-                  if (_notEmpty(raw['focal_name'])) ...[
-                    const SizedBox(height: 6),
-                    const Text('Focal Person',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
-                    const SizedBox(height: 4),
-                    _PropField('Name', raw['focal_name']),
-                    _PropField('Role', raw['focal_role']),
-                    _PropField('Contact', raw['focal_contact']),
+                // ── Key facts ──
+                LayoutBuilder(builder: (context, c) {
+                  final cols = c.maxWidth >= 800 ? 4 : c.maxWidth >= 340 ? 2 : 1;
+                  final w = (c.maxWidth - 12 * (cols - 1)) / cols;
+                  return Wrap(spacing: 12, runSpacing: 12, children: [
+                    for (final f in facts)
+                      SizedBox(width: w, child: _FactTile(label: f.$1, icon: f.$2, value: f.$3)),
+                  ]);
+                }),
+                const SizedBox(height: 16),
+
+                // ── Focal person + participants ──
+                if (hasFocal || hasParticipants) ...[
+                  if (wide && hasFocal && hasParticipants)
+                    // No IntrinsicHeight here: the participants table sizes
+                    // itself with a LayoutBuilder, which can't report
+                    // intrinsic dimensions (debug builds assert on it).
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      SizedBox(width: 320, child: focalCard),
+                      const SizedBox(width: 16),
+                      Expanded(child: participantsCard),
+                    ])
+                  else ...[
+                    if (hasFocal) focalCard,
+                    if (hasFocal && hasParticipants) const SizedBox(height: 16),
+                    if (hasParticipants) participantsCard,
                   ],
-                  if (_notEmpty(raw['expected_outputs'])) ...[
-                    const SizedBox(height: 6),
-                    const Text('Expected Outputs',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF718096))),
-                    const SizedBox(height: 2),
-                    _buildOutputs(raw['expected_outputs'].toString()),
-                  ],
-                  if (_notEmpty(raw['participants'])) ...[
-                    const SizedBox(height: 6),
-                    _buildParticipantsWidget(raw['participants'].toString()),
-                  ],
-                ]),
-
-                // II. Rationale
-                if (_notEmpty(raw['rationale']))
-                  _ProposalSection(title: 'II. Rationale', children: [
-                    _PropBody(raw['rationale'].toString()),
-                  ]),
-
-                // III. Objectives
-                if (_notEmpty(raw['objectives']))
-                  _ProposalSection(title: 'III. Objectives', children: [
-                    _PropBullets(raw['objectives'].toString()),
-                  ]),
-
-                // IV. Methodology
-                if (_notEmpty(raw['phase1']) || _notEmpty(raw['phase2']) || _notEmpty(raw['phase3']))
-                  _ProposalSection(title: 'IV. Methodology / Work Plan', children: [
-                    _buildMethodology(raw['phase1'].toString()),
-                    if (_notEmpty(raw['phase2'])) _PropField('Phase 2', raw['phase2']),
-                    if (_notEmpty(raw['phase3'])) _PropField('Phase 3', raw['phase3']),
-                  ]),
-
-                // V. Activity Matrix
-                if (_notEmpty(raw['activity_matrix']))
-                  _ProposalSection(title: 'V. Activity Matrix', children: [
-                    _buildActivityMatrix(raw['activity_matrix'].toString()),
-                  ]),
-
-                // VI. Budget
-                if (_notEmpty(raw['training_materials']) || _notEmpty(raw['snacks']))
-                  _ProposalSection(title: 'VI. Budget', children: [
-                    if (_notEmpty(raw['training_materials'])) ...[
-                      const Text('Training Materials',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
-                      const SizedBox(height: 6),
-                      _buildBudgetTable(raw['training_materials'].toString(),
-                          [('item', 'Item'), ('qty', 'Qty'), ('cost', 'Cost'), ('total', 'Total')]),
-                    ],
-                    if (_notEmpty(raw['snacks'])) ...[
-                      const SizedBox(height: 12),
-                      const Text('Meals / Snacks',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
-                      const SizedBox(height: 6),
-                      _buildBudgetTable(raw['snacks'].toString(),
-                          [('item', 'Item'), ('pax', 'Participants'), ('cost', 'Cost/Day'), ('total', 'Total')]),
-                    ],
-                  ]),
-
-                // VII. Committees
-                if (_notEmpty(raw['exec_committee']) || _notEmpty(raw['twg_groups']))
-                  _ProposalSection(title: 'VII. Committees', children: [
-                    if (_notEmpty(raw['exec_committee'])) ...[
-                      const Text('Executive Committee',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
-                      const SizedBox(height: 6),
-                      _buildCommitteeList(raw['exec_committee'].toString()),
-                    ],
-                    if (_notEmpty(raw['twg_groups'])) ...[
-                      const SizedBox(height: 12),
-                      const Text('Technical Working Groups',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
-                      const SizedBox(height: 6),
-                      _buildTwgGroups(raw['twg_groups'].toString()),
-                    ],
-                  ]),
-
-                // VIII. Monitoring & Evaluation
-                if (_notEmpty(raw['monitoring_criteria']) || _notEmpty(raw['indicators']))
-                  _ProposalSection(title: 'VIII. Monitoring & Evaluation', children: [
-                    if (_notEmpty(raw['monitoring_criteria']))
-                      _PropBody(raw['monitoring_criteria'].toString()),
-                    if (_notEmpty(raw['indicators'])) ...[
-                      const Text('Indicators',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF718096))),
-                      const SizedBox(height: 4),
-                      _buildIndicators(raw['indicators'].toString()),
-                    ],
-                  ]),
-
-                // Signatories (stored in the comments field as JSON)
-                if (_notEmpty(raw['comments']))
-                  _ProposalSection(title: 'Signatories', children: [
-                    _buildSignatories(raw['comments'].toString()),
-                  ]),
-
-                // Action buttons — principal approving/rejecting pending events
-                if (canApprove && event.status == _EventStatus.pendingApproval) ...[
-                  const SizedBox(height: 20),
-                  SizedBox(width: double.infinity, height: 44,
-                    child: ElevatedButton(
-                      onPressed: () { Navigator.pop(context); onApprove?.call(); },
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF48BB78),
-                          foregroundColor: Colors.white, elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                      child: const Text('Approve Event',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    ),
-                  ),
+                  const SizedBox(height: 16),
                 ],
-                if (isPrincipal && event.status == _EventStatus.pendingApproval) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(width: double.infinity, height: 44,
-                    child: OutlinedButton(
-                      onPressed: () { Navigator.pop(context); onDisable?.call(); },
-                      style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFE53E3E),
-                          side: const BorderSide(color: Color(0xFFE53E3E)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                      child: const Text('Disable Event',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    ),
+
+                if (_notEmpty(raw['expected_outputs'])) ...[
+                  _DetailCard(
+                    icon: Icons.checklist_rounded,
+                    title: 'Expected outputs',
+                    child: _buildOutputs(raw['expected_outputs'].toString()),
                   ),
+                  const SizedBox(height: 16),
                 ],
-              ],
+
+                // ── Numbered sections ──
+                for (var i = 0; i < sections.length; i++) ...[
+                  _ProposalSection(
+                    number: i + 2, // I. is the proposal brief shown above
+                    icon: sections[i].$2,
+                    title: sections[i].$1,
+                    children: [sections[i].$3],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ]),
             ),
+          ),
+        ),
+      ),
     );
   }
 }
+
+class _Panel extends StatelessWidget {
+  final Widget child;
+  const _Panel({required this.child});
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3E9F3)),
+        ),
+        child: child,
+      );
+}
+
+class _DetailCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+  const _DetailCard({required this.icon, required this.title, required this.child});
+  @override
+  Widget build(BuildContext context) => _Panel(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Icon(icon, size: 18, color: const Color(0xFF4A5568)),
+            const SizedBox(width: 8),
+            Text(title, style: GoogleFonts.plusJakartaSans(
+                fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A2E))),
+          ]),
+          const SizedBox(height: 14),
+          child,
+        ]),
+      );
+}
+
+class _FactTile extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final String value;
+  const _FactTile({required this.label, required this.icon, required this.value});
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE3E9F3)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 38, height: 38,
+            decoration: BoxDecoration(color: const Color(0xFFEEF2FA), borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, size: 19, color: const Color(0xFF1A1A2E)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(fontSize: 11.5, color: Color(0xFF718096))),
+            const SizedBox(height: 2),
+            Text(value.trim().isEmpty ? '—' : value, maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.plusJakartaSans(fontSize: 14.5, fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1A1A2E))),
+          ])),
+        ]),
+      );
+}
+
+class _SubHeading extends StatelessWidget {
+  final String text;
+  const _SubHeading(this.text);
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(text, style: GoogleFonts.plusJakartaSans(
+            fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF4A5568))),
+      );
+}
+
+/// Rounded, bordered container for the proposal's data tables. On narrow
+/// screens the table keeps a readable width and scrolls sideways.
+Widget _tableFrame(Table table) => LayoutBuilder(builder: (context, c) {
+      const minWidth = 560.0;
+      final framed = Container(
+        width: c.maxWidth < minWidth ? minWidth : c.maxWidth,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: table,
+      );
+      return c.maxWidth < minWidth
+          ? SingleChildScrollView(scrollDirection: Axis.horizontal, child: framed)
+          : framed;
+    });
+
+const _kTableInner = TableBorder(
+  horizontalInside: BorderSide(color: Color(0xFFEDF2F7)),
+  verticalInside: BorderSide(color: Color(0xFFEDF2F7)),
+);
 
 // ── Detail helpers ────────────────────────────────────────────────────────────
 
@@ -271,16 +451,13 @@ Widget _buildParticipantsWidget(String raw) {
     final rows  = (data['rows'] as List?)?.cast<Map<String, dynamic>>() ?? [];
     final tots  = data['totals'] as Map<String, dynamic>?;
     if (rows.isEmpty) return const SizedBox.shrink();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Target Participants',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
-      const SizedBox(height: 6),
+    return _tableFrame(
       Table(
-        border: TableBorder.all(color: const Color(0xFFDDE3ED), width: 0.8),
+        border: _kTableInner,
         columnWidths: const {0: FlexColumnWidth(3), 1: FlexColumnWidth(1), 2: FlexColumnWidth(1), 3: FlexColumnWidth(1)},
         children: [
-          TableRow(decoration: const BoxDecoration(color: Color(0xFFF8F9FA)), children: [
-            _tc('Category', bold: true), _tc('M', bold: true), _tc('F', bold: true), _tc('Total', bold: true),
+          TableRow(decoration: const BoxDecoration(color: Color(0xFFF8FAFC)), children: [
+            _tc('Category', bold: true), _tc('Male', bold: true), _tc('Female', bold: true), _tc('Total', bold: true),
           ]),
           for (final r in rows)
             TableRow(children: [
@@ -290,15 +467,15 @@ Widget _buildParticipantsWidget(String raw) {
               _tc(r['total']?.toString() ?? ''),
             ]),
           if (tots != null)
-            TableRow(decoration: const BoxDecoration(color: Color(0xFFF0F4FF)), children: [
-              _tc('TOTAL', bold: true),
+            TableRow(decoration: const BoxDecoration(color: Color(0xFFEFF6FF)), children: [
+              _tc('Total', bold: true),
               _tc(tots['male']?.toString() ?? '', bold: true),
               _tc(tots['female']?.toString() ?? '', bold: true),
               _tc(tots['total']?.toString() ?? '', bold: true),
             ]),
         ],
       ),
-    ]);
+    );
   } catch (_) {
     return _PropField('Participants', raw);
   }
@@ -308,11 +485,11 @@ Widget _buildActivityMatrix(String raw) {
   try {
     final rows = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
     if (rows.isEmpty) return const SizedBox.shrink();
-    return Table(
-      border: TableBorder.all(color: const Color(0xFFDDE3ED), width: 0.8),
-      columnWidths: const {0: FixedColumnWidth(56), 1: FixedColumnWidth(72), 2: FlexColumnWidth(2), 3: FlexColumnWidth(2)},
+    return _tableFrame(Table(
+      border: _kTableInner,
+      columnWidths: const {0: FixedColumnWidth(120), 1: FixedColumnWidth(96), 2: FlexColumnWidth(2), 3: FlexColumnWidth(2)},
       children: [
-        TableRow(decoration: const BoxDecoration(color: Color(0xFFF8F9FA)), children: [
+        TableRow(decoration: const BoxDecoration(color: Color(0xFFF8FAFC)), children: [
           _tc('Day', bold: true), _tc('Time', bold: true), _tc('Activity', bold: true), _tc('Speaker/Facilitator', bold: true),
         ]),
         for (final r in rows)
@@ -323,7 +500,7 @@ Widget _buildActivityMatrix(String raw) {
             _tc(r['speaker']?.toString() ?? ''),
           ]),
       ],
-    );
+    ));
   } catch (_) {
     return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
   }
@@ -335,11 +512,12 @@ Widget _buildBudgetTable(String raw, List<(String, String)> columns) {
   try {
     final rows = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
     if (rows.isEmpty) return const SizedBox.shrink();
-    return Table(
-      border: TableBorder.all(color: const Color(0xFFDDE3ED), width: 0.8),
+    return _tableFrame(Table(
+      border: _kTableInner,
+      columnWidths: const {0: FlexColumnWidth(2)},
       defaultColumnWidth: const FlexColumnWidth(1),
       children: [
-        TableRow(decoration: const BoxDecoration(color: Color(0xFFF8F9FA)), children: [
+        TableRow(decoration: const BoxDecoration(color: Color(0xFFF8FAFC)), children: [
           for (final c in columns) _tc(c.$2, bold: true),
         ]),
         for (final r in rows)
@@ -347,7 +525,7 @@ Widget _buildBudgetTable(String raw, List<(String, String)> columns) {
             for (final c in columns) _tc(r[c.$1]?.toString() ?? ''),
           ]),
       ],
-    );
+    ));
   } catch (_) {
     return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
   }
@@ -387,18 +565,30 @@ Widget _buildMethodology(String raw) {
       final stage = (m['stage'] ?? '').toString().trim();
       final activities = (m['activities'] ?? '').toString().trim();
       if (stage.isEmpty && activities.isEmpty) continue;
+      final step = sections.length + 1;
       sections.add(Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (stage.isNotEmpty)
-            Text(stage,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
-          for (final l in activities.split('\n').where((l) => l.trim().isNotEmpty))
-            Padding(
-              padding: const EdgeInsets.only(left: 8, top: 2),
-              child: Text('• ${l.trim()}',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568))),
-            ),
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 26, height: 26,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(color: Color(0xFFEEF2FA), shape: BoxShape.circle),
+            child: Text('$step', style: const TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (stage.isNotEmpty)
+              Text(stage, style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            const SizedBox(height: 4),
+            for (final l in activities.split('\n').where((l) => l.trim().isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text('• ${l.trim()}',
+                    style: const TextStyle(fontSize: 13.5, color: Color(0xFF4A5568), height: 1.4)),
+              ),
+          ])),
         ]),
       ));
     }
@@ -446,20 +636,28 @@ Widget _buildSignatories(String raw) {
       final name = (m['name'] ?? '').toString().trim();
       final title = (m['title'] ?? '').toString().trim();
       if (role.isEmpty && name.isEmpty && title.isEmpty) continue;
-      rows.add(Padding(
-        padding: const EdgeInsets.only(bottom: 10),
+      rows.add(Container(
+        width: 240,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (role.isNotEmpty)
-            Text('$role:', style: const TextStyle(fontSize: 11, color: Color(0xFF718096))),
+            Text(role.toUpperCase(), style: const TextStyle(
+                fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: Color(0xFF718096))),
+          const SizedBox(height: 6),
           Text(name.isNotEmpty ? name : '—',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
           if (title.isNotEmpty)
-            Text(title, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568))),
+            Text(title, style: const TextStyle(fontSize: 12.5, color: Color(0xFF4A5568))),
         ]),
       ));
     }
     if (rows.isEmpty) return const SizedBox.shrink();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows);
+    return Wrap(spacing: 12, runSpacing: 12, children: rows);
   } catch (_) {
     // Fall back to raw text for any legacy free-text comments.
     return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
@@ -524,10 +722,10 @@ Widget _buildIndicators(String raw) {
 }
 
 Widget _tc(String text, {bool bold = false}) => Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Text(text,
           style: TextStyle(
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
               color: bold ? const Color(0xFF1A1A2E) : const Color(0xFF4A5568))),
     );
@@ -566,39 +764,48 @@ class _PropMeta extends StatelessWidget {
   const _PropMeta(this.icon, this.text);
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Row(children: [
-      Icon(icon, size: 14, color: const Color(0xFF718096)),
+    padding: EdgeInsets.zero,
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 16, color: const Color(0xFF718096)),
       const SizedBox(width: 6),
-      Expanded(child: Text(text,
-          style: const TextStyle(fontSize: 12, color: Color(0xFF718096)))),
+      Text(text, style: const TextStyle(fontSize: 13.5, color: Color(0xFF4A5568))),
     ]),
   );
 }
 
+/// A numbered proposal section (II. Rationale, III. Objectives, ...) as a card.
 class _ProposalSection extends StatelessWidget {
+  final int number;
+  final IconData icon;
   final String title;
   final List<Widget> children;
-  const _ProposalSection({required this.title, required this.children});
+  const _ProposalSection({required this.number, required this.icon,
+      required this.title, required this.children});
+
+  static const _roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 
   @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-        decoration: BoxDecoration(
-            color: const Color(0xFF1E2126),
-            borderRadius: BorderRadius.circular(6)),
-        child: Text(title,
-            style: const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w700,
-                color: Colors.white, letterSpacing: 0.4)),
-      ),
-      ...children,
-      const SizedBox(height: 16),
-    ]);
-  }
+  Widget build(BuildContext context) => _Panel(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(6)),
+              child: Text(number <= _roman.length ? _roman[number - 1] : '$number',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800,
+                      color: Colors.white, letterSpacing: 0.4)),
+            ),
+            const SizedBox(width: 10),
+            Icon(icon, size: 18, color: const Color(0xFF4A5568)),
+            const SizedBox(width: 6),
+            Expanded(child: Text(title, style: GoogleFonts.plusJakartaSans(
+                fontSize: 15.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A2E)))),
+          ]),
+          const SizedBox(height: 14),
+          ...children,
+        ]),
+      );
 }
 
 class _PropField extends StatelessWidget {
@@ -614,10 +821,11 @@ class _PropField extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
                 color: Color(0xFF718096))),
         const SizedBox(height: 2),
-        Text(v, style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E), height: 1.45)),
+        Text(v, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A2E), height: 1.4)),
       ]),
     );
   }
@@ -633,7 +841,7 @@ class _PropBody extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(text,
-          style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E), height: 1.55)),
+          style: const TextStyle(fontSize: 14.5, color: Color(0xFF1A1A2E), height: 1.65)),
     );
   }
 }
@@ -651,9 +859,9 @@ class _PropBullets extends StatelessWidget {
       children: lines.map((l) => Padding(
         padding: const EdgeInsets.only(bottom: 4),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('• ', style: TextStyle(fontSize: 13, color: Color(0xFF718096))),
-          Expanded(child: Text(l.trim(),
-              style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E), height: 1.45))),
+          const Text('•  ', style: TextStyle(fontSize: 14.5, color: Color(0xFF718096))),
+          Expanded(child: Text(l.trim().replaceFirst(RegExp(r'^[•\-\*·●○]\s*'), ''),
+              style: const TextStyle(fontSize: 14.5, color: Color(0xFF1A1A2E), height: 1.5))),
         ]),
       )).toList(),
     );

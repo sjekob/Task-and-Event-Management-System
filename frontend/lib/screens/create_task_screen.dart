@@ -42,7 +42,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _submitting = false;
 
   // Which target identities the current creator may assign to.
-  List<String> _targetRoleOptions(String creatorRole) => assignableRoles(creatorRole);
+  // From the backend (login / /me): the roles this session may assign to.
+  List<String> _targetRoleOptions(String _) => context.read<AppState>().assignableRoles;
 
   final List<Map<String, String>> _attachments = [];
 
@@ -69,27 +70,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       final users = await ApiService.getAssignableUsers(targetRole: _targetRole);
       if (mounted) setState(() { _allAssignable = users; _loadingUsers = false; });
     } catch (_) {
-      try {
-        final currentUser = context.read<AppState>().currentUser;
-        final all = await ApiService.getUsers();
-        final filtered = _filterByRole(all, currentUser);
-        if (mounted) setState(() { _allAssignable = filtered; _loadingUsers = false; });
-      } catch (_) {
-        if (mounted) setState(() => _loadingUsers = false);
-      }
+      // Who may be assigned is decided by the server only.
+      if (mounted) setState(() { _allAssignable = []; _loadingUsers = false; });
     }
-  }
-
-  List<User> _filterByRole(List<User> all, User? currentUser) {
-    final role = currentUser?.role ?? '';
-    final glId = currentUser?.gradeLevelId;
-    if (role == 'dean') {
-      return all.where((u) => u.role == 'teacher' && (glId == null || u.gradeLevelId == glId)).toList();
-    }
-    if (role == 'coordinator') {
-      return all.where((u) => {'coordinator', 'dean', 'teacher'}.contains(u.role)).toList();
-    }
-    return all.where((u) => {'coordinator', 'dean', 'teacher', 'registrar'}.contains(u.role)).toList();
   }
 
   Future<void> _pickDate(bool isStart) async {

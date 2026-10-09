@@ -1,6 +1,6 @@
 """Auth Service — port 8001
 Handles: authentication, user management, grade levels, subjects, task types,
-school years/terms, notifications.
+school years/terms, notifications, certificates.
 Run from backend/: uvicorn services.auth.main:app --port 8001
 """
 import os
@@ -13,6 +13,8 @@ from routes.auth import router as auth_router
 from routes.users import router as users_router
 from routes.school_years import router as school_years_router
 from routes.notifications import router as notifications_router
+from routes.certificates import router as certificates_router
+from routes.audit_log import router as audit_router
 
 SERVICE_PORT = int(os.getenv("AUTH_SERVICE_PORT", "8001"))
 
@@ -42,6 +44,8 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(school_years_router)
 app.include_router(notifications_router)
+app.include_router(certificates_router)
+app.include_router(audit_router)
 
 
 @app.get("/health")

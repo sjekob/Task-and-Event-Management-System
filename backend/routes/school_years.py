@@ -3,11 +3,12 @@ year and its terms start and end; everything else uses these ranges to tell
 current records from archived ones (see school_calendar.py)."""
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from auth import get_current_user, require_admin_or_principal
 from database import get_db
+import audit
 from date_utils import parse_event_date
 from school_calendar import current_school_year, year_status
 
@@ -101,38 +102,62 @@ def get_current_school_year(db=Depends(get_db), user=Depends(get_current_user)):
                                  (row["id"],)).fetchone()) if row else None
 
 
+def _audit_view(db, sy_id: int) -> dict:
+    sy = db.execute("SELECT name, start_date, end_date FROM school_years WHERE id=?",
+                    (sy_id,)).fetchone()
+    if not sy:
+        return {}
+    terms = db.execute("SELECT name, start_date, end_date FROM school_terms "
+                       "WHERE school_year_id=? ORDER BY start_date", (sy_id,)).fetchall()
+    return {"name": sy["name"], "start_date": sy["start_date"], "end_date": sy["end_date"],
+            "terms": "; ".join(f"{t['name']} {t['start_date']}–{t['end_date']}" for t in terms) or None}
+
+
 @router.post("", status_code=201)
-def create_school_year(body: SchoolYearBody, db=Depends(get_db),
+def create_school_year(body: SchoolYearBody, request: Request, db=Depends(get_db),
                        user=Depends(require_admin_or_principal)):
     start, end, terms = _validate(db, body)
     cur = db.execute("INSERT INTO school_years (name, start_date, end_date, created_by) "
                      "VALUES (?,?,?,?)", (body.name.strip(), start, end, int(user["sub"])))
     _save_terms(db, cur.lastrowid, terms)
+    audit.record(db, user, "school_year.create", "school_year", cur.lastrowid,
+                 f"Created school year {body.name.strip()}", entity_label=body.name.strip(),
+                 changes=audit.diff({}, _audit_view(db, cur.lastrowid)), request=request)
     db.commit()
     return _shape(db, db.execute("SELECT * FROM school_years WHERE id=?",
                                  (cur.lastrowid,)).fetchone())
 
 
 @router.put("/{sy_id}")
-def update_school_year(sy_id: int, body: SchoolYearBody, db=Depends(get_db),
-                       user=Depends(require_admin_or_principal)):
+def update_school_year(sy_id: int, body: SchoolYearBody, request: Request,
+                       db=Depends(get_db), user=Depends(require_admin_or_principal)):
     if not db.execute("SELECT 1 FROM school_years WHERE id=?", (sy_id,)).fetchone():
         raise HTTPException(404, "School year not found")
     start, end, terms = _validate(db, body, exclude_id=sy_id)
+    before = _audit_view(db, sy_id)
     db.execute("UPDATE school_years SET name=?, start_date=?, end_date=? WHERE id=?",
                (body.name.strip(), start, end, sy_id))
     _save_terms(db, sy_id, terms)
+    changes = audit.diff(before, _audit_view(db, sy_id))
+    if changes:
+        audit.record(db, user, "school_year.update", "school_year", sy_id,
+                     f"Changed school year {body.name.strip()}", entity_label=body.name.strip(),
+                     changes=changes, request=request)
     db.commit()
     return _shape(db, db.execute("SELECT * FROM school_years WHERE id=?", (sy_id,)).fetchone())
 
 
 @router.delete("/{sy_id}")
-def delete_school_year(sy_id: int, db=Depends(get_db),
+def delete_school_year(sy_id: int, request: Request, db=Depends(get_db),
                        user=Depends(require_admin_or_principal)):
     """Removes only the calendar entry; tasks and events are never deleted —
     without the year they simply stop being grouped under it."""
     if not db.execute("SELECT 1 FROM school_years WHERE id=?", (sy_id,)).fetchone():
         raise HTTPException(404, "School year not found")
+    before = _audit_view(db, sy_id)
     db.execute("DELETE FROM school_years WHERE id=?", (sy_id,))
+    audit.record(db, user, "school_year.delete", "school_year", sy_id,
+                 f"Removed school year {before.get('name')}", entity_label=before.get("name"),
+                 changes=audit.diff(before, {}), request=request)
     db.commit()
     return {"message": "School year removed"}

@@ -27,6 +27,7 @@ class _MainShellState extends State<MainShell> {
     if (loc.startsWith('/appraisal')) return NavPage.appraisal;
     if (loc.startsWith('/events')) return NavPage.eventManagement;
     if (loc.startsWith('/school-years')) return NavPage.schoolYears;
+    if (loc.startsWith('/audit-log')) return NavPage.auditLog;
     return NavPage.dashboard;
   }
 
@@ -42,6 +43,7 @@ class _MainShellState extends State<MainShell> {
       case NavPage.appraisal:         context.go('/appraisal'); break;
       case NavPage.eventManagement:   context.go('/events'); break;
       case NavPage.schoolYears:       context.go('/school-years'); break;
+      case NavPage.auditLog:          context.go('/audit-log'); break;
     }
   }
 
@@ -52,15 +54,14 @@ class _MainShellState extends State<MainShell> {
 
   bool _showCreateBtn(String loc, String role) =>
       (loc == '/tasks' || loc == '/special-tasks') &&
-      (role == 'admin' || role == 'principal' ||
-       role == 'coordinator' || role == 'dean' || role == 'registrar');
+      context.read<AppState>().can('create_tasks');
 
   // The create target depends on which task screen we're on.
   String _createPath(String loc) =>
       loc.startsWith('/special-tasks') ? '/special-tasks/new' : '/tasks/new';
 
   bool _showTemplateBtn(String loc, String role) =>
-      loc == '/tasks' && (role == 'admin' || role == 'principal');
+      loc == '/tasks' && context.read<AppState>().can('manage_templates');
 
   String _stripRolePrefix(String name, String role) {
     if (name.isEmpty || role.isEmpty) return name;
@@ -91,6 +92,7 @@ class _MainShellState extends State<MainShell> {
               currentPage: currentPage,
               userName: displayName,
               userRole: role,
+              permissions: context.watch<AppState>().currentUser?.permissions ?? const {},
               userInitials: user?.initials ?? 'U',
               onNavigate: _onNavigate,
               onLogout: _logout,
@@ -103,6 +105,7 @@ class _MainShellState extends State<MainShell> {
               currentPage: currentPage,
               userName: displayName,
               userRole: role,
+              permissions: context.watch<AppState>().currentUser?.permissions ?? const {},
               onNavigate: _onNavigate,
               onLogout: _logout,
               showCreateTask: _showCreateBtn(loc, role),

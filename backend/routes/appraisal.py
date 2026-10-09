@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
 from database import get_db
-from auth import require_appraisal_access, require_appraisal_view
+from auth import require_appraisal_access, require_appraisal_view, has_permission
 from school_calendar import resolve_window, in_window, task_in_window
 
 
@@ -22,7 +22,7 @@ def _visible_personnel_ids(db, user):
     level they handle (dean_assignment.grade_level_id, falling back to own)."""
     role = user["role"]
     uid = int(user["sub"])
-    if role in ("principal", "coordinator", "admin"):
+    if has_permission(user, "view_all_appraisals"):
         return None
     ids = {uid}
     if role == "dean":

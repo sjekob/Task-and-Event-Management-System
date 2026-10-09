@@ -198,8 +198,8 @@ class _AssignDialogState extends State<_AssignDialog> {
   @override
   void initState() {
     super.initState();
-    _roleOptions = assignableRoles(context.read<AppState>().userRole);
-    _targetRole = _roleOptions.first;
+    _roleOptions = context.read<AppState>().assignableRoles;
+    _targetRole = _roleOptions.isEmpty ? 'teacher' : _roleOptions.first;
     _loadUsers();
   }
 

@@ -84,14 +84,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Upcoming events grouped by calendar day → dot markers + hover tooltip.
   Map<DateTime, List<Map<String, dynamic>>> _eventsByDay = {};
 
-  static const _taskCreators = {
-    'admin',
-    'principal',
-    'coordinator',
-    'dean',
-    'registrar'
-  };
-
   @override
   void initState() {
     super.initState();
@@ -210,8 +202,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final role = app.userRole;
     // Mirrors the sidebar: approvers (principal/admin) have no My Tasks, and
     // only task creators have a Task Manager.
-    final isApprover = role == 'principal' || role == 'admin';
-    final canCreateTasks = _taskCreators.contains(role);
+    // Server-granted permissions decide the sections (as in the sidebar).
+    final isApprover = !app.can('receive_tasks');
+    final canCreateTasks = app.can('create_tasks');
     if (_loading) return const DashboardSkeleton();
 
     final now = DateTime.now();

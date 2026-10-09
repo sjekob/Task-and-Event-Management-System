@@ -156,7 +156,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     // ownTaskView) those are hidden so the user only sees their own work.
     final canAssign = user.canAssign && !widget.ownTaskView;
     final canReview = user.canReviewSubmissions && !widget.ownTaskView;
-    final canSubmit = user.isTeacher || user.isRegistrar || user.isDean;
+    final canSubmit = user.can('receive_tasks');
     // Opened from Task Manager the viewer is handling the task, so the side
     // panel reviews assignees' submissions; their own submission (if they are
     // also assigned) is done from My Tasks (ownTaskView).
@@ -192,7 +192,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               children: [
                 _BackButton(onBack: widget.onBack),
                 _buildMainContent(user, canAssign, canReview,
-                    canManage: user.isAdmin || user.isPrincipal),
+                    canManage: _task!.canEdit),
               ],
             ),
           ),
@@ -230,7 +230,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             children: [
               _BackButton(onBack: widget.onBack),
               _buildMainContent(user, canAssign, canReview,
-                  canManage: user.isAdmin || user.isPrincipal),
+                  canManage: _task!.canEdit),
             ],
           ),
         ),
@@ -300,7 +300,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Widget _buildMainContent(User user, bool canAssign, bool canReview,
       {bool canManage = false}) {
     final t = _task!;
-    final isLeaf = user.isTeacher || user.isRegistrar || user.isDean;
+    final isLeaf = user.can('receive_tasks');
     final reviewing = canAssign || canReview;
     final deadline = t.deadline;
     final pastDue = deadline != null && deadline.isBefore(DateTime.now());

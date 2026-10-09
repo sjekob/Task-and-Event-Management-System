@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/common_widgets.dart';
 
-enum NavPage { dashboard, taskManager, myTasks, specialTasks, mySpecialTasks, activity, personnelManagement, appraisal, eventManagement, schoolYears }
+enum NavPage { dashboard, taskManager, myTasks, specialTasks, mySpecialTasks, activity, personnelManagement, appraisal, eventManagement, schoolYears, auditLog }
 
 // ── Shared dark sidebar palette ───────────────────────────────────────────────
 const Color _kSidebarBg       = Color(0xFF1A1A2E);
@@ -20,6 +20,8 @@ class AppSidebar extends StatefulWidget {
   final NavPage currentPage;
   final String userName;
   final String userRole;
+  /// Permissions granted by the backend; decide which sections show.
+  final Set<String> permissions;
   final ValueChanged<NavPage> onNavigate;
   final VoidCallback onLogout;
   final VoidCallback? onCreateTask;
@@ -30,6 +32,7 @@ class AppSidebar extends StatefulWidget {
     required this.currentPage,
     required this.userName,
     required this.userRole,
+    this.permissions = const {},
     required this.onNavigate,
     required this.onLogout,
     this.onCreateTask,
@@ -75,22 +78,13 @@ class _AppSidebarState extends State<AppSidebar> {
     );
   }
 
-  bool get _isTopManager =>
-      widget.userRole == 'admin' || widget.userRole == 'principal';
-  bool get _canReassign =>
-      widget.userRole == 'coordinator' || widget.userRole == 'dean' ||
-      widget.userRole == 'registrar';
-  bool get _isLeaf =>
-      widget.userRole == 'teacher' || widget.userRole == 'registrar';
-  bool get _canManagePersonnel =>
-      widget.userRole == 'principal' || widget.userRole == 'registrar' ||
-      widget.userRole == 'admin';
-  bool get _canManageSchoolYears =>
-      widget.userRole == 'principal' || widget.userRole == 'admin';
-  bool get _hasAppraisalAccess =>
-      widget.userRole == 'principal' || widget.userRole == 'coordinator' ||
-      widget.userRole == 'dean' || widget.userRole == 'admin' ||
-      widget.userRole == 'teacher';
+  // Sections follow the permissions the backend granted this session.
+  bool get _receivesTasks => widget.permissions.contains('receive_tasks');
+  bool get _createsTasks => widget.permissions.contains('create_tasks');
+  bool get _canManagePersonnel => widget.permissions.contains('view_personnel');
+  bool get _canManageSchoolYears => widget.permissions.contains('manage_school_years');
+  bool get _canViewAudit => widget.permissions.contains('view_audit');
+  bool get _hasAppraisalAccess => widget.permissions.contains('view_appraisal');
 
   String get _roleLabel => _roleLabelFor(widget.userRole);
 
@@ -122,7 +116,7 @@ class _AppSidebarState extends State<AppSidebar> {
                     collapsed: _collapsed,
                     onTap: () => widget.onNavigate(NavPage.dashboard),
                   ),
-                  if (_canReassign || _isLeaf)
+                  if (_receivesTasks)
                     _NavItem(
                       icon: Icons.assignment_outlined,
                       label: 'My Tasks',
@@ -130,7 +124,7 @@ class _AppSidebarState extends State<AppSidebar> {
                       collapsed: _collapsed,
                       onTap: () => widget.onNavigate(NavPage.myTasks),
                     ),
-                  if (_canReassign || _isLeaf)
+                  if (_receivesTasks)
                     _NavItem(
                       icon: Icons.star_outline,
                       label: 'My Special Tasks',
@@ -146,7 +140,7 @@ class _AppSidebarState extends State<AppSidebar> {
                     onTap: () => widget.onNavigate(NavPage.activity),
                   ),
                   if (!_collapsed) _sectionLabel('MANAGEMENT'),
-                  if (_isTopManager || _canReassign)
+                  if (_createsTasks)
                     _NavItem(
                       icon: Icons.check_box_outlined,
                       label: 'Task Manager',
@@ -154,7 +148,7 @@ class _AppSidebarState extends State<AppSidebar> {
                       collapsed: _collapsed,
                       onTap: () => widget.onNavigate(NavPage.taskManager),
                     ),
-                  if (_isTopManager || _canReassign)
+                  if (_createsTasks)
                     _NavItem(
                       icon: Icons.star_border_purple500_outlined,
                       label: 'Special Tasks',
@@ -192,6 +186,14 @@ class _AppSidebarState extends State<AppSidebar> {
                       isActive: widget.currentPage == NavPage.schoolYears,
                       collapsed: _collapsed,
                       onTap: () => widget.onNavigate(NavPage.schoolYears),
+                    ),
+                  if (_canViewAudit)
+                    _NavItem(
+                      icon: Icons.history_outlined,
+                      label: 'Audit Log',
+                      isActive: widget.currentPage == NavPage.auditLog,
+                      collapsed: _collapsed,
+                      onTap: () => widget.onNavigate(NavPage.auditLog),
                     ),
                 ],
               ),
@@ -478,6 +480,8 @@ class MobileNavDrawer extends StatelessWidget {
   final NavPage currentPage;
   final String userName;
   final String userRole;
+  /// Permissions granted by the backend; decide which sections show.
+  final Set<String> permissions;
   final String userInitials;
   final ValueChanged<NavPage> onNavigate;
   final VoidCallback onLogout;
@@ -487,22 +491,18 @@ class MobileNavDrawer extends StatelessWidget {
     required this.currentPage,
     required this.userName,
     required this.userRole,
+    this.permissions = const {},
     required this.userInitials,
     required this.onNavigate,
     required this.onLogout,
   });
 
-  bool get _isTopManager => userRole == 'admin' || userRole == 'principal';
-  bool get _canReassign =>
-      userRole == 'coordinator' || userRole == 'dean' ||
-      userRole == 'registrar';
-  bool get _isLeaf => userRole == 'teacher' || userRole == 'registrar';
-  bool get _canManagePersonnel =>
-      userRole == 'principal' || userRole == 'registrar' || userRole == 'admin';
-  bool get _canManageSchoolYears => userRole == 'principal' || userRole == 'admin';
-  bool get _hasAppraisalAccess =>
-      userRole == 'principal' || userRole == 'coordinator' ||
-      userRole == 'dean' || userRole == 'admin' || userRole == 'teacher';
+  bool get _receivesTasks => permissions.contains('receive_tasks');
+  bool get _createsTasks => permissions.contains('create_tasks');
+  bool get _canManagePersonnel => permissions.contains('view_personnel');
+  bool get _canManageSchoolYears => permissions.contains('manage_school_years');
+  bool get _canViewAudit => permissions.contains('view_audit');
+  bool get _hasAppraisalAccess => permissions.contains('view_appraisal');
 
   void _navigate(BuildContext context, NavPage page) {
     Navigator.of(context).pop();
@@ -559,14 +559,14 @@ class MobileNavDrawer extends StatelessWidget {
                       isActive: currentPage == NavPage.dashboard,
                       onTap: () => _navigate(context, NavPage.dashboard),
                     ),
-                    if (_canReassign || _isLeaf)
+                    if (_receivesTasks)
                       _NavItem(
                         icon: Icons.assignment_outlined,
                         label: 'My Tasks',
                         isActive: currentPage == NavPage.myTasks,
                         onTap: () => _navigate(context, NavPage.myTasks),
                       ),
-                    if (_canReassign || _isLeaf)
+                    if (_receivesTasks)
                       _NavItem(
                         icon: Icons.star_outline,
                         label: 'My Special Tasks',
@@ -580,14 +580,14 @@ class MobileNavDrawer extends StatelessWidget {
                       onTap: () => _navigate(context, NavPage.activity),
                     ),
                     _drawerSectionLabel('MANAGEMENT'),
-                    if (_isTopManager || _canReassign)
+                    if (_createsTasks)
                       _NavItem(
                         icon: Icons.check_box_outlined,
                         label: 'Task Manager',
                         isActive: currentPage == NavPage.taskManager,
                         onTap: () => _navigate(context, NavPage.taskManager),
                       ),
-                    if (_isTopManager || _canReassign)
+                    if (_createsTasks)
                       _NavItem(
                         icon: Icons.star_border_purple500_outlined,
                         label: 'Special Tasks',
@@ -620,6 +620,13 @@ class MobileNavDrawer extends StatelessWidget {
                         label: 'School Year',
                         isActive: currentPage == NavPage.schoolYears,
                         onTap: () => _navigate(context, NavPage.schoolYears),
+                      ),
+                    if (_canViewAudit)
+                      _NavItem(
+                        icon: Icons.history_outlined,
+                        label: 'Audit Log',
+                        isActive: currentPage == NavPage.auditLog,
+                        onTap: () => _navigate(context, NavPage.auditLog),
                       ),
                   ],
                 ),

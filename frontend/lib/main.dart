@@ -18,6 +18,7 @@ import 'screens/event_management_screen.dart';
 import 'screens/add_event_screen.dart';
 import 'screens/public_evaluation_screen.dart';
 import 'screens/school_years_screen.dart';
+import 'screens/audit_log_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -204,6 +205,10 @@ class _TaskNetAppState extends State<TaskNetApp> {
             GoRoute(
               path: '/school-years',
               builder: (_, __) => const SchoolYearsScreen(),
+            ),
+            GoRoute(
+              path: '/audit-log',
+              builder: (_, __) => const AuditLogScreen(),
             ),
             GoRoute(
               path: '/profile',
