@@ -9,22 +9,100 @@ class _FieldLabel extends StatelessWidget {
           fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary));
 }
 
-class _AttIcon extends StatelessWidget {
+/// A titled white card grouping related fields.
+class _SectionCard extends StatelessWidget {
   final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  const _AttIcon(this.icon, this.color, this.onTap);
+  final String title;
+  final List<Widget> children;
+  const _SectionCard({required this.icon, required this.title, required this.children});
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3E9F3)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FA), borderRadius: BorderRadius.circular(8)),
+              child: Icon(icon, size: 16, color: AppTheme.darkBanner),
+            ),
+            const SizedBox(width: 10),
+            Text(title,
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+          ]),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: AppTheme.borderColor),
+          const SizedBox(height: 16),
+          ...children,
+        ]),
+      );
+}
+
+/// Labeled button for adding an attachment.
+class _AttachButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _AttachButton(this.icon, this.label, this.onTap);
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 16),
+        label: Text(label,
+            style: GoogleFonts.plusJakartaSans(fontSize: 12.5, fontWeight: FontWeight.w600)),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppTheme.textPrimary,
+          side: const BorderSide(color: AppTheme.borderColor),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+}
+
+/// A tappable field showing a picked date/time (or a prompt when empty).
+class _PickerField extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String? value;
+  final VoidCallback onTap;
+  const _PickerField(
+      {required this.icon, required this.label, required this.value, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
         child: Container(
-          width: 38, height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
           decoration: BoxDecoration(
-            color: AppTheme.darkBanner,
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppTheme.borderColor),
           ),
-          child: Icon(icon, size: 18, color: Colors.white),
+          child: Row(children: [
+            Icon(icon, size: 18, color: value == null ? AppTheme.textLight : AppTheme.accentBlue),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(label,
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11, color: AppTheme.textLight, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 2),
+                Text(value ?? 'Not set',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13.5, fontWeight: FontWeight.w600,
+                        color: value == null ? AppTheme.textMuted : AppTheme.textPrimary)),
+              ]),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: AppTheme.textLight),
+          ]),
         ),
       );
 }

@@ -8,8 +8,8 @@ import '../utils/web_downloader.dart';
 
 /// How credible a held certification is, as a small colored badge:
 /// verified by the principal/registrar, uploaded and awaiting review (shaded by
-/// how well the file passed the automated checks), listed without a
-/// certificate, or rejected. The same wording is used in task suggestions.
+/// how well the file passed the automated checks), rejected, or not yet
+/// confirmed by its owner. The same wording is used in task suggestions.
 class CredibilityBadge extends StatelessWidget {
   final String credibility;
   final String? authenticity;
@@ -38,12 +38,9 @@ class CredibilityBadge extends StatelessWidget {
       case 'rejected':
         return (label: 'Rejected', hint: 'The certificate was rejected on review',
             icon: Icons.block, fg: AppTheme.redColor, bg: AppTheme.redBg);
-      case 'pending':
+      default: // pending
         return (label: 'Not added yet', hint: 'Uploaded but not yet confirmed by its owner',
             icon: Icons.more_horiz, fg: AppTheme.textMuted, bg: const Color(0xFFF3F4F6));
-      default:
-        return (label: 'No certificate', hint: 'Listed without a certificate file; counts little',
-            icon: Icons.help_outline, fg: AppTheme.textMuted, bg: const Color(0xFFF3F4F6));
     }
   }
 
@@ -155,11 +152,7 @@ class _CertificatesPanelState extends State<CertificatesPanel> {
         'Remove "${c.title ?? c.originalName ?? 'this certificate'}" from your profile?', 'Remove');
     if (!ok) return;
     try {
-      if (c.hasFile) {
-        await ApiService.deleteCertificate(c.id!);
-      } else if (c.certificationId != null) {
-        await ApiService.removeSelfDeclaredCertification(c.certificationId!);
-      }
+      await ApiService.deleteCertificate(c.id!);
       _changed();
     } catch (e) {
       _toast(_msg(e), error: true);
@@ -244,12 +237,6 @@ class _CertificatesPanelState extends State<CertificatesPanel> {
           actionLabel: widget.canReview && c.status == 'submitted' ? 'Review' : 'Details',
           onRemove: widget.canUpload ? () => _remove(c) : null,
         ),
-        for (final c in s.selfDeclared) _CertificateTile(
-          cert: c,
-          actionLabel: widget.canUpload ? 'Upload proof' : null,
-          onOpen: widget.canUpload ? _upload : null,
-          onRemove: widget.canUpload ? () => _remove(c) : null,
-        ),
       ],
     ]);
   }
@@ -312,7 +299,7 @@ class _CertificateTile extends StatelessWidget {
             width: 36, height: 36,
             decoration: BoxDecoration(
                 color: const Color(0xFFEEF2FA), borderRadius: BorderRadius.circular(8)),
-            child: Icon(c.hasFile ? Icons.description_outlined : Icons.workspace_premium_outlined,
+            child: const Icon(Icons.description_outlined,
                 size: 18, color: AppTheme.darkBanner),
           ),
           const SizedBox(width: 12),

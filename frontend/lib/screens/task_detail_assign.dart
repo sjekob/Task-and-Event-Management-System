@@ -15,6 +15,7 @@ class _AssigneesCard extends StatefulWidget {
   final int? selectedUserId;
   final ValueChanged<User> onSelect;
   final VoidCallback onChanged;
+  final Task? task;
 
   const _AssigneesCard({
     required this.taskId,
@@ -27,6 +28,7 @@ class _AssigneesCard extends StatefulWidget {
     required this.selectedUserId,
     required this.onSelect,
     required this.onChanged,
+    this.task,
   });
 
   @override
@@ -40,6 +42,7 @@ class _AssigneesCardState extends State<_AssigneesCard> {
       builder: (_) => _AssignDialog(
         taskId: widget.taskId,
         alreadyAssigned: widget.allAssigned.isEmpty ? widget.assignedUsers : widget.allAssigned,
+        task: widget.task,
       ),
     );
     if (result == true) widget.onChanged();
@@ -179,8 +182,10 @@ class _AssigneesCardState extends State<_AssigneesCard> {
 class _AssignDialog extends StatefulWidget {
   final int taskId;
   final List<User> alreadyAssigned;
+  /// The task being assigned, for skill/workload suggestions.
+  final Task? task;
 
-  const _AssignDialog({required this.taskId, required this.alreadyAssigned});
+  const _AssignDialog({required this.taskId, required this.alreadyAssigned, this.task});
 
   @override
   State<_AssignDialog> createState() => _AssignDialogState();
@@ -190,7 +195,6 @@ class _AssignDialogState extends State<_AssignDialog> {
   List<User> _available = [];
   final Set<int> _selected = {};
   bool _loading = true;
-  bool _submitting = false;
   String? _error;
   late final List<String> _roleOptions;
   late String _targetRole;
@@ -224,119 +228,71 @@ class _AssignDialogState extends State<_AssignDialog> {
     }
   }
 
-  Future<void> _confirm() async {
-    if (_selected.isEmpty) return;
-    setState(() => _submitting = true);
-    try {
-      await ApiService.assignTask(widget.taskId, _selected.toList(), targetRole: _targetRole);
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _submitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: AppTheme.redColor,
-        ));
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 460,
-        constraints: const BoxConstraints(maxHeight: 600),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Text('Assign Users', style: AppTheme.heading2),
-              const Spacer(),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close, color: AppTheme.textMuted),
+    final roleSelector = _roleOptions.length > 1
+        ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Assign as', style: AppTheme.labelSm),
+            const SizedBox(height: 6),
+            AssignRoleSelector(options: _roleOptions, value: _targetRole, onChanged: _setRole),
+          ])
+        : null;
+    if (_loading || _error != null || _available.isEmpty) {
+      return Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: SizedBox(
+          width: 520,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text('Assign Users', style: AppTheme.heading3),
+                const Spacer(),
+                IconButton(onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: AppTheme.textMuted)),
+              ]),
+              if (roleSelector != null) ...[const SizedBox(height: 8), roleSelector],
+              const SizedBox(height: 24),
+              Center(
+                child: _loading
+                    ? const CircularProgressIndicator(color: AppTheme.accentBlue)
+                    : Text(_error ?? 'Everyone with this role is already assigned.',
+                        style: AppTheme.bodyMd),
               ),
+              const SizedBox(height: 24),
             ]),
-            const SizedBox(height: 4),
-            Text('Select personnel to assign this task to',
-                style: AppTheme.bodySm),
-            const SizedBox(height: 14),
-            if (_roleOptions.length > 1) ...[
-              Text('Assign as', style: AppTheme.labelSm),
-              const SizedBox(height: 6),
-              AssignRoleSelector(options: _roleOptions, value: _targetRole, onChanged: _setRole),
-              const SizedBox(height: 14),
-            ],
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: AppTheme.accentBlue))
-                  : _error != null
-                      ? Center(child: Text(_error!, style: AppTheme.bodyMd))
-                      : _available.isEmpty
-                          ? Center(
-                              child: Text('No available personnel to assign',
-                                  style: AppTheme.bodyMd))
-                          : ListView.builder(
-                              itemCount: _available.length,
-                              itemBuilder: (_, i) {
-                                final u = _available[i];
-                                final checked = _selected.contains(u.id);
-                                return CheckboxListTile(
-                                  value: checked,
-                                  onChanged: (_) => setState(() {
-                                    if (checked) {
-                                      _selected.remove(u.id);
-                                    } else {
-                                      _selected.add(u.id);
-                                    }
-                                  }),
-                                  title: Text(u.fullName, style: AppTheme.labelMd),
-                                  subtitle: Text(
-                                    '${u.roleLabel}${u.gradeLevel != null ? ' · ${u.gradeLevel}' : ''}',
-                                    style: AppTheme.bodySm,
-                                  ),
-                                  secondary: CircleAvatar(
-                                    radius: 16,
-                                    backgroundColor: AppTheme.sidebarActive,
-                                    child: Text(u.initials,
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700)),
-                                  ),
-                                  activeColor: AppTheme.accentBlue,
-                                  contentPadding: EdgeInsets.zero,
-                                  dense: true,
-                                );
-                              },
-                            ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Cancel', style: AppTheme.labelMd),
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: (_selected.isEmpty || _submitting) ? null : _confirm,
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : Text('Assign ${_selected.isEmpty ? '' : '(${_selected.length})'}'),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
-      ),
+      );
+    }
+    final t = widget.task;
+    return AssignPickerDialog(
+      // A new role reloads the people, so start the picker afresh.
+      key: ValueKey(_targetRole),
+      title: 'Assign Users',
+      header: roleSelector,
+      users: _available,
+      selected: const {},
+      onChanged: (_) {},
+      hasTaskText: t != null &&
+          [t.title, t.subject, t.instructions].any((v) => (v ?? '').trim().isNotEmpty),
+      loadSuggestions: t == null
+          ? null
+          : () => ApiService.getAssigneeSuggestions(
+                targetRole: _targetRole,
+                title: t.title,
+                subject: t.subject ?? '',
+                instructions: t.instructions ?? '',
+                taskCategory: t.taskCategory,
+                startDate: t.startDate,
+                endDate: t.endDate,
+                dueTime: t.dueTime,
+              ),
+      onConfirm: (ids) =>
+          ApiService.assignTask(widget.taskId, ids.toList(), targetRole: _targetRole),
     );
   }
 }

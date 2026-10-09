@@ -1,12 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 import audit
 from pydantic import BaseModel, Field
+from datetime import date
 from typing import List, Optional
 from database import connect_db
 from auth import (get_current_user, require_admin, require_admin_or_principal,
                   require_can_assign, hash_password, ASSIGNABLE_TO)
 from qualifications import (EducationBody, get_qualifications, set_skills,
-                            set_certifications, set_education, validate_education,
+                            set_education, validate_education, task_timing,
                             validate_catalog_names, score_candidates)
 
 router = APIRouter(tags=["Users"])
@@ -46,15 +47,14 @@ def _assignable_rows(db, user, target_role: str = "") -> list:
         roles_to_show = allowed_roles
 
     placeholders = ",".join("?" for _ in roles_to_show)
-    # Match against the roles a person holds (user_roles → roles), and report that
+    # Match against the roles a person holds (user_held_roles), and report that
     # role as the user's role so the UI assigns to the intended identity.
-    q = f"""SELECT DISTINCT u.id, u.username, u.full_name, r.roles AS role,
+    q = f"""SELECT DISTINCT u.id, u.username, u.full_name, hr.role AS role,
                    u.grade_level_id, gl.grade_level, u.is_active
             FROM users u
-            JOIN user_roles ur ON ur.user_id = u.id
-            JOIN roles r ON r.id = ur.role_id
+            JOIN user_held_roles hr ON hr.user_id = u.id
             LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
-            WHERE r.roles IN ({placeholders})"""
+            WHERE hr.role IN ({placeholders})"""
     params = list(roles_to_show)
 
     if role == "dean":
@@ -71,7 +71,7 @@ def _assignable_rows(db, user, target_role: str = "") -> list:
         else:
             return []
 
-    q += " ORDER BY r.roles, u.full_name"
+    q += " ORDER BY hr.role, u.full_name"
     return [dict(r) for r in db.execute(q, params).fetchall()]
 
 
@@ -90,20 +90,26 @@ class SuggestionRequest(BaseModel):
     subject: Optional[str] = ""
     instructions: Optional[str] = ""
     task_category: Optional[str] = "common"
+    # When the task happens, for the life-context guard (off-hours detection).
+    start_date: Optional[str] = None   # YYYY-MM-DD
+    end_date: Optional[str] = None     # YYYY-MM-DD
+    due_time: Optional[str] = None     # "4:30 PM" or "16:30"
 
 
 @router.post("/api/users/assignable/suggestions")
 def suggest_assignees(req: SuggestionRequest, user=Depends(require_can_assign)):
-    """Assignable personnel ranked for a task by their DepEd profile
-    (specialization, certifications, skills, education) matching the task text,
-    with number of children and open workload lowering the rank.
-    See qualifications.score_candidates for the scoring rules."""
+    """Assignable personnel ranked by a 0-100 fit score: competency (profile
+    matching the task text), current workload, and a life-context guard for
+    off-hours tasks. See qualifications.score_candidates for the rules."""
     db = connect_db()
     try:
         candidates = [r for r in _assignable_rows(db, user, req.target_role or "")
                       if r["is_active"]]
         task_text = " ".join(filter(None, [req.title, req.subject, req.instructions]))
-        return score_candidates(db, candidates, task_text, req.task_category or "common")
+        timing = task_timing(req.start_date, req.end_date, req.due_time,
+                             req.task_category or "common")
+        return score_candidates(db, candidates, task_text, req.task_category or "common",
+                                timing)
     finally:
         db.close()
 
@@ -111,7 +117,8 @@ def suggest_assignees(req: SuggestionRequest, user=Depends(require_can_assign)):
 class CreateUserRequest(BaseModel):
     username: str
     password: str
-    full_name: str
+    first_name: str
+    last_name: str
     role: str
     grade_level_id: Optional[int] = None
 
@@ -125,13 +132,14 @@ def create_user(req: CreateUserRequest, request: Request,
     db = connect_db()
     try:
         db.execute(
-            "INSERT INTO users (username,password_hash,full_name,role,grade_level_id) VALUES (?,?,?,?,?)",
-            (req.username, hash_password(req.password), req.full_name, req.role, req.grade_level_id)
+            "INSERT INTO users (username,password_hash,first_name,last_name,role,grade_level_id) "
+            "VALUES (?,?,?,?,?,?)",
+            (req.username, hash_password(req.password), req.first_name.strip(),
+             req.last_name.strip(), req.role, req.grade_level_id)
         )
         new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         audit.record(db, user, "account.create", "user", new_id,
                      f"Created account {req.username} as {req.role}",
-                     entity_label=audit.user_label(db, new_id),
                      changes={"role": [None, req.role]}, request=request)
         db.commit()
         db.close()
@@ -159,9 +167,10 @@ def get_my_profile(user=Depends(get_current_user)):
     d = dict(u)
     d.pop("password_hash", None)
     subjects = db.execute(
-        """SELECT us.subject, gl.grade_level FROM user_subjects us
+        """SELECT s.subject_name AS subject, gl.grade_level FROM user_subjects us
+           JOIN subjects s ON s.id = us.subject_id
            LEFT JOIN grade_levels gl ON gl.id=us.grade_level_id
-           WHERE us.user_id=? ORDER BY us.subject""",
+           WHERE us.user_id=? ORDER BY s.subject_name""",
         (uid,)
     ).fetchall()
     d["subjects"] = [dict(s) for s in subjects]
@@ -177,12 +186,13 @@ class UpdateProfileRequest(BaseModel):
     suffix: Optional[str] = None
     email: Optional[str] = None
     phone_number: Optional[str] = None
-    birthdate: Optional[str] = None
+    birthdate: Optional[date] = None             # YYYY-MM-DD
     number_of_children: Optional[int] = Field(None, ge=0)
+    has_elderly_or_infant_care: Optional[bool] = None
+    overtime_opt_in: Optional[bool] = None
     skills: Optional[List[str]] = None
-    certifications: Optional[List[str]] = None
     education: Optional[EducationBody] = None
-    date_of_appointment: Optional[str] = None
+    date_of_appointment: Optional[date] = None   # YYYY-MM-DD
     address: Optional[str] = None
 
 
@@ -192,6 +202,7 @@ class UpdateProfileRequest(BaseModel):
 _PROFILE_COLUMNS = {
     "first_name", "middle_name", "last_name", "suffix", "email", "phone_number",
     "birthdate", "number_of_children", "date_of_appointment", "address",
+    "has_elderly_or_infant_care", "overtime_opt_in",
 }
 
 
@@ -208,21 +219,27 @@ def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user))
         uid = int(user["sub"])
         updates = {k: v for k, v in req.dict().items()
                    if v is not None and k in _PROFILE_COLUMNS}
+        for flag in ("has_elderly_or_infant_care", "overtime_opt_in"):
+            if flag in updates:
+                updates[flag] = int(bool(updates[flag]))
+        today = date.today()
+        if req.birthdate and req.birthdate > today:
+            raise HTTPException(400, "Birthdate can't be in the future")
+        if req.date_of_appointment and req.date_of_appointment > today:
+            raise HTTPException(400, "Date of appointment can't be in the future")
+        if req.birthdate or req.date_of_appointment:
+            cur = db.execute("SELECT birthdate, date_of_appointment FROM users WHERE id=?",
+                             (int(user["sub"]),)).fetchone()
+            born = req.birthdate or (date.fromisoformat(cur[0]) if cur and cur[0] else None)
+            hired = req.date_of_appointment or (
+                date.fromisoformat(cur[1]) if cur and cur[1] else None)
+            if born and hired and hired <= born:
+                raise HTTPException(400, "Date of appointment must be after the birthdate")
+        for col in ("birthdate", "date_of_appointment"):
+            if col in updates:
+                updates[col] = updates[col].isoformat()
         if updates:
-            # Keep the denormalized full_name in sync when a name part changes,
-            # merging the new values with the existing ones for parts not sent.
-            name_parts = ("first_name", "middle_name", "last_name", "suffix")
-            if any(k in updates for k in name_parts):
-                row = db.execute(
-                    "SELECT first_name, middle_name, last_name, suffix FROM users WHERE id=?",
-                    (uid,)
-                ).fetchone()
-                merged = dict(row) if row else {}
-                merged.update({k: updates[k] for k in name_parts if k in updates})
-                updates["full_name"] = " ".join(
-                    p for p in (merged.get("first_name"), merged.get("middle_name"),
-                                merged.get("last_name"), merged.get("suffix")) if p
-                )
+            # full_name is a generated column, so it follows the name parts.
             set_clause = ", ".join(f"{k}=?" for k in updates)
             db.execute(f"UPDATE users SET {set_clause} WHERE id=?",
                        list(updates.values()) + [uid])
@@ -242,8 +259,11 @@ def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user))
 
 @router.get("/api/subjects")
 def list_subjects(user=Depends(get_current_user)):
-    return ["Mathematics", "Science", "English", "Filipino", "MAPEH",
-            "Araling Panlipunan", "Edukasyon sa Pagpapakatao", "TLE"]
+    db = connect_db()
+    try:
+        return [r[0] for r in db.execute("SELECT subject_name FROM subjects ORDER BY subject_name")]
+    finally:
+        db.close()
 
 
 @router.get("/api/grade-levels")

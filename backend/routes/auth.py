@@ -53,8 +53,8 @@ def login(req: LoginRequest, request: Request):
         if not user["is_active"]:
             raise HTTPException(403, "This account has been deactivated. Please contact the principal.")
         roles = [r["roles"] for r in db.execute(
-            """SELECT r.roles FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-               WHERE ur.user_id=? ORDER BY r.roles""", (user["id"],)
+            """SELECT role AS roles FROM user_held_roles
+               WHERE user_id=? ORDER BY role""", (user["id"],)
         ).fetchall()]
 
     if not roles:
@@ -105,8 +105,8 @@ def me(user=Depends(get_current_user)):
         if not u:
             raise HTTPException(404, "User not found")
         roles = [r["roles"] for r in db.execute(
-            """SELECT r.roles FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-               WHERE ur.user_id=? ORDER BY r.roles""", (user["sub"],)
+            """SELECT role AS roles FROM user_held_roles
+               WHERE user_id=? ORDER BY role""", (user["sub"],)
         ).fetchall()]
     d = dict(u)
     # The active role comes from the session token, not the stored primary role.

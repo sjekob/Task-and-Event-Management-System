@@ -180,14 +180,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                 const _SectionHeader(icon: Icons.family_restroom_outlined, title: 'Personal Details'),
                 _infoGrid(isMobile, [
-                  _InfoField(label: 'Birthdate',          value: p.birthdate),
+                  _InfoField(label: 'Birthdate',          value: _longDate(p.birthdate)),
                   _InfoField(label: 'Number of Children', value: p.numberOfChildren.toString()),
+                  _InfoField(label: 'Elderly or Infant Care at Home',
+                      value: p.hasElderlyOrInfantCare ? 'Yes' : 'No'),
+                  _InfoField(label: 'Available Beyond Regular Hours',
+                      value: p.overtimeOptIn ? 'Yes, opted in' : 'No'),
                 ]),
 
                 const _SectionHeader(icon: Icons.work_outline, title: 'Employment'),
                 _infoGrid(isMobile, [
                   _InfoField(label: 'Administrative Role', value: _roleLabel(p.role)),
-                  _InfoField(label: 'Date of Appointment', value: p.dateOfAppointment),
+                  _InfoField(label: 'Date of Appointment', value: _longDate(p.dateOfAppointment)),
                 ]),
 
                 const _SectionHeader(icon: Icons.school_outlined, title: 'Educational Background'),
@@ -333,6 +337,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 // ── Info field widget ──────────────────────────────────────────────────────────
 
 /// Titled divider between groups of fields (profile view and edit dialog).
+/// "1984-03-15" -> "March 15, 1984" (left as-is if it isn't a date).
+String? _longDate(String? iso) {
+  final d = iso == null ? null : DateTime.tryParse(iso);
+  if (d == null) return iso;
+  const m = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+             'August', 'September', 'October', 'November', 'December'];
+  return '${m[d.month - 1]} ${d.day}, ${d.year}';
+}
+
 class _SectionHeader extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -376,7 +389,7 @@ class _InfoField extends StatelessWidget {
         Text(label,
             style: GoogleFonts.plusJakartaSans(
                 fontSize: 12, fontWeight: FontWeight.w500,
-                color: AppTheme.textLight)),
+                color: const Color(0xFF6B7280))),
         const SizedBox(height: 6),
         Text(
           value?.isNotEmpty == true ? value! : '—',
@@ -435,6 +448,8 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   // DepEd education dropdowns; options come from the server.
   Map<String, List<String>> _eduOptions = {};
   late final Map<String, String?> _edu;
+  late bool _hasCare;
+  late bool _overtimeOptIn;
   late List<String> _skills;
   List<CatalogOption> _skillOptions = [];
 
@@ -461,6 +476,8 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       'specialization':       p.education.specialization,
     };
     _skills = List.of(p.skills);
+    _hasCare = p.hasElderlyOrInfantCare;
+    _overtimeOptIn = p.overtimeOptIn;
     PersonnelService.educationOptions().then((o) {
       if (mounted) setState(() => _eduOptions = o);
     });
@@ -492,13 +509,15 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
             e.key: e.value.text.trim(),
         'number_of_children':
             int.tryParse(_ctrl['number_of_children']!.text.trim()) ?? 0,
+        'has_elderly_or_infant_care': _hasCare,
+        'overtime_opt_in': _overtimeOptIn,
         // Always sent so entries can be cleared.
         'skills': _skills,
         'education': Education(
           highestAttainment: _edu['highest_attainment'],
           undergraduateDegree: _edu['undergraduate_degree'],
           specialization: _edu['specialization'],
-          postgraduateFocus: _ctrl['postgraduate_focus']!.text.trim().isEmpty
+          postgraduateFocus: !_hasPostgrad || _ctrl['postgraduate_focus']!.text.trim().isEmpty
               ? null
               : _ctrl['postgraduate_focus']!.text.trim(),
         ).toJson(),
@@ -526,6 +545,8 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -543,7 +564,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
               const SizedBox(height: 4),
               Text('Your education and skills are used to suggest you for matching tasks. '
                   'Certifications are added by uploading the certificate on your profile.',
-                  style: AppTheme.bodySm),
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13, color: const Color(0xFF4B5563))),
               const SizedBox(height: 4),
               Expanded(
                 child: SingleChildScrollView(
@@ -558,15 +579,28 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                       _row([_field('email', 'Email'), _field('phone_number', 'Phone Number')]),
                       _row([_field('address', 'Address')]),
                       const _SectionHeader(dense: true, icon: Icons.family_restroom_outlined, title: 'Personal Details'),
-                      _row([_field('birthdate', 'Birthdate (YYYY-MM-DD)'),
+                      _row([_field('birthdate', 'Birthdate'),
                             _field('number_of_children', 'Number of Children')]),
+                      _toggle(
+                        'I care for an elderly family member or an infant at home',
+                        'Avoids suggesting you for multi-day, weekend or late-evening tasks.',
+                        _hasCare, (v) => setState(() => _hasCare = v)),
+                      _toggle(
+                        'I can take tasks beyond regular school hours',
+                        'Lets the system suggest you for weekend, after-hours and '
+                            'extracurricular tasks even with family commitments.',
+                        _overtimeOptIn, (v) => setState(() => _overtimeOptIn = v)),
                       const _SectionHeader(dense: true, icon: Icons.work_outline, title: 'Employment'),
                       _row([_field('date_of_appointment', 'Date of Appointment')]),
                       const _SectionHeader(dense: true, icon: Icons.school_outlined, title: 'Educational Background'),
                       _row([_eduDropdown('highest_attainment', 'Highest Educational Attainment'),
                             _eduDropdown('undergraduate_degree', 'Undergraduate Degree')]),
                       _row([_eduDropdown('specialization', 'Area of Specialization'),
-                            _field('postgraduate_focus', 'Postgraduate Program Focus')]),
+                            // Only for "With Master's Units" and higher.
+                            if (_hasPostgrad)
+                              _field('postgraduate_focus', 'Postgraduate Program Focus')
+                            else
+                              const SizedBox.shrink()]),
                       const _SectionHeader(dense: true, icon: Icons.psychology_outlined, title: 'Skills'),
                       _row([_catalogSelect('Skills', _skills, _skillOptions,
                           (v) => setState(() => _skills = v))]),
@@ -610,6 +644,29 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   static const _nameKeys = {'first_name', 'middle_name', 'last_name', 'suffix'};
 
+  // Readable field labels: dark grey at rest, blue when focused/filled.
+  static final _labelStyle = GoogleFonts.plusJakartaSans(
+      fontSize: 13, fontWeight: FontWeight.w500, color: const Color(0xFF4B5563));
+  static final _floatingLabelStyle = GoogleFonts.plusJakartaSans(
+      fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E3A8A));
+  static const _fieldBorder = Color(0xFFB8C2D3);
+
+  Widget _toggle(String title, String subtitle, bool value, ValueChanged<bool> onChanged) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 4, right: 8),
+        child: SwitchListTile(
+          value: value,
+          onChanged: onChanged,
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          activeColor: AppTheme.accentBlue,
+          title: Text(title, style: GoogleFonts.plusJakartaSans(fontSize: 13,
+              fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+          subtitle: Text(subtitle, style: GoogleFonts.plusJakartaSans(
+              fontSize: 12, color: const Color(0xFF4B5563))),
+        ),
+      );
+
   Widget _catalogSelect(String label, List<String> selected,
           List<CatalogOption> options, ValueChanged<List<String>> onChanged) =>
       CatalogMultiSelect(
@@ -618,15 +675,16 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
         options: options,
         onChanged: onChanged,
         decoration: InputDecoration(
-          labelStyle: AppTheme.bodySm,
+          labelStyle: _labelStyle,
+          floatingLabelStyle: _floatingLabelStyle,
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppTheme.borderColor),
+            borderSide: const BorderSide(color: _fieldBorder),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppTheme.borderColor),
+            borderSide: const BorderSide(color: _fieldBorder),
           ),
         ),
       );
@@ -641,15 +699,16 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppTheme.textPrimary),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: AppTheme.bodySm,
+        labelStyle: _labelStyle,
+        floatingLabelStyle: _floatingLabelStyle,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppTheme.borderColor),
+          borderSide: const BorderSide(color: _fieldBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppTheme.borderColor),
+          borderSide: const BorderSide(color: _fieldBorder),
         ),
       ),
       items: [
@@ -661,8 +720,36 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     );
   }
 
+  /// Postgraduate focus applies from "With Master's Units" upward (the
+  /// attainment options are ordered lowest first).
+  bool get _hasPostgrad {
+    final opts = _eduOptions['highest_attainment'] ?? const <String>[];
+    final i = opts.indexOf(_edu['highest_attainment'] ?? '');
+    return i >= 1;
+  }
+
+  static const _dateKeys = {'birthdate', 'date_of_appointment'};
+
+  Future<void> _pickDate(String key) async {
+    final current = DateTime.tryParse(_ctrl[key]!.text.trim());
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current ?? (key == 'birthdate' ? DateTime(now.year - 30) : now),
+      firstDate: DateTime(1940),
+      lastDate: now,
+      helpText: key == 'birthdate' ? 'Birthdate' : 'Date of appointment',
+    );
+    if (picked != null) {
+      setState(() => _ctrl[key]!.text =
+          '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}');
+    }
+  }
+
   Widget _field(String key, String label) => TextFormField(
         controller: _ctrl[key],
+        readOnly: _dateKeys.contains(key),
+        onTap: _dateKeys.contains(key) ? () => _pickDate(key) : null,
         keyboardType: key == 'number_of_children' ? TextInputType.number : null,
         inputFormatters: _nameKeys.contains(key)
             ? const [TitleCaseTextInputFormatter()]
@@ -670,18 +757,22 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                 ? [FilteringTextInputFormatter.digitsOnly,
                    LengthLimitingTextInputFormatter(2)]
                 : null,
-        style: GoogleFonts.plusJakartaSans(fontSize: 13),
+        style: GoogleFonts.plusJakartaSans(fontSize: 14, color: AppTheme.textPrimary),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: AppTheme.bodySm,
+          labelStyle: _labelStyle,
+          floatingLabelStyle: _floatingLabelStyle,
+          suffixIcon: _dateKeys.contains(key)
+              ? const Icon(Icons.calendar_today_outlined, size: 16, color: AppTheme.textMuted)
+              : null,
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppTheme.borderColor),
+            borderSide: const BorderSide(color: _fieldBorder),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppTheme.borderColor),
+            borderSide: const BorderSide(color: _fieldBorder),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),

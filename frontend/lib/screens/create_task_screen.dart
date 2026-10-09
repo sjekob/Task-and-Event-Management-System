@@ -9,7 +9,6 @@ import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/assign_picker_dialog.dart';
-import '../widgets/assign_role_selector.dart';
 
 part 'create_task_screen_widgets.dart';
 
@@ -110,12 +109,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         users: _allAssignable,
         selected: _selectedIds,
         onChanged: (ids) => setState(() { _selectedIds.clear(); _selectedIds.addAll(ids); }),
+        hasTaskText: [_titleCtrl, _subjectCtrl, _instrCtrl]
+            .any((c) => c.text.trim().isNotEmpty),
         loadSuggestions: () => ApiService.getAssigneeSuggestions(
           targetRole: _targetRole,
           title: _titleCtrl.text,
           subject: _subjectCtrl.text,
           instructions: _instrCtrl.text,
           taskCategory: _taskCategory,
+          startDate: _startDate != null ? _fmtApi(_startDate!) : null,
+          endDate: _endDate != null ? _fmtApi(_endDate!) : null,
+          dueTime: _dueTime != null ? _fmtTime(_dueTime!) : null,
         ),
       ),
     );
@@ -258,296 +262,226 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     return '$h:${t.minute.toString().padLeft(2,'0')} ${t.period == DayPeriod.am ? 'AM' : 'PM'}';
   }
 
-  String _fmtDate(DateTime? d) {
-    if (d == null) return 'Select';
-    const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return '${m[d.month-1]} ${d.day}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final selectedUsers = _allAssignable.where((u) => _selectedIds.contains(u.id)).toList();
+    final wide = MediaQuery.of(context).size.width >= 1100;
+    final isSpecial = widget.lockedCategory == 'special';
+    final pageTitle = widget.isTemplate
+        ? 'Create Template'
+        : isSpecial ? 'Create Special Task' : 'Create Task';
+    final subtitle = widget.isTemplate
+        ? 'Save a reusable task outline.'
+        : isSpecial
+            ? 'Special tasks are appraised separately from regular duties.'
+            : 'Describe the task, set when it is due, then choose who does it.';
 
-    final body = Padding(
-      padding: const EdgeInsets.fromLTRB(28, 20, 28, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Page Title row ──
-          Row(
+    // ── Task details ──
+    final details = _SectionCard(
+      icon: Icons.description_outlined,
+      title: 'Task details',
+      children: [
+        _FieldLabel(widget.isTemplate ? 'Template name' : 'Title'),
+        const SizedBox(height: 6),
+        _input(_titleCtrl, widget.isTemplate ? 'e.g. Quarterly report' : 'e.g. First aid station for the sports fest'),
+        const SizedBox(height: 16),
+        _FieldLabel('Instructions'),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _instrCtrl,
+          minLines: 7,
+          maxLines: 14,
+          style: GoogleFonts.plusJakartaSans(fontSize: 14, height: 1.5),
+          decoration: _inputDecoration(
+              'What needs to be done, what to submit, and anything the assignee should know.'),
+        ),
+        const SizedBox(height: 18),
+        _FieldLabel('Attachments'),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          _AttachButton(Icons.link, 'Link', () => _openAttachmentInput('link')),
+          _AttachButton(Icons.upload_file_outlined, 'Upload file', () => _openAttachmentInput('file')),
+          _AttachButton(Icons.add_to_drive_outlined, 'Google Drive', () => _openAttachmentInput('gdrive')),
+          _AttachButton(Icons.play_circle_outline, 'YouTube', () => _openAttachmentInput('youtube')),
+        ]),
+        if (_attachments.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          for (final e in _attachments.asMap().entries) _attachmentRow(e.key, e.value),
+        ],
+      ],
+    );
+
+    // ── Schedule ──
+    final schedule = _SectionCard(
+      icon: Icons.event_outlined,
+      title: 'Schedule',
+      children: [
+        _PickerField(icon: Icons.calendar_today_outlined, label: 'Start date',
+            value: _startDate == null ? null : _fmtLongDate(_startDate!),
+            onTap: () => _pickDate(true)),
+        const SizedBox(height: 10),
+        _PickerField(icon: Icons.event_available_outlined, label: 'Due date',
+            value: _endDate == null ? null : _fmtLongDate(_endDate!),
+            onTap: () => _pickDate(false)),
+        const SizedBox(height: 10),
+        _PickerField(icon: Icons.schedule_outlined, label: 'Due time',
+            value: _dueTime == null ? null : _fmtTime(_dueTime!),
+            onTap: _pickTime),
+      ],
+    );
+
+    // ── Assignment ──
+    final roleOpts = widget.isTemplate
+        ? const <String>[]
+        : _targetRoleOptions(context.read<AppState>().userRole);
+    final assignment = widget.isTemplate
+        ? null
+        : _SectionCard(
+            icon: Icons.groups_outlined,
+            title: 'Assignment',
             children: [
-              Text(widget.isTemplate
-                      ? 'Create Template'
-                      : widget.lockedCategory == 'special'
-                          ? 'Create Special Task'
-                          : 'Create Task',
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 24, fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary)),
-              const Spacer(),
+              if (roleOpts.length >= 2) ...[
+                _FieldLabel('Assign as'),
+                const SizedBox(height: 6),
+                _targetRoleField(roleOpts),
+                const SizedBox(height: 16),
+              ],
+              _FieldLabel('People'),
+              const SizedBox(height: 8),
+              if (selectedUsers.isEmpty)
+                Text('No one selected yet.', style: AppTheme.bodySm)
+              else
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final u in selectedUsers)
+                    InputChip(
+                      avatar: CircleAvatar(
+                        backgroundColor: AppTheme.sidebarActive,
+                        child: Text(u.initials,
+                            style: const TextStyle(fontSize: 10, color: Colors.white,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                      label: Text(u.fullName,
+                          style: GoogleFonts.plusJakartaSans(fontSize: 12.5,
+                              fontWeight: FontWeight.w600)),
+                      onDeleted: () => setState(() => _selectedIds.remove(u.id)),
+                      backgroundColor: Colors.white,
+                      side: const BorderSide(color: AppTheme.borderColor),
+                    ),
+                ]),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _loadingUsers ? null : _openAssignPicker,
+                  icon: _loadingUsers
+                      ? const SizedBox(width: 14, height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.auto_awesome, size: 16),
+                  label: Text(selectedUsers.isEmpty ? 'Choose people' : 'Change people',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.accentBlue,
+                    side: const BorderSide(color: AppTheme.accentBlue),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('Suggestions match the title and instructions against each '
+                  "person's skills and certifications, and weigh their current workload.",
+                  style: AppTheme.bodySm.copyWith(fontSize: 11.5)),
+            ],
+          );
+
+    final side = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      schedule,
+      if (assignment != null) ...[const SizedBox(height: 16), assignment],
+    ]);
+
+    final actions = Row(children: [
+      const Spacer(),
+      OutlinedButton(
+        onPressed: () {
+          if (widget.onBack != null) {
+            widget.onBack!();
+          } else {
+            Navigator.pop(context);
+          }
+        },
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppTheme.textPrimary,
+          side: const BorderSide(color: AppTheme.borderColor),
+          backgroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: Text('Cancel', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+      ),
+      const SizedBox(width: 10),
+      ElevatedButton(
+        onPressed: _submitting ? null : _submit,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppTheme.darkBanner,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: _submitting
+            ? const SizedBox(width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            : Text(widget.isTemplate ? 'Save template' : isSpecial ? 'Create special task' : 'Create task',
+                style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+      ),
+    ]);
+
+    final body = SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 20, 28, 28),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1240),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(pageTitle,
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: AppTheme.bodyMd),
+                ]),
+              ),
               if (!widget.isTemplate)
                 OutlinedButton.icon(
                   onPressed: _openTemplatePicker,
                   icon: const Icon(Icons.library_books_outlined, size: 16),
-                  label: Text('Use Template',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  label: Text('Use template',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.accentBlue,
+                    backgroundColor: Colors.white,
                     side: const BorderSide(color: AppTheme.accentBlue),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
+            ]),
+            const SizedBox(height: 20),
+            if (wide)
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(flex: 3, child: details),
+                const SizedBox(width: 20),
+                Expanded(flex: 2, child: side),
+              ])
+            else ...[
+              details,
+              const SizedBox(height: 16),
+              side,
             ],
-          ),
-          const SizedBox(height: 20),
-
-          // ── Title field ──
-          _FieldLabel('Title'),
-          const SizedBox(height: 6),
-          _input(_titleCtrl, widget.isTemplate ? 'Template Name' : 'Task Name'),
-          const SizedBox(height: 16),
-
-          // ── Assign As (target identity) — only when the creator can target
-          // more than one role. Switching reloads the assignable people. ──
-          if (!widget.isTemplate) ...[
-            Builder(builder: (ctx) {
-              final opts = _targetRoleOptions(ctx.read<AppState>().userRole);
-              if (opts.length < 2) return const SizedBox.shrink();
-              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _FieldLabel('Assign As'),
-                const SizedBox(height: 6),
-                _targetRoleField(opts),
-                const SizedBox(height: 16),
-              ]);
-            }),
-          ],
-
-          // ── Assign to | Start Date | End Date | Time ──
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!widget.isTemplate) ...[
-                  Expanded(
-                    flex: 2,
-                    child: GestureDetector(
-                      onTap: _openAssignPicker,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppTheme.borderColor),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text('Assign to',
-                                style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11, color: AppTheme.textLight,
-                                    fontWeight: FontWeight.w500)),
-                            const SizedBox(height: 4),
-                            Row(children: [
-                              Expanded(
-                                child: Text(
-                                  selectedUsers.isEmpty
-                                      ? 'Select'
-                                      : selectedUsers.map((u) => u.fullName.split(' ').first).join(', '),
-                                  style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 13,
-                                      color: selectedUsers.isEmpty
-                                          ? AppTheme.textMuted
-                                          : AppTheme.textPrimary,
-                                      fontWeight: FontWeight.w500),
-                                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const Icon(Icons.keyboard_arrow_down,
-                                  size: 18, color: AppTheme.textMuted),
-                            ]),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                ],
-                Expanded(child: _dateBtn('Start Date', _fmtDate(_startDate), () => _pickDate(true))),
-                const SizedBox(width: 10),
-                Expanded(child: _dateBtn('End Date', _fmtDate(_endDate), () => _pickDate(false))),
-                const SizedBox(width: 10),
-                Expanded(child: _dateBtn('Time', _dueTime != null ? _fmtTime(_dueTime!) : 'Select', _pickTime)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Instructions ──
-          _FieldLabel('Instructions'),
-          const SizedBox(height: 6),
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppTheme.borderColor),
-              ),
-              child: TextField(
-                controller: _instrCtrl,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                style: GoogleFonts.plusJakartaSans(fontSize: 14),
-                decoration: const InputDecoration(
-                  hintText: 'Value',
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(14),
-                ),
-              ),
-            ),
-          ),
-
-          // ── Attachments box ──
-          if (_attachments.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.borderColor),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
-                    child: Text('Attachments',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12, fontWeight: FontWeight.w600,
-                            color: AppTheme.textMuted)),
-                  ),
-                  const Divider(height: 1, color: AppTheme.borderColor),
-                  ..._attachments.asMap().entries.map((e) {
-                    final i = e.key;
-                    final att = e.value;
-                    final icon = _attIcon(att['attachment_type'] ?? 'link');
-                    final iconColor = _attColor(att['attachment_type'] ?? 'link');
-                    return Container(
-                      decoration: i < _attachments.length - 1
-                          ? const BoxDecoration(
-                              border: Border(bottom: BorderSide(color: AppTheme.borderColor)))
-                          : null,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        child: Row(children: [
-                          Container(
-                            width: 32, height: 32,
-                            decoration: BoxDecoration(
-                              color: iconColor.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(icon, size: 16, color: iconColor),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(att['name'] ?? 'Attachment',
-                                    style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 12, fontWeight: FontWeight.w600,
-                                        color: AppTheme.textPrimary),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                                if ((att['url'] ?? '').isNotEmpty)
-                                  Text(att['url']!,
-                                      style: AppTheme.bodySm.copyWith(
-                                          color: AppTheme.accentBlue),
-                                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () => setState(() => _attachments.removeAt(i)),
-                            child: const Icon(Icons.close,
-                                size: 16, color: AppTheme.textMuted),
-                          ),
-                        ]),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 12),
-
-          // ── Bottom bar ──
-          Row(
-            children: [
-              _AttIcon(Icons.link, const Color(0xFF4A90E2), () => _openAttachmentInput('link')),
-              const SizedBox(width: 8),
-              _AttIcon(Icons.upload_file_outlined, const Color(0xFF6B7280), () => _openAttachmentInput('file')),
-              const SizedBox(width: 8),
-              _AttIcon(Icons.storage_outlined, const Color(0xFF34A853), () => _openAttachmentInput('gdrive')),
-              const SizedBox(width: 8),
-              _AttIcon(Icons.play_circle_outline, const Color(0xFFFF0000), () => _openAttachmentInput('youtube')),
-              const Spacer(),
-              // ── Cancel (secondary / subtle so it contrasts with Submit) ──
-              GestureDetector(
-                onTap: () {
-                  if (widget.onBack != null) widget.onBack!();
-                  else Navigator.pop(context);
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text('Cancel',
-                      style: GoogleFonts.plusJakartaSans(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                          color: const Color(0xFF374151))),
-                ),
-              ),
-              const SizedBox(width: 10),
-              GestureDetector(
-                onTap: _submitting ? null : _submit,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    gradient: _submitting
-                        ? null
-                        : const LinearGradient(
-                            colors: [Color(0xFF334155), Color(0xFF0F172A)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                    color: _submitting ? AppTheme.borderColor : null,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: _submitting
-                      ? const SizedBox(width: 16, height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text(widget.isTemplate ? 'Save Template' : 'Submit',
-                            style: GoogleFonts.plusJakartaSans(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                                color: Colors.white)),
-                ),
-              ),
-            ],
-          ),
-        ],
+            const SizedBox(height: 20),
+            actions,
+          ]),
+        ),
       ),
     );
 
@@ -556,6 +490,67 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
     return Scaffold(backgroundColor: AppTheme.bgColor, body: SafeArea(child: body));
   }
+
+  String _fmtLongDate(DateTime d) {
+    const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const w = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return '${w[d.weekday - 1]}, ${m[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
+  Widget _attachmentRow(int i, Map<String, String> att) {
+    final icon = _attIcon(att['attachment_type'] ?? 'link');
+    final iconColor = _attColor(att['attachment_type'] ?? 'link');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.bgColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(children: [
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 16, color: iconColor),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(att['name'] ?? 'Attachment',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12.5, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            if ((att['url'] ?? '').isNotEmpty)
+              Text(att['url']!,
+                  style: AppTheme.bodySm.copyWith(color: AppTheme.accentBlue),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+          ]),
+        ),
+        IconButton(
+          tooltip: 'Remove',
+          onPressed: () => setState(() => _attachments.removeAt(i)),
+          icon: const Icon(Icons.close, size: 16, color: AppTheme.textMuted),
+        ),
+      ]),
+    );
+  }
+
+  InputDecoration _inputDecoration(String hint) => InputDecoration(
+        hintText: hint,
+        hintStyle: AppTheme.bodyMd.copyWith(color: AppTheme.textLight),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppTheme.borderColor)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppTheme.borderColor)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppTheme.accentBlue, width: 1.5)),
+      );
 
   IconData _attIcon(String type) {
     switch (type) {
@@ -578,47 +573,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Widget _input(TextEditingController ctrl, String hint) => TextField(
         controller: ctrl,
         style: GoogleFonts.plusJakartaSans(fontSize: 14),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: AppTheme.bodyMd,
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppTheme.borderColor)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppTheme.borderColor)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppTheme.accentBlue, width: 1.5)),
-        ),
-      );
-
-  Widget _dateBtn(String label, String value, VoidCallback onTap) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppTheme.borderColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label,
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11, color: AppTheme.textLight, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 4),
-              Text(value,
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      color: value == 'Select' ? AppTheme.textMuted : AppTheme.textPrimary,
-                      fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ),
+        decoration: _inputDecoration(hint),
       );
 
   // Common vs Special task tag. Two-option toggle so the choice is obvious.

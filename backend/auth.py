@@ -160,8 +160,8 @@ def _held_roles(db, user_id: int) -> Optional[tuple]:
     if not row:
         return None
     roles = {r[0] for r in db.execute(
-        """SELECT r.roles FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-           WHERE ur.user_id=?""", (user_id,)).fetchall()} or {row["role"]}
+        """SELECT role AS roles FROM user_held_roles
+           WHERE user_id=?""", (user_id,)).fetchall()} or {row["role"]}
     return bool(row["is_active"]), roles
 
 

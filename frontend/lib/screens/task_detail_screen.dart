@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
 import '../widgets/assign_role_selector.dart';
+import '../widgets/assign_picker_dialog.dart';
 import 'edit_task_screen.dart';
 import '../utils/web_file_picker.dart';
 import '../utils/web_downloader.dart';
@@ -458,6 +459,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         if (reviewing) ...[
           _AssigneesCard(
             taskId: t.id,
+            task: t,
             assignedUsers: team,
             allAssigned: t.assignedUsers,
             title: mineOnly ? 'People you assigned' : 'Assigned personnel',

@@ -12,14 +12,6 @@ from typing import Optional
 from fastapi import Request
 
 
-def _actor(db, user: Optional[dict]) -> tuple:
-    if not user:
-        return None, None, None
-    uid = int(user["sub"])
-    row = db.execute("SELECT full_name FROM users WHERE id=?", (uid,)).fetchone()
-    return uid, (row["full_name"] if row else None), user.get("role")
-
-
 def client_ip(request: Optional[Request]) -> Optional[str]:
     if request is None:
         return None
@@ -37,16 +29,21 @@ def diff(before: dict, after: dict) -> dict:
 
 
 def record(db, user: Optional[dict], action: str, entity_type: str,
-           entity_id: Optional[int], summary: str, *, entity_label: Optional[str] = None,
+           entity_id: Optional[int], summary: str, *,
            changes: Optional[dict] = None, request: Optional[Request] = None) -> None:
-    actor_id, actor_name, actor_role = _actor(db, user)
-    db.execute(
-        """INSERT INTO audit_log (actor_id, actor_name, actor_role, action, entity_type,
-                                  entity_id, entity_label, summary, changes, ip_address)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
-        (actor_id, actor_name, actor_role, action, entity_type, entity_id, entity_label,
-         summary[:500], json.dumps(changes, default=str) if changes else None,
-         client_ip(request)))
+    """One audit_log row, plus one audit_log_changes row per changed field.
+    Names (actor, record) are not copied in; they are looked up when read."""
+    cur = db.execute(
+        """INSERT INTO audit_log (actor_id, actor_role, action, entity_type, entity_id,
+                                  summary, ip_address)
+           VALUES (?,?,?,?,?,?,?)""",
+        (int(user["sub"]) if user else None, user.get("role") if user else None,
+         action, entity_type, entity_id, summary[:500], client_ip(request)))
+    for field, (old, new) in (changes or {}).items():
+        db.execute(
+            """INSERT INTO audit_log_changes (audit_id, field_name, old_value, new_value)
+               VALUES (?,?,?,?)""",
+            (cur.lastrowid, field, json.dumps(old, default=str), json.dumps(new, default=str)))
 
 
 def user_label(db, uid: int) -> Optional[str]:

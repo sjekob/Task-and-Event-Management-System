@@ -5,14 +5,25 @@ import '../models/models.dart';
 import 'certificates_panel.dart';
 
 /// Personnel picker used when assigning a task. When [loadSuggestions] is
-/// given, people are ranked for the task (skills/certifications that match it
-/// first; more children or a heavier open workload rank lower), each row shows
-/// why, and "Auto-select" picks the matches for the user.
+/// given, people are ranked by a fit score out of 100 (competency 60 +
+/// workload 30 + life context 10), each row has a small box explaining why,
+/// people who are already heavily loaded are flagged "High burden", and
+/// selecting one of them shows a warning.
 class AssignPickerDialog extends StatefulWidget {
   final List<User> users;
   final Set<int> selected;
   final ValueChanged<Set<int>> onChanged;
   final Future<List<AssigneeSuggestion>> Function()? loadSuggestions;
+  /// False when the task has no title/subject/instructions yet, so skills
+  /// and certifications can't be matched.
+  final bool hasTaskText;
+  /// Dialog title (default "Select Personnel").
+  final String? title;
+  /// Extra controls under the title, e.g. the "Assign as" role selector.
+  final Widget? header;
+  /// When set, the button assigns right away (e.g. on an existing task) and
+  /// the dialog closes with `true` once it succeeds.
+  final Future<void> Function(Set<int> ids)? onConfirm;
 
   const AssignPickerDialog({
     super.key,
@@ -20,6 +31,10 @@ class AssignPickerDialog extends StatefulWidget {
     required this.selected,
     required this.onChanged,
     this.loadSuggestions,
+    this.hasTaskText = true,
+    this.title,
+    this.header,
+    this.onConfirm,
   });
 
   @override
@@ -28,6 +43,7 @@ class AssignPickerDialog extends StatefulWidget {
 
 class _AssignPickerDialogState extends State<AssignPickerDialog> {
   late Set<int> _local;
+  bool _busy = false;
   String _search = '';
   bool _loading = false;
   // Suggestion per user id, in ranked order. Empty → plain alphabetical list.
@@ -76,20 +92,44 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
 
   bool get _hasMatches => _ranked.values.any((s) => s.isMatch);
 
-  /// Select everyone whose skills/certifications match the task; if nobody
-  /// matches, select the single top-ranked (least burdened) person.
+  /// Select everyone whose profile matches the task, skipping anyone with a
+  /// high burden; if that leaves nobody, select the top-ranked person.
   void _autoSelect() {
-    final ids = _hasMatches
-        ? _ranked.values.where((s) => s.isMatch).map((s) => s.user.id)
-        : _ranked.keys.take(1);
+    final ok = _ranked.values.where((s) => !s.isHighBurden);
+    final matches = ok.where((s) => s.isMatch).map((s) => s.user.id).toList();
+    final ids = matches.isNotEmpty
+        ? matches
+        : [ok.isNotEmpty ? ok.first.user.id : _ranked.keys.first];
     setState(() => _local.addAll(ids));
   }
+
+  Future<void> _confirm() async {
+    setState(() => _busy = true);
+    try {
+      await widget.onConfirm!(_local);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: AppTheme.redColor,
+      ));
+    }
+  }
+
+  /// Selected people who already carry a high burden.
+  List<AssigneeSuggestion> get _burdenedSelection =>
+      [for (final id in _local) if (_ranked[id]?.isHighBurden ?? false) _ranked[id]!];
+
+  List<String> get _offHours =>
+      _ranked.isEmpty ? const [] : _ranked.values.first.offHours;
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final w = size.width < 560 ? size.width - 48 : 520.0;
-    final h = (size.height * 0.75).clamp(380.0, 660.0);
+    final w = size.width < 620 ? size.width - 48 : 580.0;
+    final h = (size.height * 0.82).clamp(420.0, 760.0);
     return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -101,16 +141,36 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             child: Row(children: [
-              Text('Select Personnel', style: AppTheme.heading3),
+              Text(widget.title ?? 'Select Personnel', style: AppTheme.heading3),
               const Spacer(),
-              TextButton(
-                onPressed: () { widget.onChanged(_local); Navigator.pop(context); },
-                child: Text('Done (${_local.length})',
-                    style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600,
-                        color: AppTheme.accentBlue, fontSize: 14)),
-              ),
+              if (widget.onConfirm == null)
+                TextButton(
+                  onPressed: () { widget.onChanged(_local); Navigator.pop(context); },
+                  child: Text('Done (${_local.length})',
+                      style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600,
+                          color: AppTheme.accentBlue, fontSize: 14)),
+                )
+              else ...[
+                TextButton(
+                  onPressed: _busy ? null : () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 4),
+                ElevatedButton(
+                  onPressed: _busy || _local.isEmpty ? null : _confirm,
+                  child: _busy
+                      ? const SizedBox(width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Text('Assign${_local.isEmpty ? '' : ' (${_local.length})'}'),
+                ),
+              ],
             ]),
           ),
+          if (widget.header != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: Align(alignment: Alignment.centerLeft, child: widget.header!),
+            ),
           if (widget.loadSuggestions != null) _suggestionBar(),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
@@ -131,6 +191,7 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
                     itemCount: _filtered.length,
                     itemBuilder: (_, i) => _row(_filtered[i])),
           ),
+          if (_burdenedSelection.isNotEmpty) _burdenWarning(),
         ]),
       ),
     );
@@ -150,11 +211,19 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
             child: Text(
               _loading
                   ? 'Finding the best fit for this task...'
-                  : _hasMatches
-                      ? 'Ranked by specialization, certifications, skills and education '
-                          'fitting this task. More children or open tasks rank lower.'
-                      : 'No specialization, certification or skill matches this task yet — '
-                          'ranked by related experience, then fewest children and open tasks.',
+                  : [
+                      !widget.hasTaskText
+                          ? 'Add a title or instructions first so skills and certifications '
+                              'can be matched. For now people are ranked by workload only.'
+                          : _hasMatches
+                              ? 'Best fit first: fit score = competency (60) + workload (30) '
+                                  '+ life context (10).'
+                              : 'No one\'s skills or certifications match the words in this '
+                                  'task; ranked by workload and life context.',
+                      if (_offHours.isNotEmpty)
+                        'This task is ${_offHours.join(', ')}, so people with children '
+                            'or family care lose life-context points unless they opted in.',
+                    ].join(' '),
               style: AppTheme.bodySm,
             ),
           ),
@@ -165,8 +234,8 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
           else if (_ranked.isNotEmpty)
             Tooltip(
               message: _hasMatches
-                  ? 'Select everyone whose specialization, certifications or skills match'
-                  : 'Select the top-ranked person',
+                  ? 'Select everyone whose profile matches, skipping high-burden people'
+                  : 'Select the top-ranked person without a high burden',
               child: TextButton.icon(
                 onPressed: _autoSelect,
                 icon: const Icon(Icons.bolt, size: 16),
@@ -192,40 +261,27 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
             .toList() ??
         const [];
     final certs = s == null ? const <CertificationInfo>[] : _certsFor(s);
-    final hasDetail = s != null && (reasons.isNotEmpty || s.loadFactors.isNotEmpty || certs.isNotEmpty);
+    final hasDetail = s != null;
     return CheckboxListTile(
       value: checked,
       onChanged: (_) => setState(() => checked ? _local.remove(u.id) : _local.add(u.id)),
-      title: Row(children: [
-        Flexible(child: Text(u.fullName, style: AppTheme.labelMd, overflow: TextOverflow.ellipsis)),
-        if (s != null && s.isMatch) ...[
-          const SizedBox(width: 6),
-          _badge(isTop ? 'Best match' : 'Match',
+      title: Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        Text(u.fullName, style: AppTheme.labelMd, overflow: TextOverflow.ellipsis),
+        if (s != null) _fitPill(s),
+        if (s != null && s.isMatch)
+          _badge(isTop ? 'Best fit' : 'Match',
               isTop ? AppTheme.greenColor : AppTheme.accentBlue,
               isTop ? AppTheme.greenBg : AppTheme.blueBg),
-        ],
+        if (s != null && s.burden != 'low') _burdenPill(s),
       ]),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('${u.roleLabel}${u.gradeLevel != null ? ' · ${u.gradeLevel}' : ''}',
               style: AppTheme.bodySm),
-          if (certs.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Wrap(spacing: 4, runSpacing: 4, children: [
-              for (final c in certs)
-                _certChip(c, s!.matchedCertifications.contains(c.name) ||
-                    s.relatedCertifications.contains(c.name)),
-            ]),
-          ],
-          if (s != null && (reasons.isNotEmpty || s.loadFactors.isNotEmpty)) ...[
-            const SizedBox(height: 4),
-            Wrap(spacing: 4, runSpacing: 4, children: [
-              for (final r in reasons)
-                _badge(r, const Color(0xFF15803D), AppTheme.greenBg),
-              for (final l in s.loadFactors)
-                _badge(l, const Color(0xFFB45309), AppTheme.amberBg),
-            ]),
+          if (s != null) ...[
+            const SizedBox(height: 6),
+            _whyBox(s, reasons, certs),
           ],
         ],
       ),
@@ -238,6 +294,120 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
     );
   }
 
+  Widget _fitPill(AssigneeSuggestion s) {
+    final score = s.fitCompetency + s.fitWorkload + s.fitLifeContext;
+    final (fg, bg) = score >= 60
+        ? (const Color(0xFF15803D), AppTheme.greenBg)
+        : score >= 35
+            ? (AppTheme.accentBlue, AppTheme.blueBg)
+            : (AppTheme.textMuted, const Color(0xFFF3F4F6));
+    return _badge('Fit ${score.round()}/100', fg, bg);
+  }
+
+  Widget _burdenPill(AssigneeSuggestion s) => Tooltip(
+        message: s.loadFactors.join(' · '),
+        child: s.isHighBurden
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: AppTheme.redBg, borderRadius: BorderRadius.circular(6)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.warning_amber_rounded, size: 12, color: AppTheme.redColor),
+                  const SizedBox(width: 3),
+                  Text('High burden',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.redColor)),
+                ]),
+              )
+            : _badge('Moderate load', const Color(0xFFB45309), AppTheme.amberBg),
+      );
+
+  /// The small "why" box under each person: the three fit parts, then the
+  /// reasons they fit and what weighs against them.
+  Widget _whyBox(AssigneeSuggestion s, List<String> reasons, List<CertificationInfo> certs) {
+    String part(String label, double v, int max) => '$label ${v.round()}/$max';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: AppTheme.bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+            color: s.isHighBurden ? AppTheme.redColor.withValues(alpha: 0.35) : AppTheme.borderColor),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(
+          [
+            part('Competency', s.fitCompetency, 60),
+            part('Workload', s.fitWorkload, 30),
+            part('Life context', s.fitLifeContext, 10),
+          ].join('  ·  '),
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+        ),
+        const SizedBox(height: 4),
+        Text(_whySentence(s, reasons), style: AppTheme.bodySm.copyWith(fontSize: 11.5)),
+        if (certs.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Wrap(spacing: 4, runSpacing: 4, children: [
+            for (final c in certs)
+              _certChip(c, s.matchedCertifications.contains(c.name) ||
+                  s.relatedCertifications.contains(c.name)),
+          ]),
+        ],
+      ]),
+    );
+  }
+
+  /// "Skilled in: ..." -> "skilled in: ..." but leaves acronyms ("BEEd", "NC II") alone.
+  static String _lowerFirst(String r) =>
+      r.length > 1 && r[1] == r[1].toLowerCase() ? r[0].toLowerCase() + r.substring(1) : r;
+
+  /// One plain sentence: why they fit, then what weighs against them.
+  String _whySentence(AssigneeSuggestion s, List<String> reasons) {
+    final fit = reasons.isEmpty
+        ? 'Nothing in their profile matches this task.'
+        : 'Fits because of ${reasons.map(_lowerFirst).join('; ')}.';
+    final against = s.loadFactors.isEmpty
+        ? ' No current workload.'
+        : ' Weighing against: ${s.loadFactors.join(', ')}.';
+    return fit + against;
+  }
+
+  Widget _burdenWarning() {
+    final people = _burdenedSelection;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.redBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.redColor.withValues(alpha: 0.4)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Icon(Icons.warning_amber_rounded, color: AppTheme.redColor, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              people.length == 1
+                  ? 'High burden: ${people.first.user.fullName}'
+                  : 'High burden: ${people.length} selected people',
+              style: AppTheme.labelMd.copyWith(color: AppTheme.redColor),
+            ),
+            const SizedBox(height: 2),
+            for (final p in people)
+              Text('${people.length > 1 ? '${p.user.fullName}: ' : ''}${p.loadFactors.join(', ')}',
+                  style: AppTheme.bodySm),
+            const SizedBox(height: 2),
+            Text('Consider someone with a lighter load, or keep them if this task needs them.',
+                style: AppTheme.bodySm),
+          ]),
+        ),
+      ]),
+    );
+  }
+
   /// Certifications worth showing for this task: the ones matching it, then
   /// related ones, then any others that are verified or awaiting review (max 4).
   List<CertificationInfo> _certsFor(AssigneeSuggestion s) {
@@ -246,7 +416,7 @@ class _AssignPickerDialogState extends State<AssignPickerDialog> {
         s.matchedCertifications.contains(c.name) || s.relatedCertifications.contains(c.name);
     final matched = all.where((c) => s.matchedCertifications.contains(c.name));
     final related = all.where((c) => s.relatedCertifications.contains(c.name));
-    final others = all.where((c) => !fits(c) && c.credibility != 'self_declared');
+    final others = all.where((c) => !fits(c));
     return [...matched, ...related, ...others].take(4).toList();
   }
 

@@ -93,13 +93,13 @@ class CertificationInfo {
   final String? category;
   final String? issuer;
   final String? issuerAcronym;
-  /// verified | submitted (awaiting review) | rejected | self_declared (no file).
+  /// verified | submitted (awaiting review).
   final String credibility;
   /// Result of the automated checks on the uploaded file: high | medium | low.
   final String? authenticity;
   const CertificationInfo(
       {required this.name, this.category, this.issuer, this.issuerAcronym,
-       this.credibility = 'self_declared', this.authenticity});
+       this.credibility = 'submitted', this.authenticity});
 
   factory CertificationInfo.fromJson(Map<String, dynamic> json) =>
       CertificationInfo(
@@ -107,7 +107,7 @@ class CertificationInfo {
         category: json['category']?.toString(),
         issuer: json['issuer']?.toString(),
         issuerAcronym: json['issuer_acronym']?.toString(),
-        credibility: (json['credibility'] ?? 'self_declared').toString(),
+        credibility: (json['credibility'] ?? 'submitted').toString(),
         authenticity: json['authenticity']?.toString(),
       );
 
@@ -146,7 +146,7 @@ class CertificateFile {
   final String? originalName;
   final String? mime;
   final String? authenticity; // high | medium | low
-  final String status; // pending | submitted | verified | rejected | self_declared
+  final String status; // pending | submitted | verified | rejected
   final List<CertificateCheck> checks;
   final String? reviewNote;
   final String? reviewedByName;
@@ -176,26 +176,23 @@ class CertificateFile {
         reviewedByName: json['reviewed_by_name']?.toString(),
       );
 
-  bool get hasFile => id != null;
   String? get issuerLabel => issuer ?? issuerAcronym;
 }
 
-/// A person's certifications: uploaded ones, ones listed without a file, and
-/// uploads still waiting for the owner to confirm what they are.
+/// A person's certificates, and uploads still waiting for the owner to
+/// confirm what they are.
 class CertificateSet {
   final List<CertificateFile> certificates;
-  final List<CertificateFile> selfDeclared;
   final List<CertificateFile> pending;
   const CertificateSet(
-      {this.certificates = const [], this.selfDeclared = const [], this.pending = const []});
+      {this.certificates = const [], this.pending = const []});
 
   factory CertificateSet.fromJson(Map<String, dynamic> json) => CertificateSet(
         certificates: _objList(json['certificates'], CertificateFile.fromJson),
-        selfDeclared: _objList(json['self_declared'], CertificateFile.fromJson),
         pending: _objList(json['pending'], CertificateFile.fromJson),
       );
 
-  bool get isEmpty => certificates.isEmpty && selfDeclared.isEmpty && pending.isEmpty;
+  bool get isEmpty => certificates.isEmpty && pending.isEmpty;
 }
 
 /// A catalog certification that an upload can be identified as.
@@ -236,6 +233,9 @@ class User {
   final String? email;
   final String? phoneNumber;
   final int numberOfChildren;
+  /// Life-context guardrails for task suggestions (owner-editable).
+  final bool hasElderlyOrInfantCare;
+  final bool overtimeOptIn;
   final List<String> skills;
   final List<String> certifications;
   final List<SkillInfo> skillDetails;
@@ -273,6 +273,8 @@ class User {
     this.email,
     this.phoneNumber,
     this.numberOfChildren = 0,
+    this.hasElderlyOrInfantCare = false,
+    this.overtimeOptIn = false,
     this.skills = const [],
     this.certifications = const [],
     this.skillDetails = const [],
@@ -315,6 +317,9 @@ class User {
       email: json['email']?.toString(),
       phoneNumber: json['phone_number']?.toString(),
       numberOfChildren: (json['number_of_children'] as num?)?.toInt() ?? 0,
+      hasElderlyOrInfantCare: json['has_elderly_or_infant_care'] == true ||
+          json['has_elderly_or_infant_care'] == 1,
+      overtimeOptIn: json['overtime_opt_in'] == true || json['overtime_opt_in'] == 1,
       skills: _stringList(json['skills']),
       certifications: _stringList(json['certifications']),
       skillDetails: _objList(json['skill_details'], SkillInfo.fromJson),
@@ -381,6 +386,15 @@ class AssigneeSuggestion {
   /// Certifications in a category related to the task (count less than a direct match).
   final List<String> relatedCertifications;
   final int openTasks;
+  final int upcomingEvents;
+  /// Fit score parts: competency 0-60, workload 0-30, life context 0-10.
+  final double fitCompetency;
+  final double fitWorkload;
+  final double fitLifeContext;
+  /// low | moderate | high — how loaded the person already is.
+  final String burden;
+  /// Why the task counts as off-hours (weekend, after school hours, ...).
+  final List<String> offHours;
 
   AssigneeSuggestion({
     required this.user,
@@ -392,6 +406,12 @@ class AssigneeSuggestion {
     this.matchedCertifications = const [],
     this.relatedCertifications = const [],
     this.openTasks = 0,
+    this.upcomingEvents = 0,
+    this.fitCompetency = 0,
+    this.fitWorkload = 0,
+    this.fitLifeContext = 0,
+    this.burden = 'low',
+    this.offHours = const [],
   });
 
   factory AssigneeSuggestion.fromJson(Map<String, dynamic> json) =>
@@ -405,7 +425,15 @@ class AssigneeSuggestion {
         matchedCertifications: _stringList(json['matched_certifications']),
         relatedCertifications: _stringList(json['related_certifications']),
         openTasks: (json['open_tasks'] as num?)?.toInt() ?? 0,
+        upcomingEvents: (json['upcoming_events'] as num?)?.toInt() ?? 0,
+        fitCompetency: ((json['fit'] as Map?)?['competency'] as num?)?.toDouble() ?? 0,
+        fitWorkload: ((json['fit'] as Map?)?['workload'] as num?)?.toDouble() ?? 0,
+        fitLifeContext: ((json['fit'] as Map?)?['life_context'] as num?)?.toDouble() ?? 0,
+        burden: (json['burden'] ?? 'low').toString(),
+        offHours: _stringList(json['off_hours']),
       );
+
+  bool get isHighBurden => burden == 'high';
 }
 
 class TaskFile {

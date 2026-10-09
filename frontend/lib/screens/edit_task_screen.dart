@@ -141,12 +141,17 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
           }
           _addedAs.removeWhere((id, _) => !ids.contains(id));
         }),
+        hasTaskText: [_titleCtrl, _subjectCtrl, _instrCtrl]
+            .any((c) => c.text.trim().isNotEmpty),
         loadSuggestions: () => ApiService.getAssigneeSuggestions(
           targetRole: _targetRole,
           title: _titleCtrl.text,
           subject: _subjectCtrl.text,
           instructions: _instrCtrl.text,
           taskCategory: widget.task.taskCategory,
+          startDate: _startDate != null ? _fmtApi(_startDate!) : null,
+          endDate: _endDate != null ? _fmtApi(_endDate!) : null,
+          dueTime: _dueTime != null ? _fmtTime(_dueTime!) : null,
         ),
       ),
     );

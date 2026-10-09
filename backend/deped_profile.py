@@ -262,3 +262,120 @@ LEGACY_SKILL_CATEGORY = {
     "Safety": "Administrative Governance & Compliance",
 }
 LEGACY_ISSUER_ALIASES = {"TESDA": "Technical Education and Skills Development Authority"}
+
+
+# ── Per-item task keywords ────────────────────────────────────────────────────
+# What kind of task each skill / certification equips a person for. A task
+# "uses" the item when its text contains one of these phrases (all words of
+# the phrase, stemmed). Stored one row per keyword (skill_keywords,
+# certification_keywords) and used by qualifications.score_candidates.
+
+SKILL_KEYWORDS = {
+    "Event Hosting": ["event", "program", "host", "emcee", "ceremony", "celebration",
+                      "recognition", "graduation", "moving up"],
+    "Photography": ["photo", "photography", "pictorial", "camera", "photo documentation",
+                    "event coverage"],
+    "Layout Design": ["layout", "poster", "tarpaulin", "banner", "brochure", "newsletter",
+                      "certificate design", "program design"],
+    "Sports Coaching": ["sports", "intramurals", "athletics", "sports fest", "palaro",
+                        "tournament", "varsity", "coach", "physical fitness", "sportsfest"],
+    "Disaster Preparedness": ["drill", "earthquake drill", "fire drill", "evacuation",
+                              "disaster", "emergency", "typhoon", "safety"],
+    "ICT Troubleshooting": ["computer", "laptop", "printer", "projector", "internet",
+                            "network", "technical support", "repair", "troubleshoot"],
+    "Journalism": ["school paper", "newsletter", "press conference", "campus journalism",
+                   "article", "news", "feature writing", "schools press"],
+    "Editing": ["editing", "proofread", "editorial", "publication", "newsletter"],
+    "Reading Remediation": ["reading", "remediation", "remedial", "struggling readers",
+                            "literacy", "reading program"],
+    "Curriculum Planning": ["curriculum", "lesson plan", "budget of work", "syllabus",
+                            "learning competencies", "instructional plan"],
+    "Data Analysis": ["data", "statistics", "analysis", "survey", "item analysis",
+                      "enrollment data", "assessment results"],
+    "Video Editing": ["video", "documentary", "audio visual presentation", "avp", "montage",
+                      "video editing"],
+    "Mentoring": ["mentor", "mentoring", "new teacher", "induction", "peer coaching",
+                  "coaching"],
+    "Assessment Design": ["assessment", "test", "exam", "quiz", "rubric",
+                          "table of specifications", "periodical"],
+    "Scouting": ["scouting", "boy scouts", "girl scouts", "camping", "jamboree", "campout",
+                 "investiture"],
+    "Learning Module Development": ["module", "learning material", "worksheet",
+                                    "activity sheet", "self learning module"],
+    "Exam Authoring": ["exam", "periodical test", "quarterly exam", "test questions"],
+    "Test Construction": ["test", "table of specifications", "item analysis", "quiz"],
+    "Phil-IRI Reading Assessment": ["phil iri", "reading assessment", "reading test",
+                                    "reading level"],
+    "Action Research": ["action research", "research", "research proposal", "innovation"],
+    "DepEd LIS Management": ["lis", "learner information system", "enrollment",
+                             "learner records", "school forms"],
+    "e-BEIS Encoding": ["beis", "ebeis", "school data", "encoding", "enrollment data"],
+    "DepEd e-RPMS Portal": ["rpms", "ipcrf", "performance rating", "portfolio"],
+    "Graphic Design & Layout": ["graphic", "poster", "tarpaulin", "layout", "canva", "banner",
+                                "infographic", "certificate design"],
+    "Live Stream Audio/Video": ["livestream", "live stream", "streaming", "facebook live",
+                                "online broadcast", "video coverage", "zoom"],
+    "Network Troubleshooting": ["network", "internet", "wifi", "router", "connectivity"],
+    "Sound System & A/V": ["sound system", "audio", "microphone", "speaker", "projector",
+                           "lights", "lighting"],
+    "Stage Decoration": ["stage", "decoration", "backdrop", "venue design", "decor"],
+    "Master of Ceremonies": ["emcee", "host", "master of ceremonies", "program"],
+    "Protocol & Ushering": ["usher", "protocol", "guests", "reception", "registration",
+                            "seating"],
+    "Venue Setup": ["venue", "setup", "chairs", "tents", "logistics", "room arrangement"],
+    "Program Flow Coordination": ["program flow", "program", "schedule", "rundown",
+                                  "coordination", "run of show"],
+    "DepEd Liquidation": ["liquidation", "mooe", "fund", "cash advance", "disbursement",
+                          "financial report"],
+    "Property Custodianship": ["property", "inventory", "equipment", "supplies", "custodian"],
+    "Minutes & Memo Drafting": ["minutes", "memo", "memorandum", "letter", "communication"],
+    "SDRRM Coordination": ["drrm", "sdrrm", "drill", "disaster", "evacuation", "earthquake",
+                           "emergency"],
+    "Annual Procurement Plan Drafting": ["procurement", "annual procurement plan", "purchase",
+                                         "canvass", "supplies", "budget"],
+    "Committee Documentation": ["documentation", "committee", "minutes",
+                                "accomplishment report", "narrative report"],
+}
+
+_TEACHING_TASKS = ["demonstration teaching", "demo teaching", "class observation",
+                   "classroom observation", "substitute teaching", "lesson plan"]
+
+CERTIFICATION_KEYWORDS = {
+    "National Certificate II in Events Management": [
+        "event", "program", "celebration", "ceremony", "graduation", "intramurals", "fest",
+        "venue", "logistics", "event management"],
+    "Standard First Aid": [
+        "first aid", "first aider", "clinic", "injury", "emergency", "medical", "health",
+        "sports fest", "intramurals", "field trip", "athletics"],
+    "Basic Life Support": [
+        "cpr", "first aid", "emergency", "medical", "life support", "swimming", "health"],
+    "Licensed Professional Teacher": _TEACHING_TASKS,
+    "Licensure Examination for Teachers (LET)": _TEACHING_TASKS,
+    "Professional Board Examination for Teachers (PBET)": _TEACHING_TASKS,
+    "Google Certified Educator": [
+        "google classroom", "online class", "blended learning", "ict integration",
+        "google", "digital learning"],
+    "Basic Scouting Leadership": [
+        "scouting", "scouts", "camping", "jamboree", "campout", "investiture"],
+    "Civil Service Professional Eligibility": [
+        "administrative", "records", "office", "government", "documentation"],
+    "Higher-Order Thinking Skills (HOTS) Facilitator": [
+        "hots", "higher order thinking", "critical thinking", "training", "workshop", "inset",
+        "facilitator", "lac session"],
+    "Early Language, Literacy, and Numeracy (ELLN)": [
+        "literacy", "numeracy", "reading", "early grades", "kinder", "beginning reading"],
+    "Comprehensive Sexuality Education (CSE) Core Trainer": [
+        "sexuality education", "cse", "adolescent", "health education", "gender",
+        "values education", "orientation"],
+    "Trainers Methodology Level I (TM I)": [
+        "training", "trainer", "workshop", "inset", "facilitator", "seminar", "session"],
+    "NC II in Computer Systems Servicing": [
+        "computer", "laptop", "printer", "repair", "troubleshoot", "network", "ict",
+        "technical support"],
+    "NC II in Visual Graphic Design": [
+        "poster", "tarpaulin", "layout", "graphic", "banner", "infographic",
+        "certificate design"],
+    "School Disaster Risk Reduction & Management (SDRRM) Officer": [
+        "drrm", "sdrrm", "drill", "disaster", "evacuation", "earthquake", "fire", "emergency",
+        "safety"],
+}

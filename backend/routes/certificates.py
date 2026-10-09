@@ -7,7 +7,6 @@ how much it counts depends on its credibility (see qualifications.py).
 Files are stored outside the public uploads folder and served only to their
 owner and to people who manage personnel.
 """
-import json
 import os
 from typing import Optional
 
@@ -44,7 +43,8 @@ def _shape(db, row) -> dict:
     d = dict(row)
     d.pop("extracted_text", None)
     d.pop("file_path", None)
-    d["checks"] = json.loads(d["checks"]) if d.get("checks") else []
+    d["checks"] = _checks(db, d["id"])
+    d["authenticity"] = reader.grade(d["checks"])  # derived, not stored
     cert = None
     if d.get("certification_id"):
         cert = db.execute(
@@ -64,6 +64,13 @@ def _shape(db, row) -> dict:
     return d
 
 
+def _checks(db, file_id: int) -> list:
+    return [{"key": r["check_key"], "status": r["status"], "label": r["label"],
+             "detail": r["detail"]}
+            for r in db.execute("SELECT check_key, status, label, detail FROM certificate_checks "
+                                "WHERE certificate_file_id=? ORDER BY id", (file_id,))]
+
+
 def _file_row(db, file_id: int):
     row = db.execute("SELECT * FROM certificate_files WHERE id=?", (file_id,)).fetchone()
     if not row:
@@ -74,17 +81,6 @@ def _file_row(db, file_id: int):
 def _can_review(user: dict) -> bool:
     return has_permission(user, "review_certificates")
 
-
-def _unlink_if_unbacked(db, uid: int, certification_id: Optional[int]):
-    """Drop the profile link when no submitted/verified file backs it any more."""
-    if certification_id is None:
-        return
-    backed = db.execute(
-        """SELECT 1 FROM certificate_files WHERE user_id=? AND certification_id=?
-             AND status IN ('submitted','verified')""", (uid, certification_id)).fetchone()
-    if not backed:
-        db.execute("DELETE FROM user_certifications WHERE user_id=? AND certification_id=?",
-                   (uid, certification_id))
 
 
 # ── Owner ─────────────────────────────────────────────────────────────────────
@@ -108,23 +104,12 @@ def my_certifications(db=Depends(get_db), user=Depends(get_current_user)):
 
 
 def _profile_certifications(db, uid: int) -> dict:
-    """The person's certifications with credibility, plus uploads awaiting confirmation."""
+    """The person's certificates with their review status, plus uploads
+    awaiting confirmation."""
     files = [_shape(db, r) for r in db.execute(
         "SELECT * FROM certificate_files WHERE user_id=? ORDER BY created_at DESC", (uid,)).fetchall()]
-    declared = [dict(r) for r in db.execute(
-        """SELECT c.id AS certification_id, c.cert_name AS title, cc.category_name AS category,
-                  ci.issuer_name AS issuer, ci.acronym AS issuer_acronym
-           FROM user_certifications uc JOIN certifications c ON c.id = uc.certification_id
-           LEFT JOIN certification_categories cc ON cc.id = c.category_id
-           LEFT JOIN certification_issuers ci ON ci.id = c.issuer_id
-           WHERE uc.user_id=?""", (uid,)).fetchall()]
-    with_files = {f["certification_id"] for f in files if f["status"] != "pending"}
-    self_declared = [{**d, "description": dp.CERTIFICATION_INFO.get(d["title"], ("", []))[0],
-                      "status": "self_declared"}
-                     for d in declared if d["certification_id"] not in with_files]
     return {
         "certificates": [f for f in files if f["status"] != "pending"],
-        "self_declared": self_declared,
         "pending": [f for f in files if f["status"] == "pending"],
     }
 
@@ -146,11 +131,16 @@ async def analyze_certificate(file: UploadFile, db=Depends(get_db),
     cur = db.execute(
         """INSERT INTO certificate_files
            (user_id, certification_id, file_path, original_name, mime, sha256, extracted_text,
-            detected_title, match_confidence, checks, authenticity, status)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending')""",
+            detected_title, match_confidence, certificate_no, date_issued, expiry_date, status)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending')""",
         (uid, result["certification_id"], path, (file.filename or "")[:200], result["mime"],
          result["sha256"], result["extracted_text"], result["detected_title"],
-         result["match_confidence"], json.dumps(result["checks"]), result["authenticity"]))
+         result["match_confidence"], result["certificate_no"], result["date_issued"],
+         result["expiry_date"]))
+    for chk in result["checks"]:
+        db.execute("""INSERT INTO certificate_checks
+                      (certificate_file_id, check_key, status, label, detail) VALUES (?,?,?,?,?)""",
+                   (cur.lastrowid, chk["key"], chk["status"], chk["label"], chk["detail"]))
     db.commit()
     return _shape(db, _file_row(db, cur.lastrowid))
 
@@ -170,19 +160,16 @@ def confirm_certificate(file_id: int, body: ConfirmBody, request: Request, db=De
         raise HTTPException(403, "This isn't your certificate")
     if row["status"] != "pending":
         raise HTTPException(409, "This certificate was already added")
-    checks = json.loads(row["checks"] or "[]")
-    if any(c["key"] == "duplicate" and c["status"] == "fail" for c in checks):
+    if db.execute("SELECT 1 FROM certificate_checks WHERE certificate_file_id=? "
+                  "AND check_key='duplicate' AND status='fail'", (file_id,)).fetchone():
         raise HTTPException(409, "This exact file is already on another person's profile.")
     if not db.execute("SELECT 1 FROM certifications WHERE id=?", (body.certification_id,)).fetchone():
         raise HTTPException(400, "Unknown certification")
     db.execute("UPDATE certificate_files SET certification_id=?, status='submitted' WHERE id=?",
                (body.certification_id, file_id))
-    db.execute("INSERT OR IGNORE INTO user_certifications (user_id, certification_id) VALUES (?,?)",
-               (uid, body.certification_id))
     shaped = _shape(db, _file_row(db, file_id))
     audit.record(db, user, "certificate.submit", "certificate", file_id,
-                 f"Submitted certificate {shaped['title']} (automated checks: {row['authenticity']})",
-                 entity_label=f"{shaped['title']} — {audit.user_label(db, uid)}",
+                 f"Submitted certificate {shaped['title']} (pre-validation: {shaped['authenticity']})",
                  changes={"status": ["pending", "submitted"]}, request=request)
     db.commit()
     return shaped
@@ -199,11 +186,8 @@ def delete_certificate(file_id: int, request: Request, db=Depends(get_db),
         title = _shape(db, row)["title"]
         audit.record(db, user, "certificate.remove", "certificate", file_id,
                      f"Removed certificate {title}",
-                     entity_label=f"{title} — {audit.user_label(db, uid)}",
                      changes={"status": [row["status"], "removed"]}, request=request)
     db.execute("DELETE FROM certificate_files WHERE id=?", (file_id,))
-    if row["status"] != "pending":  # a pending upload never touched the profile
-        _unlink_if_unbacked(db, uid, row["certification_id"])
     db.commit()
     if not db.execute("SELECT 1 FROM certificate_files WHERE file_path=?", (row["file_path"],)).fetchone():
         try:
@@ -213,15 +197,6 @@ def delete_certificate(file_id: int, request: Request, db=Depends(get_db),
     return {"message": "Certificate removed"}
 
 
-@router.delete("/declared/{certification_id}")
-def remove_self_declared(certification_id: int, db=Depends(get_db),
-                         user=Depends(get_current_user)):
-    """Remove a certification listed without a certificate file."""
-    uid = int(user["sub"])
-    db.execute("DELETE FROM user_certifications WHERE user_id=? AND certification_id=?",
-               (uid, certification_id))
-    db.commit()
-    return {"message": "Removed"}
 
 
 @router.get("/{file_id}/file")
@@ -271,18 +246,12 @@ def review_certificate(file_id: int, body: ReviewBody, request: Request, db=Depe
         """UPDATE certificate_files SET status=?, review_note=?, reviewed_by=?,
            reviewed_at=CURRENT_TIMESTAMP WHERE id=?""",
         (body.status, (body.note or "").strip() or None, int(user["sub"]), file_id))
-    if body.status == "verified":
-        db.execute("INSERT OR IGNORE INTO user_certifications (user_id, certification_id) VALUES (?,?)",
-                   (row["user_id"], row["certification_id"]))
-    else:
-        _unlink_if_unbacked(db, row["user_id"], row["certification_id"])
     shaped = _shape(db, _file_row(db, file_id))
     changes = {"status": [row["status"], body.status]}
     if body.note and body.note.strip():
         changes["note"] = [row["review_note"], body.note.strip()]
     audit.record(db, user, f"certificate.{body.status}", "certificate", file_id,
                  f"{'Verified' if body.status == 'verified' else 'Rejected'} certificate {shaped['title']}",
-                 entity_label=f"{shaped['title']} — {audit.user_label(db, row['user_id'])}",
                  changes=changes, request=request)
     db.commit()
     return shaped

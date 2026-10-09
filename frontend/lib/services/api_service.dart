@@ -277,6 +277,9 @@ class ApiService {
     String subject = '',
     String instructions = '',
     String taskCategory = 'common',
+    String? startDate,
+    String? endDate,
+    String? dueTime,
   }) async {
     final res = await _client.post(
       Uri.parse('$baseUrl/api/users/assignable/suggestions'),
@@ -287,6 +290,9 @@ class ApiService {
         'subject': subject,
         'instructions': instructions,
         'task_category': taskCategory,
+        if (startDate != null) 'start_date': startDate,
+        if (endDate != null) 'end_date': endDate,
+        if (dueTime != null) 'due_time': dueTime,
       }),
     );
     if (res.statusCode == 200) {
@@ -472,13 +478,6 @@ class ApiService {
     if (res.statusCode != 200) {
       throw Exception(_errorDetail(res.body, 'Could not remove the certificate'));
     }
-  }
-
-  static Future<void> removeSelfDeclaredCertification(int certificationId) async {
-    final res = await _client.delete(
-        Uri.parse('$baseUrl/api/certificates/declared/$certificationId'),
-        headers: await _headers);
-    if (res.statusCode != 200) throw Exception('Could not remove the certification');
   }
 
   static Future<CertificateFile> reviewCertificate(int id, String status, {String? note}) async {

@@ -271,8 +271,7 @@ def _require_event_control(db, event_id: int, user: dict):
 
 def _audit_status(db, user, request, event_id: int, ev, new_status: str, summary: str):
     audit.record(db, user, f"event.{new_status}", "event", event_id,
-                 f"{summary} {ev['title']}", entity_label=ev["title"],
-                 changes={"status": [ev["status"], new_status]}, request=request)
+                 f"{summary} {ev['title']}", changes={"status": [ev["status"], new_status]}, request=request)
 
 
 @router.patch("/{event_id}/disable")
@@ -313,7 +312,7 @@ def delete_event(event_id: int, request: Request, db=Depends(get_db),
         raise HTTPException(403, "You can only delete events you created")
     db.execute("DELETE FROM events WHERE id=?", (event_id,))
     audit.record(db, user, "event.delete", "event", event_id, f"Deleted event {row['title']}",
-                 entity_label=row["title"], changes={"status": [row["status"], "deleted"]},
+                 changes={"status": [row["status"], "deleted"]},
                  request=request)
     db.commit()
     return {"message": "Event deleted"}

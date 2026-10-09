@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import os
 from contextlib import contextmanager
@@ -86,31 +87,35 @@ def _build_and_seed():
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         username            TEXT UNIQUE NOT NULL,
         password_hash       TEXT NOT NULL,
-        full_name           TEXT NOT NULL,
         first_name          TEXT,
         middle_name         TEXT,
         last_name           TEXT,
         suffix              TEXT,
-        role                TEXT NOT NULL
-            CHECK(role IN ('admin','principal','coordinator','dean','teacher','registrar')),
+        role                TEXT NOT NULL REFERENCES roles(roles),  -- primary role
         grade_level_id      INTEGER REFERENCES grade_levels(id) ON DELETE SET NULL,
         avatar_url          TEXT,
         email               TEXT,
         phone_number        TEXT,
         number_of_children  INTEGER NOT NULL DEFAULT 0 CHECK(number_of_children >= 0),
-        date_of_appointment TEXT,
-        birthdate           TEXT,
+        -- Real calendar dates only, stored as YYYY-MM-DD.
+        date_of_appointment DATE CHECK(date_of_appointment IS NULL OR date(date_of_appointment) IS date_of_appointment),
+        birthdate           DATE CHECK(birthdate IS NULL OR date(birthdate) IS birthdate),
         address             TEXT,
         is_active           INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
-        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        has_elderly_or_infant_care INTEGER NOT NULL DEFAULT 0
+            CHECK(has_elderly_or_infant_care IN (0,1)),
+        overtime_opt_in     INTEGER NOT NULL DEFAULT 0 CHECK(overtime_opt_in IN (0,1)),
+        -- Derived from the name parts and never stored (3NF): a virtual column.
+        full_name           TEXT GENERATED ALWAYS AS (COALESCE(NULLIF(TRIM(COALESCE(first_name,'') || CASE WHEN COALESCE(middle_name,'')<>'' THEN ' '||middle_name ELSE '' END || CASE WHEN COALESCE(last_name,'')<>'' THEN ' '||last_name ELSE '' END || CASE WHEN COALESCE(suffix,'')<>'' THEN ' '||suffix ELSE '' END), ''), username)) VIRTUAL
     );
 
     CREATE TABLE IF NOT EXISTS user_subjects (
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        subject        TEXT NOT NULL,
+        subject_id     INTEGER NOT NULL REFERENCES subjects(id),
         grade_level_id INTEGER REFERENCES grade_levels(id),
-        UNIQUE(user_id, subject, grade_level_id)
+        UNIQUE(user_id, subject_id, grade_level_id)
     );
 
     -- School calendar set by the principal (see school_calendar.py): records
@@ -148,13 +153,19 @@ def _build_and_seed():
 
     -- ERD: SKILL_CATEGORY → SKILL, CERTIFICATION_CATEGORY / CERTIFICATION_ISSUER
     -- → CERTIFICATION, plus personnel junctions (PERSONNEL_SKILL,
-    -- PERSONNEL_CERTIFICATION). task_keywords: comma-separated task phrases a
-    -- category maps to for automated matching.
+    -- PERSONNEL_CERTIFICATION). Each category's task keywords (used for
+    -- automated matching) are rows in *_category_keywords, one per keyword.
     CREATE TABLE IF NOT EXISTS skill_categories (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         category_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        description   TEXT,
-        task_keywords TEXT
+        description   TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS skill_category_keywords (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id INTEGER NOT NULL REFERENCES skill_categories(id) ON DELETE CASCADE,
+        keyword     TEXT NOT NULL COLLATE NOCASE,
+        UNIQUE(category_id, keyword)
     );
 
     CREATE TABLE IF NOT EXISTS skills (
@@ -163,10 +174,31 @@ def _build_and_seed():
         category_id INTEGER REFERENCES skill_categories(id) ON DELETE SET NULL
     );
 
+    -- Tasks each skill / certification suits (one row per keyword phrase).
+    CREATE TABLE IF NOT EXISTS skill_keywords (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_id INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        keyword  TEXT NOT NULL COLLATE NOCASE,
+        UNIQUE(skill_id, keyword)
+    );
+
+    CREATE TABLE IF NOT EXISTS certification_keywords (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        certification_id INTEGER NOT NULL REFERENCES certifications(id) ON DELETE CASCADE,
+        keyword          TEXT NOT NULL COLLATE NOCASE,
+        UNIQUE(certification_id, keyword)
+    );
+
     CREATE TABLE IF NOT EXISTS certification_categories (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        category_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-        task_keywords TEXT
+        category_name TEXT NOT NULL UNIQUE COLLATE NOCASE
+    );
+
+    CREATE TABLE IF NOT EXISTS certification_category_keywords (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id INTEGER NOT NULL REFERENCES certification_categories(id) ON DELETE CASCADE,
+        keyword     TEXT NOT NULL COLLATE NOCASE,
+        UNIQUE(category_id, keyword)
     );
 
     CREATE TABLE IF NOT EXISTS certification_issuers (
@@ -197,8 +229,9 @@ def _build_and_seed():
         extracted_text    TEXT,
         detected_title    TEXT,
         match_confidence  REAL,
-        checks            TEXT,          -- JSON list of automated checks
-        authenticity      TEXT,          -- high | medium | low (automated)
+        certificate_no    TEXT,          -- as printed on the certificate
+        date_issued       TEXT,          -- YYYY-MM-DD, read from the certificate
+        expiry_date       TEXT,          -- YYYY-MM-DD, when it states one
         status            TEXT NOT NULL DEFAULT 'pending'
             CHECK(status IN ('pending','submitted','verified','rejected')),
         review_note       TEXT,
@@ -207,23 +240,42 @@ def _build_and_seed():
         created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- One row per automated pre-validation check run on an uploaded
+    -- certificate. The overall rating (high/medium/low) is derived from these
+    -- rows when read, never stored.
+    CREATE TABLE IF NOT EXISTS certificate_checks (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        certificate_file_id INTEGER NOT NULL REFERENCES certificate_files(id) ON DELETE CASCADE,
+        check_key           TEXT NOT NULL,
+        status              TEXT NOT NULL CHECK(status IN ('pass','warn','fail','info')),
+        label               TEXT NOT NULL,
+        detail              TEXT,
+        UNIQUE(certificate_file_id, check_key)
+    );
+
     -- Audit trail of administrative changes (roles, delegations, account
-    -- status, certificate reviews, approvals ...). Append-only: the triggers
-    -- below reject any UPDATE or DELETE, so history can't be rewritten.
-    -- Names are copied in so entries stay readable if an account is removed.
+    -- status, certificate reviews, approvals ...), one row per action plus one
+    -- audit_log_changes row per changed field. Append-only: triggers reject
+    -- any UPDATE or DELETE, so history can't be rewritten. Accounts are only
+    -- ever deactivated, never deleted, so actor_id always resolves.
     CREATE TABLE IF NOT EXISTS audit_log (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),  -- UTC
-        actor_id     INTEGER,
-        actor_name   TEXT,
-        actor_role   TEXT,
+        actor_id     INTEGER REFERENCES users(id),
+        actor_role   TEXT,               -- the role the actor was signed in as
         action       TEXT NOT NULL,      -- e.g. personnel.update, account.deactivate
         entity_type  TEXT NOT NULL,      -- user | certificate | school_year | event | task
         entity_id    INTEGER,
-        entity_label TEXT,
         summary      TEXT NOT NULL,
-        changes      TEXT,               -- JSON {field: [before, after]}
         ip_address   TEXT
+    );
+    CREATE TABLE IF NOT EXISTS audit_log_changes (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        audit_id    INTEGER NOT NULL REFERENCES audit_log(id),
+        field_name  TEXT NOT NULL,
+        old_value   TEXT,                -- JSON-encoded scalar (keeps true/false/numbers)
+        new_value   TEXT,
+        UNIQUE(audit_id, field_name)
     );
     CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_audit_actor  ON audit_log(actor_id);
@@ -231,19 +283,16 @@ def _build_and_seed():
     BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
     CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
     BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS audit_changes_no_update BEFORE UPDATE ON audit_log_changes
+    BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS audit_changes_no_delete BEFORE DELETE ON audit_log_changes
+    BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
 
     CREATE TABLE IF NOT EXISTS user_skills (
         id       INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         skill_id INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
         UNIQUE(user_id, skill_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS user_certifications (
-        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        certification_id INTEGER NOT NULL REFERENCES certifications(id) ON DELETE CASCADE,
-        UNIQUE(user_id, certification_id)
     );
 
     CREATE TABLE IF NOT EXISTS coordinator_assignments (
@@ -524,9 +573,7 @@ def _build_and_seed():
     # Early builds stored skill/certification names directly on the junction
     # rows; move them into the SKILL / CERTIFICATION catalogs (ERD shape).
     for _jt, _old_col, _cat, _name_col, _fk in (
-            ("user_skills", "skill", "skills", "skill_name", "skill_id"),
-            ("user_certifications", "certification", "certifications", "cert_name",
-             "certification_id")):
+            ("user_skills", "skill", "skills", "skill_name", "skill_id"),):
         if _old_col not in [r[1] for r in c.execute(f"PRAGMA table_info({_jt})").fetchall()]:
             continue
         try:
@@ -571,6 +618,11 @@ def _build_and_seed():
     backfill_qualifications ="number_of_children" not in _user_cols
     _ensure_column(c, "users", "number_of_children",
                    "INTEGER NOT NULL DEFAULT 0 CHECK(number_of_children >= 0)")
+    # Life-context guardrails for task suggestions (owner-editable).
+    _ensure_column(c, "users", "has_elderly_or_infant_care",
+                   "INTEGER NOT NULL DEFAULT 0 CHECK(has_elderly_or_infant_care IN (0,1))")
+    _ensure_column(c, "users", "overtime_opt_in",
+                   "INTEGER NOT NULL DEFAULT 0 CHECK(overtime_opt_in IN (0,1))")
     for _old in ("tin", "qsis", "hdmf", "phic"):
         if _old in _user_cols:
             try:
@@ -617,9 +669,11 @@ def _build_and_seed():
 
     # Baseline each user's primary role into the junction (idempotent). Extra
     # roles are added via the personnel "also teaching" toggle.
-    c.execute("""INSERT OR IGNORE INTO user_roles (user_id, role_id)
-                 SELECT u.id, r.id FROM users u JOIN roles r ON r.roles = u.role
-                 WHERE u.role IS NOT NULL AND u.role != ''""")
+    # user_roles holds only *additional* roles; the primary role lives in
+    # users.role (3NF: each fact stored once). Drop any copy of the primary.
+    c.execute("""DELETE FROM user_roles WHERE role_id =
+                 (SELECT r.id FROM users u JOIN roles r ON r.roles = u.role
+                  WHERE u.id = user_roles.user_id)""")
     conn.commit()
 
     # Special tasks were once their own `special_tasks` table; they are now just
@@ -696,8 +750,239 @@ def _build_and_seed():
     except Exception:
         pass  # Already dropped or constrained; ignore
 
+    normalize_3nf(conn)
     _seed(conn, backfill_qualifications, backfill_education)
     conn.close()
+
+
+FULL_NAME_EXPR = "COALESCE(NULLIF(TRIM(COALESCE(first_name,'') || CASE WHEN COALESCE(middle_name,'')<>'' THEN ' '||middle_name ELSE '' END || CASE WHEN COALESCE(last_name,'')<>'' THEN ' '||last_name ELSE '' END || CASE WHEN COALESCE(suffix,'')<>'' THEN ' '||suffix ELSE '' END), ''), username)"
+
+
+def _cols(c, table: str, hidden: bool = False) -> dict:
+    """{column: hidden-flag} (table_xinfo: 2/3 = generated column)."""
+    pragma = "table_xinfo" if hidden else "table_info"
+    return {r[1]: (r[6] if hidden else 0) for r in c.execute(f"PRAGMA {pragma}({table})")}
+
+
+def normalize_3nf(conn):
+    """One-time, idempotent migration of an existing database to the 3NF
+    personnel-profiling schema:
+      * users.full_name           stored copy  -> virtual generated column
+      * user_subjects.subject     free text    -> subject_id FK subjects
+      * *_categories.task_keywords CSV list     -> *_category_keywords rows
+      * certificate_files.checks  JSON list    -> certificate_checks rows;
+        certificate_files.authenticity (derived) dropped
+      * audit_log.changes JSON, actor_name, entity_label -> audit_log_changes
+        rows; names are looked up when read
+      * users.role -> FK roles(roles); user_roles keeps only additional roles,
+        exposed together through the user_held_roles view
+      * user_certifications dropped (derived from certificate_files)
+    Each step runs in an IMMEDIATE transaction and re-checks the old shape
+    inside it, so services starting together migrate exactly once."""
+    import json as _json
+    conn.commit()
+    old_iso = conn.isolation_level
+    conn.isolation_level = None  # manual transactions
+    c = conn.cursor()
+
+    def step(needed, work):
+        if not needed():
+            return
+        c.execute("BEGIN IMMEDIATE")
+        try:
+            if needed():
+                work()
+            c.execute("COMMIT")
+        except Exception:
+            c.execute("ROLLBACK")
+            raise
+
+    # users.full_name -> generated column
+    def users_needed():
+        return _cols(c, "users", hidden=True).get("full_name") == 0
+
+    def users_work():
+        # Keep any name that only lived in full_name in the name parts.
+        for uid, full, first, last in c.execute(
+                "SELECT id, full_name, first_name, last_name FROM users "
+                "WHERE COALESCE(first_name,'')='' OR COALESCE(last_name,'')=''").fetchall():
+            parts = (full or "").split()
+            if len(parts) >= 2:
+                c.execute("UPDATE users SET first_name=COALESCE(NULLIF(first_name,''),?), "
+                          "last_name=COALESCE(NULLIF(last_name,''),?) WHERE id=?",
+                          (" ".join(parts[:-1]), parts[-1], uid))
+        c.execute("ALTER TABLE users DROP COLUMN full_name")
+        c.execute(f"ALTER TABLE users ADD COLUMN full_name TEXT "
+                  f"GENERATED ALWAYS AS ({FULL_NAME_EXPR}) VIRTUAL")
+    step(users_needed, users_work)
+
+    # user_subjects.subject -> subject_id
+    def subj_needed():
+        return "subject" in _cols(c, "user_subjects")
+
+    def subj_work():
+        c.execute("INSERT OR IGNORE INTO subjects (subject_name) "
+                  "SELECT DISTINCT TRIM(subject) FROM user_subjects WHERE TRIM(subject)<>''")
+        c.execute("ALTER TABLE user_subjects RENAME TO _us_old")
+        c.execute("""CREATE TABLE user_subjects (
+                        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        subject_id     INTEGER NOT NULL REFERENCES subjects(id),
+                        grade_level_id INTEGER REFERENCES grade_levels(id),
+                        UNIQUE(user_id, subject_id, grade_level_id))""")
+        c.execute("""INSERT OR IGNORE INTO user_subjects (id, user_id, subject_id, grade_level_id)
+                     SELECT o.id, o.user_id, s.id, o.grade_level_id
+                     FROM _us_old o JOIN subjects s ON s.subject_name = TRIM(o.subject)""")
+        c.execute("DROP TABLE _us_old")
+    step(subj_needed, subj_work)
+
+    # task_keywords CSV -> keyword rows
+    for table, kw_table in (("skill_categories", "skill_category_keywords"),
+                            ("certification_categories", "certification_category_keywords")):
+        def kw_needed(table=table):
+            return "task_keywords" in _cols(c, table)
+
+        def kw_work(table=table, kw_table=kw_table):
+            for cid, csv in c.execute(f"SELECT id, task_keywords FROM {table}").fetchall():
+                for kw in (csv or "").split(","):
+                    if kw.strip():
+                        c.execute(f"INSERT OR IGNORE INTO {kw_table} (category_id, keyword) "
+                                  "VALUES (?,?)", (cid, kw.strip()))
+            c.execute(f"ALTER TABLE {table} DROP COLUMN task_keywords")
+        step(kw_needed, kw_work)
+
+    # certificate_files.checks JSON -> certificate_checks rows
+    def cert_needed():
+        return "checks" in _cols(c, "certificate_files")
+
+    def cert_work():
+        for fid, raw in c.execute("SELECT id, checks FROM certificate_files").fetchall():
+            for chk in _json.loads(raw or "[]"):
+                c.execute("""INSERT OR IGNORE INTO certificate_checks
+                             (certificate_file_id, check_key, status, label, detail)
+                             VALUES (?,?,?,?,?)""",
+                          (fid, chk.get("key"), chk.get("status"), chk.get("label"),
+                           chk.get("detail")))
+        c.execute("ALTER TABLE certificate_files DROP COLUMN checks")
+        if "authenticity" in _cols(c, "certificate_files"):
+            c.execute("ALTER TABLE certificate_files DROP COLUMN authenticity")
+        for col in ("certificate_no", "date_issued", "expiry_date"):
+            if col not in _cols(c, "certificate_files"):
+                c.execute(f"ALTER TABLE certificate_files ADD COLUMN {col} TEXT")
+    step(cert_needed, cert_work)
+
+    # audit_log: JSON changes + copied names -> audit_log_changes rows
+    def audit_needed():
+        return "changes" in _cols(c, "audit_log")
+
+    def audit_work():
+        rows = c.execute("SELECT id, created_at, actor_id, actor_role, action, entity_type, "
+                         "entity_id, summary, changes, ip_address FROM audit_log").fetchall()
+        c.execute("DROP TABLE audit_log")  # also drops its triggers and indexes
+        c.execute("""CREATE TABLE audit_log (
+                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                        actor_id     INTEGER REFERENCES users(id),
+                        actor_role   TEXT,
+                        action       TEXT NOT NULL,
+                        entity_type  TEXT NOT NULL,
+                        entity_id    INTEGER,
+                        summary      TEXT NOT NULL,
+                        ip_address   TEXT)""")
+        for r in rows:
+            c.execute("INSERT INTO audit_log VALUES (?,?,?,?,?,?,?,?,?)",
+                      (r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[9]))
+            for field, pair in (_json.loads(r[8]) if r[8] else {}).items():
+                old, new = (list(pair) + [None, None])[:2]
+                c.execute("INSERT INTO audit_log_changes (audit_id, field_name, old_value, new_value) "
+                          "VALUES (?,?,?,?)", (r[0], field, _json.dumps(old), _json.dumps(new)))
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_id)")
+        c.execute("CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log "
+                  "BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END")
+        c.execute("CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log "
+                  "BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END")
+    step(audit_needed, audit_work)
+
+    # users.role -> foreign key to roles(roles) (table rebuild; FKs off while
+    # the table is swapped so child rows are untouched).
+    def role_fk_needed():
+        sql = c.execute("SELECT sql FROM sqlite_master WHERE name='users'").fetchone()[0]
+        return "REFERENCES roles" not in sql
+
+    if role_fk_needed():
+        c.execute("PRAGMA foreign_keys = OFF")
+
+        def role_fk_work():
+            sql = c.execute("SELECT sql FROM sqlite_master WHERE name='users'").fetchone()[0]
+            sql = re.sub(r"role\s+TEXT NOT NULL\s+CHECK\(role IN \([^)]*\)\),",
+                         "role TEXT NOT NULL REFERENCES roles(roles),", sql, count=1)
+            sql = sql.replace("CREATE TABLE users", "CREATE TABLE users_new", 1)
+            cols = [r[1] for r in c.execute("PRAGMA table_xinfo(users)") if r[6] not in (2, 3)]
+            c.execute("DROP VIEW IF EXISTS user_held_roles")
+            c.execute(sql)
+            collist = ", ".join(cols)
+            c.execute(f"INSERT INTO users_new ({collist}) SELECT {collist} FROM users")
+            c.execute("DROP TABLE users")
+            c.execute("ALTER TABLE users_new RENAME TO users")
+            bad = c.execute("PRAGMA foreign_key_check(users)").fetchall()
+            if bad:
+                raise RuntimeError(f"users.role values missing from roles: {bad[:5]}")
+        try:
+            step(role_fk_needed, role_fk_work)
+        finally:
+            c.execute("PRAGMA foreign_keys = ON")
+
+    # users.birthdate / date_of_appointment: free text -> DATE (YYYY-MM-DD,
+    # checked). Existing values in other orders are converted; anything that
+    # isn't a real date is cleared.
+    def dates_needed():
+        sql = c.execute("SELECT sql FROM sqlite_master WHERE name='users'").fetchone()[0]
+        # IS (not =): date() of an invalid value is NULL, and a NULL check passes.
+        return "date(birthdate) IS birthdate" not in sql
+
+    if dates_needed():
+        c.execute("PRAGMA foreign_keys = OFF")
+
+        def dates_work():
+            from date_utils import to_iso_date
+            for uid, b, a in c.execute(
+                    "SELECT id, birthdate, date_of_appointment FROM users").fetchall():
+                c.execute("UPDATE users SET birthdate=?, date_of_appointment=? WHERE id=?",
+                          (to_iso_date(b), to_iso_date(a), uid))
+            sql = c.execute("SELECT sql FROM sqlite_master WHERE name='users'").fetchone()[0]
+            for col in ("date_of_appointment", "birthdate"):
+                sql = sql.replace(f"date({col}) = {col}", f"date({col}) IS {col}")
+                sql = re.sub(rf"\b{col}\s+TEXT\b",
+                             f"{col} DATE CHECK({col} IS NULL OR date({col}) IS {col})",
+                             sql, count=1)
+            # (after an earlier rebuild SQLite stores the name quoted: "users")
+            sql = re.sub(r'CREATE TABLE\s+"?users"?', "CREATE TABLE users_new", sql, count=1)
+            cols = [r[1] for r in c.execute("PRAGMA table_xinfo(users)") if r[6] not in (2, 3)]
+            c.execute("DROP VIEW IF EXISTS user_held_roles")
+            c.execute(sql)
+            collist = ", ".join(cols)
+            c.execute(f"INSERT INTO users_new ({collist}) SELECT {collist} FROM users")
+            c.execute("DROP TABLE users")
+            c.execute("ALTER TABLE users_new RENAME TO users")
+        try:
+            step(dates_needed, dates_work)
+        finally:
+            c.execute("PRAGMA foreign_keys = ON")
+
+    # Every role a person holds: the primary one plus any additional ones.
+    c.execute("""CREATE VIEW IF NOT EXISTS user_held_roles (user_id, role) AS
+                 SELECT id, role FROM users
+                 UNION
+                 SELECT ur.user_id, r.roles FROM user_roles ur JOIN roles r ON r.id = ur.role_id""")
+
+    # Holding a certification = having a submitted/verified certificate file
+    # for it, so the separate user_certifications bridge is redundant.
+    if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                 "AND name='user_certifications'").fetchone():
+        c.execute("DROP TABLE IF EXISTS user_certifications")
+
+    conn.isolation_level = old_iso
 
 
 def _ensure_column(cur, table: str, column: str, decl: str):
@@ -794,11 +1079,11 @@ def _seed(conn, backfill_qualifications: bool = False, backfill_education: bool 
          role, gl_id, email, phone, children, date_appt, birthdate, address) in users:
         pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         c.execute("""INSERT OR IGNORE INTO users
-                     (username, password_hash, full_name, first_name, middle_name,
+                     (username, password_hash, first_name, middle_name,
                       last_name, suffix, role, grade_level_id, email, phone_number,
                       number_of_children, date_of_appointment, birthdate, address)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (username, pw, full_name, first, middle, last, suffix,
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (username, pw, first, middle, last, suffix,
                    role, gl_id, email, phone, children, date_appt, birthdate, address))
         if c.rowcount:
             new_users.add(username)
@@ -811,7 +1096,7 @@ def _seed(conn, backfill_qualifications: bool = False, backfill_education: bool 
     conn.commit()
 
     # DepEd skill / certification taxonomy (deped_profile.py).
-    from qualifications import seed_taxonomy, set_skills, set_certifications, set_education
+    from qualifications import seed_taxonomy, set_skills, set_education
     seed_taxonomy(c)
     conn.commit()
 
@@ -858,8 +1143,8 @@ def _seed(conn, backfill_qualifications: bool = False, backfill_education: bool 
         if not row:
             continue
         if uname in new_users and uname in qualifications:
+            # Certifications are only added by uploading a certificate.
             set_skills(c, row['id'], qualifications[uname][0])
-            set_certifications(c, row['id'], qualifications[uname][1])
         if (uname in new_users or backfill_education) and uname in education:
             set_education(c, row['id'], dict(zip(
                 ('highest_attainment', 'undergraduate_degree', 'specialization',
@@ -962,8 +1247,10 @@ def _seed(conn, backfill_qualifications: bool = False, backfill_education: bool 
         (uid['teacher3'], 'Mathematics', gl['Grade 2']),
         (uid['teacher3'], 'Science',     gl['Grade 2']),
     ]:
-        c.execute("""INSERT OR IGNORE INTO user_subjects (user_id, subject, grade_level_id)
-                     VALUES (?,?,?)""", (user_id, subject, gl_id))
+        c.execute("INSERT OR IGNORE INTO subjects (subject_name) VALUES (?)", (subject,))
+        c.execute("""INSERT OR IGNORE INTO user_subjects (user_id, subject_id, grade_level_id)
+                     SELECT ?, id, ? FROM subjects WHERE subject_name=?""",
+                  (user_id, gl_id, subject))
 
     for ev in [
         (1, 'Intramurals',           'Annual intramural sports',     '2024-03-25', 'pending', uid['admin']),

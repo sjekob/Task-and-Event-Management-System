@@ -240,6 +240,7 @@ def analyze(db, user: dict, data: bytes, filename: str) -> dict:
     issuer = _match_issuer(norm, issuers)
     cert, confidence = _match_certification(norm, certs, issuer)
 
+    fields = {}  # atomic values read off the certificate
     checks = []
 
     def add(key, status, label, detail):
@@ -305,6 +306,14 @@ def analyze(db, user: dict, data: bytes, filename: str) -> dict:
                 f"The certificate is dated {future[0].isoformat()}, which hasn't happened yet.")
         elif expired:
             add("dates", "warn", "Certificate has expired", f"Valid until {expired[0].isoformat()}.")
+        issued = [d for _, d in dates if d <= today and d not in expired]
+        if issued:
+            fields["date_issued"] = min(issued).isoformat()
+        validity = [d for pos, d in dates
+                    if any(w in norm[max(0, pos - 40):pos]
+                           for w in ("valid until", "expires", "expiry", "valid through"))]
+        if validity:
+            fields["expiry_date"] = max(validity).isoformat()
         elif dates:
             add("dates", "pass", "Dates look valid", f"Dated {min(d for _, d in dates).isoformat()}.")
         else:
@@ -312,6 +321,7 @@ def analyze(db, user: dict, data: bytes, filename: str) -> dict:
 
         num = _NUMBER_RE.search(norm)
         if num:
+            fields["certificate_no"] = num.group(1).upper()
             add("number", "pass", "Certificate number found", f"No. {num.group(1).upper()}")
         else:
             add("number", "info", "No certificate number found",
@@ -334,9 +344,7 @@ def analyze(db, user: dict, data: bytes, filename: str) -> dict:
         add("editing", "warn", "Made or edited in an editing app",
             f"File metadata mentions “{ex['metadata_software']}”. Reviewers should compare it with the original.")
 
-    fails = sum(1 for c in checks if c["status"] == "fail")
-    passes = sum(1 for c in checks if c["status"] == "pass")
-    level = "low" if fails or passes <= 2 else "high" if passes >= 6 else "medium"
+    level = grade(checks)
 
     info = dp.CERTIFICATION_INFO.get(cert["cert_name"], ("", []))[0] if cert else ""
     return {
@@ -351,4 +359,21 @@ def analyze(db, user: dict, data: bytes, filename: str) -> dict:
         "description": info,
         "checks": checks,
         "authenticity": level,
+        "certificate_no": fields.get("certificate_no"),
+        "date_issued": fields.get("date_issued"),
+        "expiry_date": fields.get("expiry_date"),
     }
+
+
+def grade(checks) -> str:
+    """Overall pre-validation rating from the individual checks. Derived, so it
+    is computed on demand rather than stored."""
+    fails = sum(1 for c in checks if c["status"] == "fail")
+    passes = sum(1 for c in checks if c["status"] == "pass")
+    return "low" if fails or passes <= 2 else "high" if passes >= 6 else "medium"
+
+
+def authenticity_of(db, certificate_file_id: int) -> str:
+    return grade([{"status": r[0]} for r in db.execute(
+        "SELECT status FROM certificate_checks WHERE certificate_file_id=?",
+        (certificate_file_id,))])

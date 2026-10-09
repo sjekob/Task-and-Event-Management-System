@@ -67,3 +67,20 @@ def task_deadline(end_date: Optional[str], due_time: Optional[str]) -> Optional[
 def is_overdue(end_date: Optional[str], due_time: Optional[str]) -> bool:
     dl = task_deadline(end_date, due_time)
     return dl is not None and dl < school_now()
+
+
+def to_iso_date(raw: Optional[str]) -> Optional[str]:
+    """Best-effort conversion of a free-text date to YYYY-MM-DD (for migrating
+    old values). Tries ISO, then year-day-month, month-day-year, day-month-year
+    and "Month D, YYYY"; None when it isn't a real date."""
+    if not raw or not str(raw).strip():
+        return None
+    text = str(raw).strip()
+    for fmt in ("%Y-%m-%d", "%Y-%d-%m", "%m-%d-%Y", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y",
+                "%B %d, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
+    d = parse_event_date(text)
+    return d.isoformat() if d else None

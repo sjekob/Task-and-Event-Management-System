@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, ConfigDict
+from datetime import date
 from typing import Optional, List
 from database import get_db
 from auth import (get_current_user, require_personnel_manager, require_personnel_deactivator,
@@ -21,8 +22,9 @@ def _user_row(row, db):
     d["grade_level"] = gl["grade_level"] if gl else None
     d.update(get_qualifications(db, d["id"]))
     d["subjects"] = [dict(r) for r in db.execute(
-        """SELECT us.subject, gl.grade_level
+        """SELECT s.subject_name AS subject, gl.grade_level
            FROM user_subjects us
+           JOIN subjects s ON s.id = us.subject_id
            LEFT JOIN grade_levels gl ON gl.id = us.grade_level_id
            WHERE us.user_id=?""", (d["id"],)
     ).fetchall()]
@@ -39,8 +41,8 @@ def _user_row(row, db):
     d["dean_grade_level_id"] = da["grade_level_id"] if da else None
     d["dean_grade_level"] = da["grade_level"] if da else None
     roles = {r["roles"] for r in db.execute(
-        """SELECT rr.roles FROM user_roles ur JOIN roles rr ON rr.id = ur.role_id
-           WHERE ur.user_id=?""", (d["id"],)
+        """SELECT role AS roles FROM user_held_roles
+           WHERE user_id=?""", (d["id"],)
     ).fetchall()}
     d["roles"] = sorted(roles)
     d["also_teaching"] = ("teacher" in roles) and d.get("role") != "teacher"
@@ -55,8 +57,8 @@ def _delegation(db, uid: int) -> dict:
     if not u:
         return {}
     roles = sorted(r["roles"] for r in db.execute(
-        """SELECT rr.roles FROM user_roles ur JOIN roles rr ON rr.id = ur.role_id
-           WHERE ur.user_id=?""", (uid,)).fetchall())
+        """SELECT role AS roles FROM user_held_roles
+           WHERE user_id=?""", (uid,)).fetchall())
     ct = db.execute("SELECT coordinator_type FROM coordinator_type WHERE user_id=?",
                     (uid,)).fetchone()
     dean = db.execute("""SELECT gl.grade_level FROM dean_assignment da
@@ -64,7 +66,8 @@ def _delegation(db, uid: int) -> dict:
                          WHERE da.user_id=?""", (uid,)).fetchone()
     subjects = sorted(
         f"{r['subject']} ({r['grade_level']})" if r["grade_level"] else r["subject"]
-        for r in db.execute("""SELECT us.subject, gl.grade_level FROM user_subjects us
+        for r in db.execute("""SELECT s.subject_name AS subject, gl.grade_level
+                               FROM user_subjects us JOIN subjects s ON s.id = us.subject_id
                                LEFT JOIN grade_levels gl ON gl.id = us.grade_level_id
                                WHERE us.user_id=?""", (uid,)).fetchall())
     return {
@@ -89,9 +92,10 @@ def list_personnel(search: str = "", limit: int = 0, offset: int = 0,
              "AND (u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ? "
              "OR EXISTS (SELECT 1 FROM user_skills us JOIN skills s ON s.id=us.skill_id "
              "WHERE us.user_id=u.id AND s.skill_name LIKE ?) "
-             "OR EXISTS (SELECT 1 FROM user_certifications uc "
-             "JOIN certifications c ON c.id=uc.certification_id "
-             "WHERE uc.user_id=u.id AND c.cert_name LIKE ?) "
+             "OR EXISTS (SELECT 1 FROM certificate_files cf "
+             "JOIN certifications c ON c.id=cf.certification_id "
+             "WHERE cf.user_id=u.id AND cf.status IN ('submitted','verified') "
+             "AND c.cert_name LIKE ?) "
              "OR EXISTS (SELECT 1 FROM education_background eb "
              "WHERE eb.user_id=u.id AND eb.specialization LIKE ?))")
     params = [q, q, q, q, q, q]
@@ -177,7 +181,7 @@ def create_department(body: DepartmentBody, request: Request, db=Depends(get_db)
     cur = db.execute("INSERT OR IGNORE INTO departments (department_name) VALUES (?)", (name,))
     if cur.rowcount:
         audit.record(db, user, "department.create", "department", cur.lastrowid,
-                     f"Created department {name}", entity_label=name, request=request)
+                     f"Created department {name}", request=request)
     db.commit()
     row = db.execute("SELECT * FROM departments WHERE department_name=?", (name,)).fetchone()
     return dict(row)
@@ -207,7 +211,7 @@ class PersonnelCreateBody(BaseModel):
     suffix: Optional[str] = None
     role: str
     grade_level_id: Optional[int] = None
-    date_of_appointment: Optional[str] = None
+    date_of_appointment: Optional[date] = None   # YYYY-MM-DD
 
 
 @router.post("/api/personnel", status_code=201)
@@ -217,21 +221,19 @@ def create_personnel(body: PersonnelCreateBody, request: Request, db=Depends(get
     if body.role not in valid_roles:
         raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
     pw = hash_password(body.password)
-    full_name = " ".join(filter(None, [body.first_name, body.middle_name,
-                                        body.last_name, body.suffix]))
     try:
         db.execute(
-            """INSERT INTO users (username, password_hash, full_name, first_name, middle_name,
+            """INSERT INTO users (username, password_hash, first_name, middle_name,
                last_name, suffix, role, grade_level_id, email, date_of_appointment)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (body.username, pw, full_name, body.first_name, body.middle_name,
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (body.username, pw, body.first_name, body.middle_name,
              body.last_name, body.suffix, body.role, body.grade_level_id,
-             body.email, body.date_of_appointment)
+             body.email,
+             body.date_of_appointment.isoformat() if body.date_of_appointment else None)
         )
         new_id = db.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone()["id"]
         audit.record(db, user, "account.create", "user", new_id,
                      f"Created account {body.username} as {body.role}",
-                     entity_label=audit.user_label(db, new_id),
                      changes=audit.diff({}, _delegation(db, new_id)), request=request)
         db.commit()
     except Exception as e:
@@ -245,7 +247,7 @@ class PersonnelUpdateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     role: Optional[str] = None
     grade_level_id: Optional[int] = None
-    date_of_appointment: Optional[str] = None
+    date_of_appointment: Optional[date] = None   # YYYY-MM-DD
     password: Optional[str] = None  # account reset
     coordinator_type: Optional[str] = None
     dean_grade_level_id: Optional[int] = None
@@ -264,7 +266,8 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
     for col, val in [
         ("role", body.role),
         ("grade_level_id", body.grade_level_id),
-        ("date_of_appointment", body.date_of_appointment),
+        ("date_of_appointment",
+         body.date_of_appointment.isoformat() if body.date_of_appointment else None),
     ]:
         if val is not None:
             fields.append(f"{col}=?")
@@ -295,13 +298,14 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
         )
         db.commit()
 
-    # Keep user_roles in sync. The primary role is always present; an admin role
-    # (dean/coordinator/registrar) can additionally hold the teacher identity.
+    # user_roles holds only additional roles (the primary one is users.role):
+    # drop the new primary from it, and an admin role (dean/coordinator/
+    # registrar) can additionally hold the teacher identity.
     primary_role = body.role if body.role is not None else row["role"]
     if primary_role:
         db.execute(
-            """INSERT OR IGNORE INTO user_roles (user_id, role_id)
-               SELECT ?, id FROM roles WHERE roles=?""", (uid, primary_role))
+            """DELETE FROM user_roles WHERE user_id=?
+               AND role_id=(SELECT id FROM roles WHERE roles=?)""", (uid, primary_role))
         if body.also_teaching is not None and primary_role != "teacher":
             if body.also_teaching:
                 db.execute(
@@ -319,7 +323,7 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
     if changes:
         audit.record(db, user, "personnel.update", "user", uid,
                      "Changed " + ", ".join(k.replace("_", " ") for k in changes),
-                     entity_label=audit.user_label(db, uid), changes=changes, request=request)
+                     changes=changes, request=request)
         db.commit()
 
     return _user_row(db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone(), db)
@@ -340,18 +344,24 @@ def update_personnel_subjects(uid: int, body: SubjectsUpdateBody, request: Reque
                               user=Depends(require_personnel_manager)):
     if not db.execute("SELECT id FROM users WHERE id=?", (uid,)).fetchone():
         raise HTTPException(404, "User not found")
+    names = {s.subject.strip() for s in body.subjects if s.subject.strip()}
+    known = {r["subject_name"]: r["id"] for r in db.execute(
+        f"SELECT id, subject_name FROM subjects WHERE subject_name IN ({','.join('?' * len(names))})",
+        list(names)).fetchall()} if names else {}
+    unknown = sorted(names - set(known))
+    if unknown:
+        raise HTTPException(400, f"Unknown subject: {', '.join(unknown)}")
     before = _delegation(db, uid)
     db.execute("DELETE FROM user_subjects WHERE user_id=?", (uid,))
     for s in body.subjects:
         if s.subject.strip():
             db.execute(
-                "INSERT INTO user_subjects (user_id, grade_level_id, subject) VALUES (?,?,?)",
-                (uid, s.grade_level_id, s.subject.strip())
-            )
+                "INSERT OR IGNORE INTO user_subjects (user_id, subject_id, grade_level_id) "
+                "VALUES (?,?,?)", (uid, known[s.subject.strip()], s.grade_level_id))
     changes = audit.diff(before, _delegation(db, uid))
     if changes:
         audit.record(db, user, "personnel.subjects", "user", uid, "Changed subject-grade assignments",
-                     entity_label=audit.user_label(db, uid), changes=changes, request=request)
+                     changes=changes, request=request)
     db.commit()
     return _user_row(db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone(), db)
 
@@ -372,7 +382,6 @@ def toggle_personnel_status(uid: int, request: Request, db=Depends(get_db),
     db.execute("UPDATE users SET is_active=? WHERE id=?", (new_status, uid))
     audit.record(db, user, "account.reactivate" if new_status else "account.deactivate", "user", uid,
                  "Reactivated account" if new_status else "Deactivated account",
-                 entity_label=audit.user_label(db, uid),
                  changes={"active": [not new_status, bool(new_status)]}, request=request)
     db.commit()
     return {"id": uid, "is_active": bool(new_status)}

@@ -5,6 +5,11 @@ import '../services/personnel_service.dart';
 class PersonnelProvider extends ChangeNotifier {
   static const _pageSize = 30;
 
+  // Last unfiltered first page, kept across visits to the Personnel tab so it
+  // opens instantly; load() then refreshes it in the background.
+  static List<User>? _cache;
+  static bool _cacheHasMore = true;
+
   final List<User> _personnel = [];
   bool _loading = false;
   bool _loadingMore = false;
@@ -22,9 +27,19 @@ class PersonnelProvider extends ChangeNotifier {
   int get tabIndex => _tabIndex;
 
   Future<void> load() async {
-    _loading = true;
-    _offset = 0;
-    _hasMore = true;
+    final cached = _search.isEmpty ? _cache : null;
+    if (cached != null) {
+      // Show the last list right away (no skeleton), then refresh quietly.
+      _personnel
+        ..clear()
+        ..addAll(cached);
+      _offset = _personnel.length;
+      _hasMore = _cacheHasMore;
+    } else {
+      _loading = true;
+      _offset = 0;
+      _hasMore = true;
+    }
     notifyListeners();
     try {
       final page = await PersonnelService.listPage(
@@ -34,6 +49,10 @@ class PersonnelProvider extends ChangeNotifier {
         ..addAll(page.items);
       _offset = _personnel.length;
       _hasMore = page.hasMore;
+      if (_search.isEmpty) {
+        _cache = List.of(page.items);
+        _cacheHasMore = page.hasMore;
+      }
     } finally {
       _loading = false;
       notifyListeners();

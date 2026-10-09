@@ -121,8 +121,7 @@ def create_school_year(body: SchoolYearBody, request: Request, db=Depends(get_db
                      "VALUES (?,?,?,?)", (body.name.strip(), start, end, int(user["sub"])))
     _save_terms(db, cur.lastrowid, terms)
     audit.record(db, user, "school_year.create", "school_year", cur.lastrowid,
-                 f"Created school year {body.name.strip()}", entity_label=body.name.strip(),
-                 changes=audit.diff({}, _audit_view(db, cur.lastrowid)), request=request)
+                 f"Created school year {body.name.strip()}", changes=audit.diff({}, _audit_view(db, cur.lastrowid)), request=request)
     db.commit()
     return _shape(db, db.execute("SELECT * FROM school_years WHERE id=?",
                                  (cur.lastrowid,)).fetchone())
@@ -141,8 +140,7 @@ def update_school_year(sy_id: int, body: SchoolYearBody, request: Request,
     changes = audit.diff(before, _audit_view(db, sy_id))
     if changes:
         audit.record(db, user, "school_year.update", "school_year", sy_id,
-                     f"Changed school year {body.name.strip()}", entity_label=body.name.strip(),
-                     changes=changes, request=request)
+                     f"Changed school year {body.name.strip()}", changes=changes, request=request)
     db.commit()
     return _shape(db, db.execute("SELECT * FROM school_years WHERE id=?", (sy_id,)).fetchone())
 
@@ -157,7 +155,6 @@ def delete_school_year(sy_id: int, request: Request, db=Depends(get_db),
     before = _audit_view(db, sy_id)
     db.execute("DELETE FROM school_years WHERE id=?", (sy_id,))
     audit.record(db, user, "school_year.delete", "school_year", sy_id,
-                 f"Removed school year {before.get('name')}", entity_label=before.get("name"),
-                 changes=audit.diff(before, {}), request=request)
+                 f"Removed school year {before.get('name')}", changes=audit.diff(before, {}), request=request)
     db.commit()
     return {"message": "School year removed"}

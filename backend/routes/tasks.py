@@ -334,8 +334,8 @@ def _assign_users(db, task_id: int, uid: int, role: str, user_ids, target_role,
         person = db.execute("SELECT role, grade_level_id FROM users WHERE id=?",
                             (assign_uid,)).fetchone()
         roles_held = {r["roles"] for r in db.execute(
-            """SELECT rr.roles FROM user_roles ur JOIN roles rr ON rr.id = ur.role_id
-               WHERE ur.user_id=?""", (assign_uid,)).fetchall()}
+            """SELECT role AS roles FROM user_held_roles
+               WHERE user_id=?""", (assign_uid,)).fetchall()}
         if not roles_held and person:
             roles_held = {person["role"]}
         if target_role:
@@ -445,7 +445,7 @@ def delete_task(task_id: int, request: Request, user=Depends(require_task_creato
     t = db.execute("SELECT title FROM tasks WHERE id=?", (task_id,)).fetchone()
     db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
     audit.record(db, user, "task.delete", "task", task_id, f"Deleted task {t['title'] if t else ''}",
-                 entity_label=t["title"] if t else None, request=request)
+                 request=request)
     db.commit()
     db.close()
     return {"message": "Deleted"}
@@ -486,7 +486,6 @@ def assign_task(task_id: int, req: AssignRequest, request: Request,
         names = [audit.user_label(db, i) or str(i) for i in added]
         audit.record(db, user, "task.assign", "task", task_id,
                      f"Assigned {', '.join(names)}" + (f" as {req.target_role}" if req.target_role else ""),
-                     entity_label=task["title"] if task else None,
                      changes={"assignees": [None, ", ".join(names)]}, request=request)
     db.commit()
     db.close()
@@ -515,7 +514,6 @@ def unassign_task(task_id: int, user_id: int, request: Request,
         t = db.execute("SELECT title FROM tasks WHERE id=?", (task_id,)).fetchone()
         name = audit.user_label(db, user_id) or str(user_id)
         audit.record(db, user, "task.unassign", "task", task_id, f"Removed {name}",
-                     entity_label=t["title"] if t else None,
                      changes={"assignees": [name, None]}, request=request)
     db.commit()
     db.close()

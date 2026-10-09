@@ -1241,6 +1241,21 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
     super.dispose();
   }
 
+  Future<void> _pickAppointment() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.tryParse(_appointmentCtrl.text.trim()) ?? now,
+      firstDate: DateTime(1960),
+      lastDate: now,
+      helpText: 'Date of appointment',
+    );
+    if (picked != null) {
+      setState(() => _appointmentCtrl.text =
+          '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}');
+    }
+  }
+
   Future<void> _submit() async {
     setState(() => _saving = true);
     try {
@@ -1329,10 +1344,11 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
                       Expanded(
                         child: TextField(
                           controller: _appointmentCtrl,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [_DateFormatter()],
-                          decoration: _deco('Date of Appointment',
-                              hint: 'YYYY-MM-DD'),
+                          readOnly: true,
+                          onTap: _pickAppointment,
+                          decoration: _deco('Date of Appointment', hint: 'Select a date')
+                              .copyWith(suffixIcon: const Icon(
+                                  Icons.calendar_today_outlined, size: 16)),
                         ),
                       ),
                     ],
@@ -1647,20 +1663,3 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
 
 // ── Date auto-formatter ───────────────────────────────────────────────────────
 
-class _DateFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue old, TextEditingValue next) {
-    final digits = next.text.replaceAll(RegExp(r'[^0-9]'), '');
-    final buf = StringBuffer();
-    for (int i = 0; i < digits.length && i < 8; i++) {
-      if (i == 4 || i == 6) buf.write('-');
-      buf.write(digits[i]);
-    }
-    final out = buf.toString();
-    return next.copyWith(
-      text: out,
-      selection: TextSelection.collapsed(offset: out.length),
-    );
-  }
-}
