@@ -7,6 +7,7 @@ import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
+import '../widgets/assign_role_selector.dart';
 import 'edit_task_screen.dart';
 import '../utils/web_file_picker.dart';
 import '../utils/web_downloader.dart';
@@ -156,7 +157,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     final canAssign = user.canAssign && !widget.ownTaskView;
     final canReview = user.canReviewSubmissions && !widget.ownTaskView;
     final canSubmit = user.isTeacher || user.isRegistrar || user.isDean;
-    final isReviewOnly = canReview && !canSubmit; // principal/admin/coordinator
+    // Opened from Task Manager the viewer is handling the task, so the side
+    // panel reviews assignees' submissions; their own submission (if they are
+    // also assigned) is done from My Tasks (ownTaskView).
+    final isReviewOnly = canReview || canAssign;
 
     if (_loading) {
       return TaskDetailSkeleton(hasBack: widget.onBack != null);
@@ -296,158 +300,261 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Widget _buildMainContent(User user, bool canAssign, bool canReview,
       {bool canManage = false}) {
     final t = _task!;
-    final isLeaf = user.isTeacher || user.isRegistrar;
+    final isLeaf = user.isTeacher || user.isRegistrar || user.isDean;
+    final reviewing = canAssign || canReview;
+    final deadline = t.deadline;
+    final pastDue = deadline != null && deadline.isBefore(DateTime.now());
+
+    // Per-assignee status for reviewers: their report (if visible) decides
+    // Completed / Pending review / Marked missing; otherwise Submitted (log
+    // only), Missing (past deadline) or Not submitted.
+    final reportsBy = {for (final r in t.reports) r.personnelId: r};
+    // A coordinator/dean who only delegated part of the task tracks the people
+    // they assigned (team_scope 'mine'); everything below uses that same set.
+    final mineOnly = t.teamScope == 'mine';
+    final team = mineOnly
+        ? t.assignedUsers.where((u) => t.assignedByOf[u.id] == user.id).toList()
+        : t.assignedUsers;
+    final submitted = team.where((u) => t.submittedAssigneeIds.contains(u.id)).length;
+    final total = team.length;
+    final missing = pastDue ? total - submitted : 0;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Title row
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
-                borderRadius: BorderRadius.circular(12),
+        // ── Header ──
+        _DetailCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FA),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                    t.taskCategory == 'special' ? Icons.star_outline_rounded : Icons.assignment_outlined,
+                    color: AppTheme.darkBanner, size: 24),
               ),
-              child: const Center(child: Text('📋', style: TextStyle(fontSize: 22))),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.title, style: AppTheme.heading2),
-                  if ((t.startDate ?? '').isNotEmpty)
-                    Text('Start: ${_fmtDate(t.startDate!)}', style: AppTheme.bodyMd),
-                  Text(
-                    'Deadline: ${_fmtDate(t.endDate ?? '')}, ${t.dueTime ?? '11:59 PM'}',
-                    style: AppTheme.bodyMd.copyWith(
-                        fontWeight: FontWeight.w600, color: AppTheme.accentBlue),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(t.title, style: GoogleFonts.plusJakartaSans(
+                      fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.textPrimary,
+                      height: 1.25)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 6, runSpacing: 6, children: [
+                    _Pill(t.taskCategory == 'special' ? 'Special task' : 'Task',
+                        fg: AppTheme.textMuted, bg: const Color(0xFFF1F5F9)),
+                    if (t.status != 'active')
+                      const _Pill('Disabled', fg: AppTheme.textMuted, bg: Color(0xFFF1F5F9)),
+                    if (isLeaf && !reviewing)
+                      t.isSubmitted
+                          ? const _Pill('Submitted', fg: Color(0xFF15803D), bg: AppTheme.greenBg)
+                          : pastDue
+                              ? const _Pill('Missing', fg: Color(0xFFB91C1C), bg: AppTheme.redBg)
+                              : const _Pill('Not submitted', fg: Color(0xFF92400E), bg: AppTheme.amberBg),
+                  ]),
+                ]),
+              ),
+              if (canManage)
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => EditTaskScreen(task: t)),
+                  ).then((_) => _load()),
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                  label: const Text('Edit task'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.textPrimary,
+                    side: const BorderSide(color: AppTheme.borderColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                ],
+                ),
+            ]),
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: AppTheme.borderColor),
+            const SizedBox(height: 14),
+            Wrap(spacing: 32, runSpacing: 12, children: [
+              _MetaItem(
+                icon: Icons.play_circle_outline,
+                label: 'Start',
+                value: (t.startDate ?? '').isEmpty ? 'Not set' : _fmtDate(t.startDate!),
               ),
-            ),
-            if (canManage)
-              IconButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => EditTaskScreen(task: t)),
-                ).then((_) => _load()),
-                icon: const Icon(Icons.edit_outlined, size: 20, color: AppTheme.textMuted),
-                tooltip: 'Edit Task',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+              _MetaItem(
+                icon: Icons.flag_outlined,
+                label: 'Deadline',
+                value: deadline == null
+                    ? 'No deadline'
+                    : '${_fmtDate(t.endDate!)}'
+                      '${(t.dueTime ?? '').isNotEmpty && t.dueTime!.toUpperCase() != '11:59 PM' ? ', ${t.dueTime}' : ''}',
+                emphasis: pastDue ? AppTheme.redColor : AppTheme.textPrimary,
+                note: pastDue ? 'Past deadline' : null,
               ),
-          ],
+              if (reviewing)
+                _MetaItem(
+                  icon: Icons.groups_outlined,
+                  label: mineOnly ? 'Assigned by you' : 'Assigned',
+                  value: mineOnly
+                      ? '$total of ${t.assignedUsers.length} people'
+                      : '$total ${total == 1 ? 'person' : 'people'}',
+                ),
+            ]),
+          ]),
         ),
         const SizedBox(height: 16),
 
-        // Submission status badge
-        if (isLeaf)
-          Row(children: [
-            t.isSubmitted ? StatusBadge.submitted() : StatusBadge.pending(),
-          ]),
-
-        // Team progress badge for reviewers
-        if (canReview && t.teamTotal != null) ...[
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppTheme.blueBg,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              '${t.teamSubmitted ?? 0} / ${t.teamTotal} submitted',
-              style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.accentBlue),
-            ),
+        // ── Submission progress (reviewers) ──
+        if (reviewing && (total > 0 || mineOnly)) ...[
+          _DetailCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text('Submission progress', style: _cardTitle),
+                const Spacer(),
+                Text('$submitted of $total submitted', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14, fontWeight: FontWeight.w700,
+                    color: submitted >= total ? const Color(0xFF15803D) : AppTheme.textPrimary)),
+              ]),
+              if (mineOnly) ...[
+                const SizedBox(height: 2),
+                Text('Counting the $total ${total == 1 ? 'person' : 'people'} you assigned '
+                    '(${t.assignedUsers.length} on this task in total).', style: AppTheme.caption),
+              ],
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: total == 0 ? 0 : submitted / total,
+                  minHeight: 10,
+                  backgroundColor: const Color(0xFFEEF2FA),
+                  color: submitted >= total ? AppTheme.greenColor : AppTheme.accentBlue,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(spacing: 20, runSpacing: 8, children: [
+                _Legend(color: AppTheme.greenColor, label: 'Submitted', count: submitted),
+                _Legend(color: AppTheme.amberColor, label: 'Not yet submitted',
+                    count: (total - submitted - missing).clamp(0, total)),
+                _Legend(color: AppTheme.redColor, label: 'Missing (past deadline)', count: missing),
+              ]),
+            ]),
           ),
+          const SizedBox(height: 16),
         ],
-        // Dean own submission status badge
-        if (user.isDean) ...[
-          const SizedBox(height: 4),
-          Row(children: [
-            t.isSubmitted ? StatusBadge.submitted() : StatusBadge.pending(),
-          ]),
-        ],
-        const SizedBox(height: 14),
 
-        if (t.instructions != null)
-          Text(t.instructions!, style: AppTheme.bodyMd.copyWith(height: 1.75)),
+        // ── Instructions ──
+        _DetailCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Instructions', style: _cardTitle),
+            const SizedBox(height: 10),
+            Text((t.instructions ?? '').trim().isEmpty ? 'No instructions provided.' : t.instructions!,
+                style: AppTheme.bodyLg.copyWith(height: 1.6,
+                    color: (t.instructions ?? '').trim().isEmpty ? AppTheme.textLight : AppTheme.textPrimary)),
+          ]),
+        ),
         const SizedBox(height: 16),
 
-        // Assign Users section
-        if (canAssign) ...[
-          _AssignSection(
+        // ── Assignees with their status (reviewers) ──
+        if (reviewing) ...[
+          _AssigneesCard(
             taskId: t.id,
-            assignedUsers: t.assignedUsers,
-            onAssigned: _load,
+            assignedUsers: team,
+            allAssigned: t.assignedUsers,
+            title: mineOnly ? 'People you assigned' : 'Assigned personnel',
+            canEdit: canAssign,
+            statusFor: (u) {
+              final r = reportsBy[u.id];
+              if (r != null) {
+                return switch (r.reportStatus) {
+                  'Completed' => ('Completed', const Color(0xFF15803D), AppTheme.greenBg),
+                  'Missing' => ('Marked missing', const Color(0xFFB91C1C), AppTheme.redBg),
+                  _ => ('Pending review', AppTheme.accentBlue, AppTheme.blueBg),
+                };
+              }
+              if (t.submittedAssigneeIds.contains(u.id)) {
+                return ('Submitted', const Color(0xFF15803D), AppTheme.greenBg);
+              }
+              return pastDue
+                  ? ('Missing', const Color(0xFFB91C1C), AppTheme.redBg)
+                  : ('Not submitted', const Color(0xFF92400E), AppTheme.amberBg);
+            },
+            selectedUserId: _selectedReport?.personnelId,
+            onSelect: (u) {
+              final r = reportsBy[u.id];
+              if (r != null) setState(() => _selectedReport = r);
+            },
+            hasReport: (u) => reportsBy.containsKey(u.id),
+            onChanged: _load,
           ),
           const SizedBox(height: 16),
         ],
 
-        // Public Comments
-        Row(children: [
-          const Icon(Icons.chat_bubble_outline, size: 16, color: AppTheme.textMuted),
-          const SizedBox(width: 6),
-          Flexible(child: Text('Public Comments', style: AppTheme.heading3)),
-        ]),
-        const SizedBox(height: 10),
-        CommentInputField(
-          placeholder: 'Add a comment...',
-          onSend: (c) => _sendComment(c, 'public'),
+        // ── Public comments ──
+        _DetailCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              const Icon(Icons.chat_bubble_outline, size: 18, color: AppTheme.textMuted),
+              const SizedBox(width: 8),
+              Text('Public comments', style: _cardTitle),
+              if (t.publicComments.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                _Pill('${t.publicComments.length}', fg: AppTheme.textMuted, bg: const Color(0xFFF1F5F9)),
+              ],
+            ]),
+            const SizedBox(height: 4),
+            Text('Visible to everyone assigned to this task.', style: AppTheme.caption),
+            const SizedBox(height: 12),
+            if (t.publicComments.isNotEmpty) ...[
+              ...t.publicComments.map((c) => CommentItem(
+                    comment: c,
+                    onEdit: c.userId == user.id ? () => _editComment(c.id, c.content) : null,
+                    onDelete: c.userId == user.id ? () => _deleteComment(c.id) : null,
+                  )),
+              const SizedBox(height: 8),
+            ],
+            CommentInputField(
+              placeholder: 'Add a comment...',
+              onSend: (c) => _sendComment(c, 'public'),
+            ),
+          ]),
         ),
-        const SizedBox(height: 8),
-        if (t.publicComments.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Text('No comments yet.', style: AppTheme.bodyMd),
-          )
-        else
-          ...t.publicComments.map((c) => CommentItem(
-                comment: c,
-                onEdit: c.userId == user.id
-                    ? () => _editComment(c.id, c.content)
-                    : null,
-                onDelete: c.userId == user.id
-                    ? () => _deleteComment(c.id)
-                    : null,
-              )),
-
-        // Team submissions list (for reviewers)
-        if (canReview && t.reports.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Team Submissions', style: AppTheme.heading3),
-          const SizedBox(height: 10),
-          ...t.reports.map((r) => _ReportListItem(
-                report: r,
-                isSelected: _selectedReport?.id == r.id,
-                onTap: () => setState(() => _selectedReport = r),
-                onStatusChange: (status) async {
-                  await ApiService.updateReportStatus(r.id, status);
-                  _load();
-                },
-              )),
-        ],
       ],
     );
   }
 
+  TextStyle get _cardTitle => GoogleFonts.plusJakartaSans(
+      fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary);
+
   // Sidebar for roles that can only review (principal/admin/coordinator)
   Widget _buildReviewSidebar() {
+    final t = _task!;
     if (_selectedReport == null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 6),
-          Text('Report Details', style: AppTheme.heading3),
-          const SizedBox(height: 10),
-          Text('Select a submission to review', style: AppTheme.bodyMd),
-        ],
+      return Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Submission', style: _cardTitle),
+          const SizedBox(height: 24),
+          Center(
+            child: Column(children: [
+              Container(
+                width: 56, height: 56,
+                decoration: const BoxDecoration(color: Color(0xFFEEF2FA), shape: BoxShape.circle),
+                child: const Icon(Icons.description_outlined, color: AppTheme.textMuted),
+              ),
+              const SizedBox(height: 12),
+              Text(t.reports.isEmpty ? 'No submissions yet' : 'No submission selected',
+                  style: AppTheme.labelMd),
+              const SizedBox(height: 4),
+              Text(
+                t.reports.isEmpty
+                    ? 'Reports appear here once assignees submit.'
+                    : 'Choose someone marked "Pending review" or "Completed" to read their report.',
+                textAlign: TextAlign.center,
+                style: AppTheme.bodySm,
+              ),
+            ]),
+          ),
+        ]),
       );
     }
     final r = _selectedReport!;
@@ -455,71 +562,98 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 6),
-        Text((r.fullName ?? '').toUpperCase(), style: AppTheme.heading3),
-        if (r.gradeLevel != null) ...[
-          const SizedBox(height: 4),
-          Text(r.gradeLevel!, style: AppTheme.bodySm),
-        ],
-        const SizedBox(height: 12),
-        _StatusChip(status: r.reportStatus),
-        const SizedBox(height: 12),
-        Text(r.reportTitle, style: AppTheme.labelMd),
-        if (r.reportDescription != null) ...[
-          const SizedBox(height: 6),
-          Text(r.reportDescription!, style: AppTheme.bodyMd),
-        ],
-        if (r.reportFilename != null && r.reportFilePath != null) ...[
-          const SizedBox(height: 8),
-          _FileItem(
-            filename: r.reportFilename!,
-            url: '${ApiService.baseUrl}${r.reportFilePath!}',
+        Text('Submission', style: AppTheme.caption),
+        const SizedBox(height: 6),
+        Row(children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: AppTheme.sidebarActive,
+            child: Text((r.fullName ?? '?').isEmpty ? '?' : r.fullName![0].toUpperCase(),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
           ),
-        ],
-        if (r.reportLinkUrl != null) ...[
-          const SizedBox(height: 8),
-          _LinkItem(url: r.reportLinkUrl!),
-        ],
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(r.fullName ?? '', style: _cardTitle, overflow: TextOverflow.ellipsis),
+            if (r.gradeLevel != null) Text(r.gradeLevel!, style: AppTheme.bodySm),
+          ])),
+          _StatusChip(status: r.reportStatus, small: true),
+        ]),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppTheme.borderColor),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _SubmissionTypeLabel(type: r.reportType),
+            const SizedBox(height: 6),
+            Text(r.reportTitle, style: AppTheme.labelMd),
+            if (r.reportDescription != null) ...[
+              const SizedBox(height: 6),
+              Text(r.reportDescription!, style: AppTheme.bodyMd),
+            ],
+            if (r.reportFilename != null && r.reportFilePath != null) ...[
+              const SizedBox(height: 8),
+              _FileItem(filename: r.reportFilename!, url: '${ApiService.baseUrl}${r.reportFilePath!}'),
+            ],
+            if (r.reportLinkUrl != null) ...[
+              const SizedBox(height: 8),
+              _LinkItem(url: r.reportLinkUrl!),
+            ],
+          ]),
+        ),
+        const SizedBox(height: 12),
+        Text('Mark this submission as', style: AppTheme.caption),
+        const SizedBox(height: 6),
+        _StatusButtons(
+          onCompleted: () async {
+            await ApiService.updateReportStatus(r.id, 'Completed');
+            _load();
+          },
+          onMissing: () async {
+            await ApiService.updateReportStatus(r.id, 'Missing');
+            _load();
+          },
+        ),
+        const SizedBox(height: 20),
+        const Divider(height: 1, color: AppTheme.borderColor),
         const SizedBox(height: 16),
         Row(children: [
           const Icon(Icons.lock_outline, size: 15, color: AppTheme.textMuted),
           const SizedBox(width: 6),
-          Flexible(child: Text('Private Comments', style: AppTheme.heading3)),
+          Flexible(child: Text('Private comments', style: _cardTitle)),
         ]),
         const SizedBox(height: 4),
-        Text('Only visible to submitter and reviewer.',
-            style: AppTheme.bodySm),
-        const SizedBox(height: 10),
-        CommentInputField(
-          placeholder: 'Add private comment...',
-          onSend: (c) => _sendComment(c, 'private', reportId: r.id),
-        ),
+        Text('Only visible to the submitter and reviewers.', style: AppTheme.bodySm),
         const SizedBox(height: 10),
         Builder(builder: (context) {
           final currentUser = context.read<AppState>().currentUser;
-          // Show: comments from the submitter OR comments tagged to this report
-          final submitterComments = _task!.privateComments
-              .where((c) =>
-                  c.userId == r.personnelId ||
-                  (c.reportId != null && c.reportId == r.id))
+          // Comments from the submitter or tagged to this report.
+          final comments = _task!.privateComments
+              .where((c) => c.userId == r.personnelId || (c.reportId != null && c.reportId == r.id))
               .toList();
-          if (submitterComments.isEmpty) {
+          if (comments.isEmpty) {
             return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.only(bottom: 6),
               child: Text('No private comments yet.', style: AppTheme.bodyMd),
             );
           }
           return Column(
-            children: submitterComments.map((c) => CommentItem(
+            children: comments.map((c) => CommentItem(
               comment: c,
-              onEdit: c.userId == currentUser?.id
-                  ? () => _editComment(c.id, c.content)
-                  : null,
-              onDelete: c.userId == currentUser?.id
-                  ? () => _deleteComment(c.id)
-                  : null,
+              onEdit: c.userId == currentUser?.id ? () => _editComment(c.id, c.content) : null,
+              onDelete: c.userId == currentUser?.id ? () => _deleteComment(c.id) : null,
             )).toList(),
           );
         }),
+        const SizedBox(height: 8),
+        CommentInputField(
+          placeholder: 'Add private comment...',
+          onSend: (c) => _sendComment(c, 'private', reportId: r.id),
+        ),
       ],
     );
   }

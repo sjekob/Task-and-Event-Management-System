@@ -488,9 +488,10 @@ class _UserDataTable extends StatelessWidget {
         DataColumn(label: _ColHeader('ID')),
         DataColumn(label: _ColHeader('Name')),
         DataColumn(label: _ColHeader('Birthdate')),
-        DataColumn(label: _ColHeader('TIN')),
-        DataColumn(label: _ColHeader('Pag-IBIG')),
-        DataColumn(label: _ColHeader('PhilHealth')),
+        DataColumn(label: _ColHeader('Specialization')),
+        DataColumn(label: _ColHeader('Skills')),
+        DataColumn(label: _ColHeader('Certifications')),
+        DataColumn(label: _ColHeader('Children'), numeric: true),
         DataColumn(label: _ColHeader('Date Hired')),
         DataColumn(label: _ColHeader('Address')),
         DataColumn(label: _ColHeader('Action')),
@@ -508,6 +509,13 @@ class _UserDataTable extends StatelessWidget {
 
     t(String v, {TextStyle? style}) =>
         Text(v, overflow: TextOverflow.ellipsis, style: style ?? dim);
+    list(List<String> items) => ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 200),
+          child: Tooltip(
+            message: items.join('\n'),
+            child: t(items.isEmpty ? '—' : items.join(', ')),
+          ),
+        );
 
     if (tabIndex == 0) {
       return [
@@ -532,9 +540,10 @@ class _UserDataTable extends StatelessWidget {
         DataCell(t('—')),
         DataCell(t(u.fullName, style: link)),
         DataCell(t(u.birthdate ?? '—')),
-        DataCell(t(u.tin ?? '—')),
-        DataCell(t(u.hdmf ?? '—')),
-        DataCell(t(u.phic ?? '—')),
+        DataCell(t(u.education.specialization ?? '—')),
+        DataCell(list(u.skills)),
+        DataCell(list(u.certifications)),
+        DataCell(t(u.numberOfChildren.toString())),
         DataCell(t(u.dateOfAppointment ?? '—')),
         DataCell(t(u.address ?? '—')),
         DataCell(_ActionMenu(
@@ -746,15 +755,34 @@ class _PersonnelDetailDialog extends StatelessWidget {
                     _field('Date Hired', u.dateOfAppointment ?? '—'),
                   ),
                   const SizedBox(height: 18),
+                  _field('Number of Children', u.numberOfChildren.toString()),
+                  const SizedBox(height: 24),
+                  _sectionHeader('Educational Background'),
                   _twoCol(
-                    _field('TIN', u.tin ?? '—'),
-                    _field('GSIS', u.qsis ?? '—'),
+                    _field('Highest Educational Attainment',
+                        u.education.highestAttainment ?? '—'),
+                    _field('Undergraduate Degree',
+                        u.education.undergraduateDegree ?? '—'),
                   ),
                   const SizedBox(height: 18),
                   _twoCol(
-                    _field('Pag-IBIG', u.hdmf ?? '—'),
-                    _field('PhilHealth', u.phic ?? '—'),
+                    _field('Area of Specialization',
+                        u.education.specialization ?? '—'),
+                    _field('Postgraduate Program Focus',
+                        u.education.postgraduateFocus ?? '—'),
                   ),
+                  const SizedBox(height: 24),
+                  _sectionHeader('Certifications & Eligibility'),
+                  ..._grouped(
+                    u.certificationDetails,
+                    (c) => c.category,
+                    (c) => c.issuerLabel != null
+                        ? '${c.name} (${c.issuerLabel})'
+                        : c.name,
+                  ),
+                  const SizedBox(height: 6),
+                  _sectionHeader('Skills'),
+                  ..._grouped(u.skillDetails, (s) => s.category, (s) => s.name),
                   const SizedBox(height: 8),
                 ],
               ),
@@ -799,6 +827,24 @@ class _PersonnelDetailDialog extends StatelessWidget {
           const SizedBox(height: 16),
         ],
       );
+
+  /// One field per category ("Other" last), listing that category's items.
+  List<Widget> _grouped<T>(List<T> items, String? Function(T) category,
+      String Function(T) label) {
+    if (items.isEmpty) return [_field('None on file', '—'), const SizedBox(height: 18)];
+    final groups = <String, List<String>>{};
+    for (final it in items) {
+      groups.putIfAbsent(category(it) ?? 'Other', () => []).add(label(it));
+    }
+    final keys = groups.keys.toList()
+      ..sort((a, b) => a == 'Other' ? 1 : b == 'Other' ? -1 : a.compareTo(b));
+    return [
+      for (final k in keys) ...[
+        _field(k, groups[k]!.join(', ')),
+        const SizedBox(height: 18),
+      ],
+    ];
+  }
 
   Widget _twoCol(Widget l, Widget r) => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1424,6 +1470,8 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 4, vertical: 6)),
                   ),
+                  const SizedBox(height: 24),
+                  _ownerOnlyNote(),
                 ],
               ),
             ),
@@ -1490,6 +1538,29 @@ class _EditRoleDialogState extends State<_EditRoleDialog> {
           fontWeight: FontWeight.w700,
           color: _kNavSel,
           letterSpacing: 0.4));
+
+  /// Personal information (education, skills, certifications, family
+  /// details) is edited only by its owner in My Profile.
+  Widget _ownerOnlyNote() => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.lock_outline, size: 16, color: Colors.grey.shade600),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Personal information — education, skills, certifications and '
+              'family details — can only be edited by ${widget.user.fullName} '
+              'in their own profile.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ),
+        ]),
+      );
 
   Widget _roleDropdown() => DropdownButtonFormField<String>(
         initialValue: _selectedRole,

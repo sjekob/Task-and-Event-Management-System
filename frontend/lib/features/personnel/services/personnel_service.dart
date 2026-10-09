@@ -109,6 +109,44 @@ class PersonnelService {
     return [];
   }
 
+  /// Skill catalog: [{id, skill_name, category_name}].
+  static Future<List<Map<String, dynamic>>> skillsMeta() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/skills'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  /// Certification catalog: [{id, cert_name, category_name, issuer_name, acronym}].
+  static Future<List<Map<String, dynamic>>> certificationsMeta() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/certifications'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  /// DepEd dropdown options: {highest_attainment, undergraduate_degree, specialization}.
+  static Future<Map<String, List<String>>> educationOptions() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/education-options'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      final m = jsonDecode(res.body) as Map<String, dynamic>;
+      return m.map((k, v) =>
+          MapEntry(k, (v as List).map((e) => e.toString()).toList()));
+    }
+    return {};
+  }
+
   static Future<List<Map<String, dynamic>>> departmentsMeta() async {
     final res = await http.get(
       Uri.parse('$_base/api/personnel/meta/departments'),

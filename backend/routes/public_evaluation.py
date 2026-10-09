@@ -28,6 +28,10 @@ ALLOWED_EVALUATOR_ROLES = {
     "dean", "coordinator", "principal", "registrar",
 }
 
+# Evaluator demographics (for the event's evaluation report breakdown).
+SEX_OPTIONS = ["Male", "Female", "Prefer not to say"]
+AGE_GROUPS = ["17 and below", "18-24", "25-34", "35-44", "45-54", "55 and above"]
+
 # Fallback observation indicators (standard DepEd special-program tool) used only
 # when a proposal did not list its own indicators.
 DEFAULT_INDICATORS = [
@@ -151,6 +155,11 @@ def get_public_event(event_id: int, db=Depends(get_db)):
         "organizer_name": _organizer_name(row, db),
         "monitoring_criteria": monitoring,
         "indicators": _proposal_indicators(row),
+        "demographic_options": {
+            "evaluator_role": sorted(ALLOWED_EVALUATOR_ROLES),
+            "sex": SEX_OPTIONS,
+            "age_group": AGE_GROUPS,
+        },
         "is_open": lock_reason is None,
         "lock_reason": lock_reason,
     }
@@ -168,6 +177,9 @@ class PublicEvalBody(BaseModel):
     evaluator_name: Optional[str] = Field(default=None, max_length=120)
     evaluator_email: str = Field(min_length=3, max_length=200)
     evaluator_role: str
+    sex: str
+    age_group: str
+    affiliation: Optional[str] = Field(default=None, max_length=200)  # school / office / organization
     indicators: List[IndicatorResult]
     comments: Optional[str] = Field(default=None, max_length=2000)
 
@@ -207,6 +219,12 @@ def submit_public_evaluation(event_id: int, body: PublicEvalBody,
     if role not in ALLOWED_EVALUATOR_ROLES:
         raise HTTPException(400, f"evaluator_role must be one of {sorted(ALLOWED_EVALUATOR_ROLES)}")
 
+    if body.sex not in SEX_OPTIONS:
+        raise HTTPException(400, f"sex must be one of {SEX_OPTIONS}")
+    if body.age_group not in AGE_GROUPS:
+        raise HTTPException(400, f"age_group must be one of {AGE_GROUPS}")
+    affiliation = (body.affiliation or "").strip() or None
+
     email = body.evaluator_email.strip().lower()
     if not _EMAIL_RE.match(email):
         raise HTTPException(400, "Please enter a valid email address.")
@@ -233,10 +251,11 @@ def submit_public_evaluation(event_id: int, body: PublicEvalBody,
     db.execute(
         """INSERT INTO event_evaluations
            (event_id, evaluator_id, evaluator_name, evaluator_email, evaluator_role,
+            evaluator_sex, evaluator_age_group, evaluator_affiliation,
             planning_score, objectives_score, personnel_score,
             time_mgmt_score, engagement_score, resource_score, feedback_comments)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (event_id, None, name, email, role,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (event_id, None, name, email, role, body.sex, body.age_group, affiliation,
          score, score, score, score, score, score, feedback)
     )
     db.commit()

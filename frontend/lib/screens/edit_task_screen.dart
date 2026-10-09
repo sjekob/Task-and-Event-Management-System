@@ -9,6 +9,8 @@ import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/assign_picker_dialog.dart';
+import '../widgets/assign_role_selector.dart';
 
 part 'edit_task_screen_widgets.dart';
 
@@ -31,6 +33,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
   List<User> _allAssignable = [];
   late Set<int> _selectedIds;
+  late final Set<int> _originalIds;
+  // Identity newly added people receive the task as, per the assigner's place
+  // in the hierarchy; remembered per person in case the choice changes mid-edit.
+  String? _targetRole;
+  final Map<int, String> _addedAs = {};
   bool _loadingUsers = true;
   bool _submitting = false;
 
@@ -47,6 +54,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _endDate = _parseDate(t.endDate);
     _dueTime = _parseTime(t.dueTime);
     _selectedIds = t.assignedUsers.map((u) => u.id).toSet();
+    _originalIds = Set.of(_selectedIds);
+    _targetRole = assignableRoles(context.read<AppState>().userRole).first;
     _loadUsers();
   }
 
@@ -80,7 +89,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
   Future<void> _loadUsers() async {
     try {
-      final users = await ApiService.getAssignableUsers();
+      final users = await ApiService.getAssignableUsers(targetRole: _targetRole);
       if (mounted) setState(() { _allAssignable = users; _loadingUsers = false; });
     } catch (_) {
       try {
@@ -135,14 +144,25 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
   void _openAssignPicker() async {
     if (_loadingUsers || _allAssignable.isEmpty) return;
-    await showModalBottomSheet(
+    await showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AssignPickerSheet(
+      builder: (_) => AssignPickerDialog(
         users: _allAssignable,
         selected: _selectedIds,
-        onChanged: (ids) => setState(() { _selectedIds.clear(); _selectedIds.addAll(ids); }),
+        onChanged: (ids) => setState(() {
+          _selectedIds..clear()..addAll(ids);
+          for (final id in ids) {
+            if (!_originalIds.contains(id)) _addedAs.putIfAbsent(id, () => _targetRole!);
+          }
+          _addedAs.removeWhere((id, _) => !ids.contains(id));
+        }),
+        loadSuggestions: () => ApiService.getAssigneeSuggestions(
+          targetRole: _targetRole,
+          title: _titleCtrl.text,
+          subject: _subjectCtrl.text,
+          instructions: _instrCtrl.text,
+          taskCategory: widget.task.taskCategory,
+        ),
       ),
     );
   }
@@ -199,9 +219,23 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         if (_startDate != null) 'start_date': _fmtApi(_startDate!),
         if (_endDate != null)   'end_date': _fmtApi(_endDate!),
         if (_dueTime != null)   'due_time': _fmtTime(_dueTime!),
-        'assigned_user_ids': _selectedIds.toList(),
         if (_attachments.isNotEmpty) 'attachments': _attachments,
       });
+      // Assignment changes go through the assign endpoints, which enforce the
+      // hierarchy (the task update endpoint does not touch assignments).
+      final byRole = <String, List<int>>{};
+      _addedAs.forEach((id, role) => (byRole[role] ??= []).add(id));
+      var skipped = 0;
+      for (final e in byRole.entries) {
+        skipped += await ApiService.assignTask(widget.task.id, e.value, targetRole: e.key);
+      }
+      for (final id in _originalIds.difference(_selectedIds)) {
+        await ApiService.unassignTask(widget.task.id, id);
+      }
+      if (skipped > 0) {
+        _showSnack('$skipped ${skipped == 1 ? 'person was' : 'people were'} not assigned — '
+            'outside what your role may assign.', error: true);
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       _showSnack('Failed: $e', error: true);
@@ -267,6 +301,29 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
               const SizedBox(height: 6),
               _input(_titleCtrl, 'Task Name'),
               const SizedBox(height: 16),
+
+              // ── Assign as (identity new assignees receive the task under) ──
+              Builder(builder: (ctx) {
+                final opts = assignableRoles(ctx.read<AppState>().userRole);
+                if (opts.length < 2) return const SizedBox.shrink();
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _FieldLabel('Assign As'),
+                  const SizedBox(height: 6),
+                  AssignRoleSelector(
+                    options: opts,
+                    value: _targetRole,
+                    onChanged: (r) {
+                      if (r == _targetRole) return;
+                      setState(() { _targetRole = r; _loadingUsers = true; });
+                      _loadUsers();
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  Text('Filters who you can add. People already assigned stay assigned.',
+                      style: AppTheme.bodySm),
+                  const SizedBox(height: 16),
+                ]);
+              }),
 
               // ── Assign to | Start Date | End Date | Time ──
               IntrinsicHeight(

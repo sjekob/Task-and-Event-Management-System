@@ -17,6 +17,7 @@ import 'screens/appraisal_screen.dart';
 import 'screens/event_management_screen.dart';
 import 'screens/add_event_screen.dart';
 import 'screens/public_evaluation_screen.dart';
+import 'screens/school_years_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -175,9 +176,15 @@ class _TaskNetAppState extends State<TaskNetApp> {
             ),
             GoRoute(
               path: '/events',
-              builder: (context, state) => EventManagementScreen(
-                onAddEvent: () => context.go('/events/new'),
-              ),
+              builder: (context, state) {
+                final open = int.tryParse(state.uri.queryParameters['open'] ?? '');
+                return EventManagementScreen(
+                  // New key per requested event so a second dashboard click re-opens.
+                  key: ValueKey('events-$open'),
+                  onAddEvent: () => context.go('/events/new'),
+                  openEventId: open,
+                );
+              },
             ),
             GoRoute(
               path: '/events/new',
@@ -193,6 +200,10 @@ class _TaskNetAppState extends State<TaskNetApp> {
                 onCreated: () => context.go('/events'),
                 existingEvent: state.extra as Map<String, dynamic>?,
               ),
+            ),
+            GoRoute(
+              path: '/school-years',
+              builder: (_, __) => const SchoolYearsScreen(),
             ),
             GoRoute(
               path: '/profile',

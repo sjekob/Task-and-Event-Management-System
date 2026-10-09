@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/input_formatters.dart';
 
 /// Reached by scanning an event's QR code — no login involved. This is a DepEd
 /// "Observation Tool": the indicators come from the last section of the event's
@@ -22,6 +23,9 @@ const _roleOptions = [
   'student', 'teacher', 'parent', 'visitor',
   'dean', 'coordinator', 'principal', 'registrar',
 ];
+// Fallbacks; the server sends the authoritative lists with the event.
+const _sexOptions = ['Male', 'Female', 'Prefer not to say'];
+const _ageGroups = ['17 and below', '18-24', '25-34', '35-44', '45-54', '55 and above'];
 
 class _Indicator {
   final String label;
@@ -37,7 +41,10 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _commentsCtrl = TextEditingController();
+  final _affiliationCtrl = TextEditingController();
   String _role = 'student';
+  String? _sex;
+  String? _ageGroup;
   List<_Indicator> _indicators = [];
   bool _submitting = false;
 
@@ -52,6 +59,7 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _commentsCtrl.dispose();
+    _affiliationCtrl.dispose();
     super.dispose();
   }
 
@@ -92,10 +100,21 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
 
   bool get _allMarked => _indicators.every((i) => i.evident != null);
 
+  List<String> _options(String key, List<String> fallback) {
+    final opts = (_event?['demographic_options'] as Map?)?[key];
+    return opts is List ? opts.map((e) => e.toString()).toList() : fallback;
+  }
+
   Future<void> _submit() async {
     if (!_validEmail(_emailCtrl.text.trim())) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Please enter a valid email address.'),
+          backgroundColor: Colors.red));
+      return;
+    }
+    if (_sex == null || _ageGroup == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please select your sex and age group.'),
           backgroundColor: Colors.red));
       return;
     }
@@ -111,6 +130,9 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
         'evaluator_name': _nameCtrl.text.trim().isEmpty ? null : _nameCtrl.text.trim(),
         'evaluator_email': _emailCtrl.text.trim(),
         'evaluator_role': _role,
+        'sex': _sex,
+        'age_group': _ageGroup,
+        'affiliation': _affiliationCtrl.text.trim().isEmpty ? null : _affiliationCtrl.text.trim(),
         'indicators': _indicators
             .map((i) => {
                   'label': i.label,
@@ -253,6 +275,8 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
       Row(children: [
         Expanded(child: TextField(
           controller: _nameCtrl,
+          textCapitalization: TextCapitalization.words,
+          inputFormatters: const [TitleCaseTextInputFormatter()],
           decoration: _decor('Name (optional)'),
           style: const TextStyle(fontSize: 13),
         )),
@@ -273,7 +297,47 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
       TextField(
         controller: _emailCtrl,
         keyboardType: TextInputType.emailAddress,
-        decoration: _decor('Email (required)'),
+        decoration: _decor('Email (required)').copyWith(
+            helperText: 'Each email can submit this evaluation only once.'),
+        style: const TextStyle(fontSize: 13),
+      ),
+      const SizedBox(height: 16),
+
+      // ── Demographics (for the event's evaluation report) ────────────────
+      Text('About you',
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+      const SizedBox(height: 4),
+      Text('Used only to summarize who evaluated the event.',
+          style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppTheme.textMuted)),
+      const SizedBox(height: 10),
+      Row(children: [
+        Expanded(child: DropdownButtonFormField<String>(
+          initialValue: _sex,
+          isExpanded: true,
+          decoration: _decor('Sex (required)'),
+          style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
+          items: _options('sex', _sexOptions)
+              .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+              .toList(),
+          onChanged: (v) => setState(() => _sex = v),
+        )),
+        const SizedBox(width: 12),
+        Expanded(child: DropdownButtonFormField<String>(
+          initialValue: _ageGroup,
+          isExpanded: true,
+          decoration: _decor('Age group (required)'),
+          style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
+          items: _options('age_group', _ageGroups)
+              .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+              .toList(),
+          onChanged: (v) => setState(() => _ageGroup = v),
+        )),
+      ]),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _affiliationCtrl,
+        decoration: _decor('School / office / organization (optional)'),
         style: const TextStyle(fontSize: 13),
       ),
       const SizedBox(height: 20),

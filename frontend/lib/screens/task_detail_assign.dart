@@ -1,40 +1,75 @@
 part of 'task_detail_screen.dart';
 
-class _AssignSection extends StatefulWidget {
+/// Everyone assigned to the task with their submission status. Picking someone
+/// who has a report opens it in the review panel; assigners can add/remove.
+class _AssigneesCard extends StatefulWidget {
   final int taskId;
   final List<User> assignedUsers;
-  final VoidCallback onAssigned;
+  final String title;
+  /// Everyone on the task (the list above may show only the viewer's team);
+  /// the Assign dialog leaves all of them out.
+  final List<User> allAssigned;
+  final bool canEdit;
+  final (String, Color, Color) Function(User) statusFor;
+  final bool Function(User) hasReport;
+  final int? selectedUserId;
+  final ValueChanged<User> onSelect;
+  final VoidCallback onChanged;
 
-  const _AssignSection({
+  const _AssigneesCard({
     required this.taskId,
     required this.assignedUsers,
-    required this.onAssigned,
+    this.title = 'Assigned personnel',
+    this.allAssigned = const [],
+    required this.canEdit,
+    required this.statusFor,
+    required this.hasReport,
+    required this.selectedUserId,
+    required this.onSelect,
+    required this.onChanged,
   });
 
   @override
-  State<_AssignSection> createState() => _AssignSectionState();
+  State<_AssigneesCard> createState() => _AssigneesCardState();
 }
 
-class _AssignSectionState extends State<_AssignSection> {
+class _AssigneesCardState extends State<_AssigneesCard> {
   void _openAssignDialog() async {
     final result = await showDialog<bool>(
       context: context,
       builder: (_) => _AssignDialog(
         taskId: widget.taskId,
-        alreadyAssigned: widget.assignedUsers,
+        alreadyAssigned: widget.allAssigned.isEmpty ? widget.assignedUsers : widget.allAssigned,
       ),
     );
-    if (result == true) widget.onAssigned();
+    if (result == true) widget.onChanged();
   }
 
-  Future<void> _unassign(int userId) async {
+  Future<void> _unassign(User u) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Remove ${u.fullName}?'),
+        content: const Text('They will no longer see this task. Anything they already '
+            'submitted stays on record.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep assigned')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.redColor),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Remove ${u.fullName.split(' ').first}'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
     try {
-      await ApiService.unassignTask(widget.taskId, userId);
-      widget.onAssigned();
+      await ApiService.unassignTask(widget.taskId, u.id);
+      widget.onChanged();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e.toString()),
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
           backgroundColor: AppTheme.redColor,
         ));
       }
@@ -43,90 +78,100 @@ class _AssignSectionState extends State<_AssignSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderColor),
+    final users = widget.assignedUsers;
+    return _DetailCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Text(widget.title, style: GoogleFonts.plusJakartaSans(
+              fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+          const SizedBox(width: 8),
+          _Pill('${users.length}', fg: AppTheme.textMuted, bg: const Color(0xFFF1F5F9)),
+          const Spacer(),
+          if (widget.canEdit)
+            FilledButton.icon(
+              onPressed: _openAssignDialog,
+              icon: const Icon(Icons.person_add_alt_1_outlined, size: 16),
+              label: const Text('Assign'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.darkBanner,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+        ]),
+        const SizedBox(height: 12),
+        if (users.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('No one is assigned yet.', style: AppTheme.bodyMd),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.borderColor),
+            ),
+            child: Column(children: [
+              for (var i = 0; i < users.length; i++) ...[
+                if (i > 0) const Divider(height: 1, color: Color(0xFFF0F2F6)),
+                _row(users[i], first: i == 0, last: i == users.length - 1),
+              ],
+            ]),
+          ),
+      ]),
+    );
+  }
+
+  Widget _row(User u, {required bool first, required bool last}) {
+    final (label, fg, bg) = widget.statusFor(u);
+    final selectable = widget.hasReport(u);
+    final selected = widget.selectedUserId == u.id;
+    final role = u.roleLabel;
+    final sub = [role, if (u.gradeLevel != null) u.gradeLevel!].join(' · ');
+    return Material(
+      color: selected ? const Color(0xFFEFF6FF) : Colors.transparent,
+      borderRadius: BorderRadius.vertical(
+        top: first ? const Radius.circular(10) : Radius.zero,
+        bottom: last ? const Radius.circular(10) : Radius.zero,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text('Assigned To', style: AppTheme.heading3),
-              const Spacer(),
-              OutlinedButton.icon(
-                onPressed: _openAssignDialog,
-                icon: const Icon(Icons.person_add_outlined, size: 16),
-                label: const Text('Assign'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.accentBlue,
-                  side: const BorderSide(color: AppTheme.accentBlue),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
+      child: InkWell(
+        onTap: selectable ? () => widget.onSelect(u) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(children: [
+            CircleAvatar(
+              radius: 17,
+              backgroundColor: AppTheme.sidebarActive,
+              child: Text(u.initials, style: const TextStyle(
+                  color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(u.fullName, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+              Text(sub, style: AppTheme.caption),
+            ])),
+            _Pill(label, fg: fg, bg: bg),
+            if (selectable) ...[
+              const SizedBox(width: 4),
+              Tooltip(
+                message: 'View ${u.fullName.split(' ').first}\'s report',
+                child: Icon(Icons.chevron_right_rounded,
+                    color: selected ? AppTheme.accentBlue : AppTheme.textLight),
               ),
             ],
-          ),
-          if (widget.assignedUsers.isEmpty) ...[
-            const SizedBox(height: 8),
-            Text('No one assigned yet', style: AppTheme.bodyMd),
-          ] else ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: widget.assignedUsers.map((u) => _UserChip(
-                user: u,
-                onRemove: () => _unassign(u.id),
-              )).toList(),
-            ),
-          ],
-        ],
+            if (widget.canEdit)
+              IconButton(
+                tooltip: 'Remove ${u.fullName}',
+                onPressed: () => _unassign(u),
+                icon: const Icon(Icons.person_remove_outlined, size: 18, color: AppTheme.textMuted),
+                visualDensity: VisualDensity.compact,
+              ),
+          ]),
+        ),
       ),
     );
   }
-}
-
-class _UserChip extends StatelessWidget {
-  final User user;
-  final VoidCallback? onRemove;
-  const _UserChip({required this.user, this.onRemove});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: EdgeInsets.only(left: 8, right: onRemove != null ? 4 : 8, top: 5, bottom: 5),
-        decoration: BoxDecoration(
-          color: AppTheme.blueBg,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 10,
-              backgroundColor: AppTheme.sidebarActive,
-              child: Text(user.initials,
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
-            ),
-            const SizedBox(width: 6),
-            Text(user.fullName,
-                style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.accentBlue)),
-            if (onRemove != null) ...[
-              const SizedBox(width: 4),
-              GestureDetector(
-                onTap: onRemove,
-                child: const Icon(Icons.close_rounded, size: 14, color: AppTheme.accentBlue),
-              ),
-            ],
-          ],
-        ),
-      );
 }
 
 // ── Assign Dialog ──────────────────────────────────────────────────────────────
@@ -147,16 +192,26 @@ class _AssignDialogState extends State<_AssignDialog> {
   bool _loading = true;
   bool _submitting = false;
   String? _error;
+  late final List<String> _roleOptions;
+  late String _targetRole;
 
   @override
   void initState() {
     super.initState();
+    _roleOptions = assignableRoles(context.read<AppState>().userRole);
+    _targetRole = _roleOptions.first;
+    _loadUsers();
+  }
+
+  void _setRole(String r) {
+    if (r == _targetRole) return;
+    setState(() { _targetRole = r; _selected.clear(); _loading = true; });
     _loadUsers();
   }
 
   Future<void> _loadUsers() async {
     try {
-      final users = await ApiService.getAssignableUsers();
+      final users = await ApiService.getAssignableUsers(targetRole: _targetRole);
       final assignedIds = widget.alreadyAssigned.map((u) => u.id).toSet();
       if (mounted) {
         setState(() {
@@ -173,7 +228,7 @@ class _AssignDialogState extends State<_AssignDialog> {
     if (_selected.isEmpty) return;
     setState(() => _submitting = true);
     try {
-      await ApiService.assignTask(widget.taskId, _selected.toList());
+      await ApiService.assignTask(widget.taskId, _selected.toList(), targetRole: _targetRole);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -191,8 +246,8 @@ class _AssignDialogState extends State<_AssignDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        width: 400,
-        constraints: const BoxConstraints(maxHeight: 520),
+        width: 460,
+        constraints: const BoxConstraints(maxHeight: 600),
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -208,7 +263,13 @@ class _AssignDialogState extends State<_AssignDialog> {
             const SizedBox(height: 4),
             Text('Select personnel to assign this task to',
                 style: AppTheme.bodySm),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
+            if (_roleOptions.length > 1) ...[
+              Text('Assign as', style: AppTheme.labelSm),
+              const SizedBox(height: 6),
+              AssignRoleSelector(options: _roleOptions, value: _targetRole, onChanged: _setRole),
+              const SizedBox(height: 14),
+            ],
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator(color: AppTheme.accentBlue))

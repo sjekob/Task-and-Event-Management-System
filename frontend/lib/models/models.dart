@@ -36,6 +36,81 @@ class UserSubject {
       );
 }
 
+List<String> _stringList(dynamic v) =>
+    (v as List? ?? []).map((e) => e.toString()).toList();
+
+/// DepEd-aligned educational background (EDUCATION_BACKGROUND).
+class Education {
+  final String? highestAttainment;
+  final String? undergraduateDegree;
+  final String? specialization;
+  final String? postgraduateFocus;
+
+  const Education({
+    this.highestAttainment,
+    this.undergraduateDegree,
+    this.specialization,
+    this.postgraduateFocus,
+  });
+
+  factory Education.fromJson(Map<String, dynamic>? json) => Education(
+        highestAttainment: json?['highest_attainment']?.toString(),
+        undergraduateDegree: json?['undergraduate_degree']?.toString(),
+        specialization: json?['specialization']?.toString(),
+        postgraduateFocus: json?['postgraduate_focus']?.toString(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        // Empty string clears a field server-side.
+        'highest_attainment': highestAttainment ?? '',
+        'undergraduate_degree': undergraduateDegree ?? '',
+        'specialization': specialization ?? '',
+        'postgraduate_focus': postgraduateFocus ?? '',
+      };
+
+  bool get isEmpty =>
+      highestAttainment == null &&
+      undergraduateDegree == null &&
+      specialization == null &&
+      postgraduateFocus == null;
+}
+
+/// A skill held by a person, with its taxonomy category.
+class SkillInfo {
+  final String name;
+  final String? category;
+  const SkillInfo({required this.name, this.category});
+
+  factory SkillInfo.fromJson(Map<String, dynamic> json) => SkillInfo(
+        name: (json['name'] ?? '').toString(),
+        category: json['category']?.toString(),
+      );
+}
+
+/// A certification held by a person, with its category and accrediting body.
+class CertificationInfo {
+  final String name;
+  final String? category;
+  final String? issuer;
+  final String? issuerAcronym;
+  const CertificationInfo(
+      {required this.name, this.category, this.issuer, this.issuerAcronym});
+
+  factory CertificationInfo.fromJson(Map<String, dynamic> json) =>
+      CertificationInfo(
+        name: (json['name'] ?? '').toString(),
+        category: json['category']?.toString(),
+        issuer: json['issuer']?.toString(),
+        issuerAcronym: json['issuer_acronym']?.toString(),
+      );
+
+  /// Short issuer label, e.g. "PRC" or "Philippine Red Cross".
+  String? get issuerLabel => issuerAcronym ?? issuer;
+}
+
+List<T> _objList<T>(dynamic v, T Function(Map<String, dynamic>) parse) =>
+    (v as List? ?? []).map((e) => parse(e as Map<String, dynamic>)).toList();
+
 class User {
   final int id;
   final String username;
@@ -50,10 +125,12 @@ class User {
   final String? gradeLevel;
   final String? email;
   final String? phoneNumber;
-  final String? tin;
-  final String? qsis;
-  final String? hdmf;
-  final String? phic;
+  final int numberOfChildren;
+  final List<String> skills;
+  final List<String> certifications;
+  final List<SkillInfo> skillDetails;
+  final List<CertificationInfo> certificationDetails;
+  final Education education;
   final String? dateOfAppointment;
   final String? birthdate;
   final String? address;
@@ -80,10 +157,12 @@ class User {
     this.gradeLevel,
     this.email,
     this.phoneNumber,
-    this.tin,
-    this.qsis,
-    this.hdmf,
-    this.phic,
+    this.numberOfChildren = 0,
+    this.skills = const [],
+    this.certifications = const [],
+    this.skillDetails = const [],
+    this.certificationDetails = const [],
+    this.education = const Education(),
     this.dateOfAppointment,
     this.birthdate,
     this.address,
@@ -118,10 +197,13 @@ class User {
       gradeLevel: json['grade_level']?.toString(),
       email: json['email']?.toString(),
       phoneNumber: json['phone_number']?.toString(),
-      tin: json['tin']?.toString(),
-      qsis: json['qsis']?.toString(),
-      hdmf: json['hdmf']?.toString(),
-      phic: json['phic']?.toString(),
+      numberOfChildren: (json['number_of_children'] as num?)?.toInt() ?? 0,
+      skills: _stringList(json['skills']),
+      certifications: _stringList(json['certifications']),
+      skillDetails: _objList(json['skill_details'], SkillInfo.fromJson),
+      certificationDetails:
+          _objList(json['certification_details'], CertificationInfo.fromJson),
+      education: Education.fromJson(json['education'] as Map<String, dynamic>?),
       dateOfAppointment: json['date_of_appointment']?.toString(),
       birthdate: json['birthdate']?.toString(),
       address: json['address']?.toString(),
@@ -162,6 +244,44 @@ class User {
       default:            return 'Teacher';
     }
   }
+}
+
+/// An assignable person ranked for a task by POST /api/users/assignable/suggestions.
+/// Specialization, certifications, skills and education fitting the task raise
+/// [score]; number of children and open workload lower it. [reasons] explains
+/// the fit and [loadFactors] what lowered the rank.
+class AssigneeSuggestion {
+  final User user;
+  final double score;
+  final bool isMatch;
+  final List<String> reasons;
+  final List<String> loadFactors;
+  final List<String> matchedSkills;
+  final List<String> matchedCertifications;
+  final int openTasks;
+
+  AssigneeSuggestion({
+    required this.user,
+    required this.score,
+    required this.isMatch,
+    this.reasons = const [],
+    this.loadFactors = const [],
+    this.matchedSkills = const [],
+    this.matchedCertifications = const [],
+    this.openTasks = 0,
+  });
+
+  factory AssigneeSuggestion.fromJson(Map<String, dynamic> json) =>
+      AssigneeSuggestion(
+        user: User.fromJson(json),
+        score: (json['score'] as num?)?.toDouble() ?? 0,
+        isMatch: json['is_match'] == true,
+        reasons: _stringList(json['reasons']),
+        loadFactors: _stringList(json['load_factors']),
+        matchedSkills: _stringList(json['matched_skills']),
+        matchedCertifications: _stringList(json['matched_certifications']),
+        openTasks: (json['open_tasks'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class TaskFile {
@@ -319,6 +439,13 @@ class Task {
   final int? teamTotal;
   final int? teamSubmitted;
   final List<Report> reports;
+  /// Assignees who have submitted (task log or report), for reviewers.
+  final Set<int> submittedAssigneeIds;
+  /// Who assigned each assignee (user id → assigner id).
+  final Map<int, int?> assignedByOf;
+  /// Whose progress teamTotal/teamSubmitted cover: 'all' assignees (task
+  /// creator, principal/admin) or 'mine' (people the viewer assigned).
+  final String? teamScope;
 
   Task({
     required this.id,
@@ -343,14 +470,22 @@ class Task {
     this.teamTotal,
     this.teamSubmitted,
     required this.reports,
+    this.submittedAssigneeIds = const {},
+    this.assignedByOf = const {},
+    this.teamScope,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
     List<User> assignedUsers = [];
+    final submittedIds = <int>{};
+    final assignedBy = <int, int?>{};
     try {
-      assignedUsers = (json['assigned_users'] as List? ?? [])
-          .map((u) => User.fromJson(u as Map<String, dynamic>))
-          .toList();
+      final raw = (json['assigned_users'] as List? ?? []).cast<Map<String, dynamic>>();
+      assignedUsers = raw.map(User.fromJson).toList();
+      for (final u in raw) {
+        if (u['submitted'] == true || u['submitted'] == 1) submittedIds.add(u['id'] as int);
+        assignedBy[u['id'] as int] = u['assigned_by'] as int?;
+      }
     } catch (_) {}
 
     List<Comment> publicComments = [];
@@ -404,11 +539,36 @@ class Task {
       teamTotal: (json['team_total'] ?? json['teacher_total']) as int?,
       teamSubmitted: (json['team_submitted'] ?? json['teacher_submitted']) as int?,
       reports: reports,
+      submittedAssigneeIds: submittedIds,
+      assignedByOf: assignedBy,
+      teamScope: json['team_scope']?.toString(),
     );
   }
 
   bool get isSubmitted =>
       submissionStatus == 'submitted' || myReport != null;
+
+  /// When the task is due: [endDate] at [dueTime] ('5:00 PM'), or the end of
+  /// [endDate] when no time is set. Mirrors task_deadline in the backend
+  /// (date_utils.py) so the dashboard and My Tasks agree on "overdue".
+  DateTime? get deadline {
+    final end = endDate;
+    if (end == null || end.isEmpty) return null;
+    final d = DateTime.tryParse(end.length >= 10 ? end.substring(0, 10) : end);
+    if (d == null) return null;
+    final m = RegExp(r'^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$')
+        .firstMatch((dueTime ?? '').trim());
+    if (m == null) return DateTime(d.year, d.month, d.day, 23, 59, 59);
+    var h = int.parse(m.group(1)!) % 12;
+    if (m.group(3)!.toUpperCase() == 'PM') h += 12;
+    return DateTime(d.year, d.month, d.day, h, int.parse(m.group(2)!));
+  }
+
+  /// Unsubmitted and past its deadline.
+  bool get isOverdue {
+    final dl = deadline;
+    return !isSubmitted && dl != null && dl.isBefore(DateTime.now());
+  }
 }
 
 class TaskTemplate {
@@ -461,6 +621,8 @@ class DashboardData {
   final List<Task> taskManagerTasks;
   final List<Task> myTasks;
   final List<Map<String, dynamic>> events;
+  final int eventsTotal;
+  final Set<DateTime> deadlineDates; // days with open task deadlines
 
   DashboardData({
     required this.pending,
@@ -470,6 +632,8 @@ class DashboardData {
     required this.taskManagerTasks,
     required this.myTasks,
     required this.events,
+    this.eventsTotal = 0,
+    this.deadlineDates = const {},
   });
 
   factory DashboardData.fromJson(Map<String, dynamic> json) {
@@ -495,6 +659,12 @@ class DashboardData {
       taskManagerTasks: tmTasks,
       myTasks: myTasks,
       events: List<Map<String, dynamic>>.from(json['events'] ?? []),
+      eventsTotal: json['events_total'] ?? 0,
+      deadlineDates: {
+        for (final d in (json['deadline_dates'] as List? ?? []))
+          if (DateTime.tryParse(d.toString()) != null)
+            DateTime.parse(d.toString()),
+      },
     );
   }
 }
@@ -596,6 +766,8 @@ class EventForAppraisal {
   final String? department;
   final int? expectedAttendees;
   final List<EventEvaluation> evaluations;
+  /// Evaluator breakdown: {total, by_role, by_sex, by_age_group} (counts).
+  final Map<String, dynamic> demographics;
 
   EventForAppraisal({
     required this.id,
@@ -608,6 +780,7 @@ class EventForAppraisal {
     this.department,
     this.expectedAttendees,
     this.evaluations = const [],
+    this.demographics = const {},
   });
 
   factory EventForAppraisal.fromJson(Map<String, dynamic> json) {
@@ -626,6 +799,7 @@ class EventForAppraisal {
       department: json['department']?.toString(),
       expectedAttendees: json['expected_attendees'] as int?,
       evaluations: evals,
+      demographics: Map<String, dynamic>.from(json['demographics'] as Map? ?? {}),
     );
   }
 
@@ -685,4 +859,99 @@ class EventEvaluation {
   double get average =>
       (planningScore + objectivesScore + personnelScore +
        timeMgmtScore + engagementScore + resourceScore) / 6.0;
+}
+
+
+// ── School calendar ───────────────────────────────────────────────────────────
+
+/// A term (e.g. "1st Quarter") inside a school year.
+class SchoolTerm {
+  final int id;
+  final String name;
+  final String startDate;
+  final String endDate;
+  final String status; // current | upcoming | archived
+  const SchoolTerm({required this.id, required this.name, required this.startDate,
+      required this.endDate, this.status = 'upcoming'});
+
+  factory SchoolTerm.fromJson(Map<String, dynamic> j) => SchoolTerm(
+        id: j['id'] ?? 0,
+        name: (j['name'] ?? '').toString(),
+        startDate: (j['start_date'] ?? '').toString(),
+        endDate: (j['end_date'] ?? '').toString(),
+        status: (j['status'] ?? 'upcoming').toString(),
+      );
+}
+
+/// A school year set by the principal; records dated in years that have ended
+/// are archived.
+class SchoolYear {
+  final int id;
+  final String name;
+  final String startDate;
+  final String endDate;
+  final String status; // current | upcoming | archived
+  final bool isDefault; // what "current" resolves to
+  final List<SchoolTerm> terms;
+  const SchoolYear({required this.id, required this.name, required this.startDate,
+      required this.endDate, this.status = 'upcoming', this.isDefault = false,
+      this.terms = const []});
+
+  factory SchoolYear.fromJson(Map<String, dynamic> j) => SchoolYear(
+        id: j['id'] ?? 0,
+        name: (j['name'] ?? '').toString(),
+        startDate: (j['start_date'] ?? '').toString(),
+        endDate: (j['end_date'] ?? '').toString(),
+        status: (j['status'] ?? 'upcoming').toString(),
+        isDefault: j['is_selected_default'] == true,
+        terms: (j['terms'] as List? ?? [])
+            .map((t) => SchoolTerm.fromJson(t as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+/// Which school year (and optionally term) a list is showing.
+class SchoolYearFilter {
+  final String schoolYear; // 'current' | 'all' | '<id>'
+  final int? termId;
+  const SchoolYearFilter({this.schoolYear = 'current', this.termId});
+  static const current = SchoolYearFilter();
+
+  Map<String, String> get query => {
+        if (schoolYear != 'current') 'school_year': schoolYear,
+        if (termId != null) 'term_id': '$termId',
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is SchoolYearFilter && other.schoolYear == schoolYear && other.termId == termId;
+  @override
+  int get hashCode => Object.hash(schoolYear, termId);
+}
+
+// ── Appraisal badges ──────────────────────────────────────────────────────────
+
+class AppraisalBadge {
+  final String code;
+  final String name;
+  final String description;
+  final String icon;
+  final String? tier; // bronze | silver | gold
+  final bool earned;
+  final int progress;
+  final int target;
+  const AppraisalBadge({required this.code, required this.name, required this.description,
+      required this.icon, this.tier, required this.earned, required this.progress,
+      required this.target});
+
+  factory AppraisalBadge.fromJson(Map<String, dynamic> j) => AppraisalBadge(
+        code: (j['code'] ?? '').toString(),
+        name: (j['name'] ?? '').toString(),
+        description: (j['description'] ?? '').toString(),
+        icon: (j['icon'] ?? '').toString(),
+        tier: j['tier']?.toString(),
+        earned: j['earned'] == true,
+        progress: (j['progress'] as num?)?.toInt() ?? 0,
+        target: (j['target'] as num?)?.toInt() ?? 1,
+      );
 }

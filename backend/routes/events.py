@@ -5,8 +5,20 @@ from typing import Optional
 from database import get_db, create_notification
 from auth import get_current_user, require_admin_or_principal, require_event_manager
 from date_utils import parse_event_date
+from school_calendar import resolve_window, in_window
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
+
+
+def _date_conflicts(db, d, exclude_id=None) -> list:
+    """Live (pending/approved) events already on calendar day `d`."""
+    rows = db.execute(
+        "SELECT id, title, target_date, venue, status FROM events "
+        "WHERE status IN ('pending_approval','approved')"
+    ).fetchall()
+    return [dict(r) for r in rows
+            if not (exclude_id and r["id"] == exclude_id)
+            and parse_event_date(r["target_date"]) == d]
 
 
 def _validate_target_date(db, target_date, exclude_id=None):
@@ -18,15 +30,13 @@ def _validate_target_date(db, target_date, exclude_id=None):
         return
     if d < date.today():
         raise HTTPException(400, "That target date has already passed — please choose a future date.")
-    rows = db.execute(
-        "SELECT id, target_date FROM events WHERE status IN ('pending_approval','approved')"
-    ).fetchall()
-    for r in rows:
-        if exclude_id and r["id"] == exclude_id:
-            continue
-        if parse_event_date(r["target_date"]) == d:
-            raise HTTPException(
-                409, f"Another event is already scheduled on {d.isoformat()} — please pick a different date.")
+    clash = _date_conflicts(db, d, exclude_id)
+    if clash:
+        c = clash[0]
+        state = "approved" if c["status"] == "approved" else "pending approval"
+        raise HTTPException(
+            409, f"\"{c['title']}\" ({state}) is already scheduled on {d.isoformat()} — "
+                 "please pick a different date.")
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -42,6 +52,29 @@ def _event_row(row, db):
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+@router.get("/date-check")
+def check_event_date(target_date: str, exclude_id: Optional[int] = None,
+                     db=Depends(get_db), user=Depends(get_current_user)):
+    """Conflict check for the proposal form, run as soon as a date is picked.
+    Same rules the create/update endpoints enforce."""
+    d = parse_event_date(target_date)
+    if d is None:
+        return {"date": None, "available": True, "past": False, "conflicts": [],
+                "message": None}
+    past = d < date.today()
+    conflicts = _date_conflicts(db, d, exclude_id)
+    if past:
+        message = "That date has already passed."
+    elif conflicts:
+        c = conflicts[0]
+        message = (f"\"{c['title']}\" is already scheduled on this date "
+                   f"({'approved' if c['status'] == 'approved' else 'pending approval'}).")
+    else:
+        message = None
+    return {"date": d.isoformat(), "available": not past and not conflicts,
+            "past": past, "conflicts": conflicts, "message": message}
+
 
 @router.get("/{event_id}")
 def get_event(event_id: int, db=Depends(get_db), user=Depends(get_current_user)):
@@ -83,12 +116,20 @@ CREATE_STATUSES = ('draft', 'pending_approval')
 
 
 @router.get("")
-def list_events(db=Depends(get_db), user=Depends(get_current_user)):
+def list_events(db=Depends(get_db), user=Depends(get_current_user),
+                school_year: str = "current", term_id: Optional[int] = None):
     uid = int(user["sub"])
     role = user["role"]
+    try:
+        window = resolve_window(db, school_year, term_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     rows = db.execute("SELECT * FROM events ORDER BY created_at DESC").fetchall()
     result = []
     for r in rows:
+        # Only the selected school year (default: current), by target date.
+        if not in_window(window, r["target_date"], r["created_at"]):
+            continue
         status = r["status"]
         is_mine = r["created_by"] == uid
         can_see_all_pending = role in ("principal", "admin")
@@ -224,8 +265,11 @@ def disable_event(event_id: int, db=Depends(get_db), user=Depends(require_event_
 
 @router.patch("/{event_id}/enable")
 def enable_event(event_id: int, db=Depends(get_db), user=Depends(require_event_manager)):
-    if not db.execute("SELECT id FROM events WHERE id=?", (event_id,)).fetchone():
+    row = db.execute("SELECT id, target_date FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
         raise HTTPException(404, "Event not found")
+    # Re-enabling puts it back on the calendar, so the date must still be free.
+    _validate_target_date(db, row["target_date"], exclude_id=event_id)
     db.execute("UPDATE events SET status='pending_approval' WHERE id=?", (event_id,))
     db.commit()
     return {"message": "Event re-enabled"}

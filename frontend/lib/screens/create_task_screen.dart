@@ -8,6 +8,8 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
+import '../widgets/assign_picker_dialog.dart';
+import '../widgets/assign_role_selector.dart';
 
 part 'create_task_screen_widgets.dart';
 
@@ -40,16 +42,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _submitting = false;
 
   // Which target identities the current creator may assign to.
-  List<String> _targetRoleOptions(String creatorRole) {
-    switch (creatorRole) {
-      case 'admin':
-      case 'principal':  return ['teacher', 'dean', 'coordinator', 'registrar'];
-      case 'coordinator': return ['teacher', 'dean'];
-      case 'registrar':   return ['teacher', 'dean'];
-      case 'dean':        return ['teacher'];
-      default:            return ['teacher'];
-    }
-  }
+  List<String> _targetRoleOptions(String creatorRole) => assignableRoles(creatorRole);
 
   final List<Map<String, String>> _attachments = [];
 
@@ -130,10 +123,17 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     if (_loadingUsers || _allAssignable.isEmpty) return;
     await showDialog(
       context: context,
-      builder: (_) => _AssignPickerSheet(
+      builder: (_) => AssignPickerDialog(
         users: _allAssignable,
         selected: _selectedIds,
         onChanged: (ids) => setState(() { _selectedIds.clear(); _selectedIds.addAll(ids); }),
+        loadSuggestions: () => ApiService.getAssigneeSuggestions(
+          targetRole: _targetRole,
+          title: _titleCtrl.text,
+          subject: _subjectCtrl.text,
+          instructions: _instrCtrl.text,
+          taskCategory: _taskCategory,
+        ),
       ),
     );
   }

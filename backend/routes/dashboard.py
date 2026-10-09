@@ -1,19 +1,56 @@
 from fastapi import APIRouter, Depends
 from database import connect_db
 from auth import get_current_user, TASK_CREATORS
+from date_utils import is_overdue, task_deadline
+from school_calendar import resolve_window, task_in_window, in_window
 
 router = APIRouter(tags=["Dashboard"])
 
-# Shared across every role's dashboard.
-_RECENT_EVENTS = "SELECT * FROM activity_events ORDER BY event_date DESC LIMIT 5"
-_MY_ACTIVE_TASKS = (
-    "SELECT t.* FROM tasks t JOIN task_assignments ta ON ta.task_id=t.id "
-    "WHERE ta.user_id=? AND t.status='active' ORDER BY t.end_date LIMIT 5"
-)
+# Everything on the dashboard is derived from the same data — and the same
+# rules — as the pages it summarizes:
+#
+#   * stat cards / My Task  → My Tasks + My Special Tasks: active tasks assigned
+#     to the identity (role) the user is logged in as. An assignment is
+#     "submitted" once a task_log entry or report exists (Task.isSubmitted),
+#     "missing" when unsubmitted past its deadline (the overdue flag on My
+#     Tasks), and "pending" otherwise.
+#   * Task Manager          → active tasks the user created, with how many
+#     assignees have submitted (task creators only).
+#   * Pending Approval      → the Events module: proposals awaiting approval —
+#     every one for approvers (principal/admin), otherwise the user's own.
+#
+# Principal/admin have no My Tasks page, so their stat cards summarize the
+# assignments on the tasks they created instead.
+
+_APPROVERS = ("principal", "admin")
+
+_SUBMITTED = """(EXISTS (SELECT 1 FROM task_log tl
+                         WHERE tl.task_id=ta.task_id AND tl.personnel_id=ta.user_id)
+              OR EXISTS (SELECT 1 FROM reports r
+                         WHERE r.task_id=ta.task_id AND r.personnel_id=ta.user_id))"""
 
 
-def _count(db, sql, params):
-    return db.execute(sql, params).fetchone()["c"]
+def _assignments(db, where: str, params, window) -> list:
+    """Active-task assignments matching `where` in the school-year window, each
+    with its task's deadline fields and whether that assignee has submitted."""
+    return [dict(r) for r in db.execute(
+        f"""SELECT t.*, ta.user_id AS assignee_id, {_SUBMITTED} AS is_submitted
+            FROM task_assignments ta JOIN tasks t ON t.id = ta.task_id
+            WHERE t.status='active' AND {where}""", params).fetchall()
+        if task_in_window(window, r)]
+
+
+def _tally(rows: list) -> dict:
+    submitted = sum(1 for r in rows if r["is_submitted"])
+    missing = sum(1 for r in rows
+                  if not r["is_submitted"] and is_overdue(r["end_date"], r["due_time"]))
+    return {"submitted": submitted, "missing": missing,
+            "pending": len(rows) - submitted - missing, "total_tasks": len(rows)}
+
+
+def _by_deadline(task: dict):
+    dl = task_deadline(task.get("end_date"), task.get("due_time"))
+    return (dl is None, dl or 0, -task["id"])
 
 
 @router.get("/api/dashboard")
@@ -22,61 +59,59 @@ def dashboard(user=Depends(get_current_user)):
     try:
         uid = int(user["sub"])
         role = user["role"]
+        # Like the pages it summarizes, the dashboard covers the current school
+        # year; earlier years are archived.
+        window = resolve_window(db, "current")
+
+        # The user's own assigned work, for the identity they are logged in as
+        # (same filter as GET /api/tasks?assigned=1).
+        mine = _assignments(db, "ta.user_id=? AND (ta.target_role=? OR ta.target_role IS NULL)",
+                            (uid, role), window)
+        my_tasks = sorted((r for r in mine if not r["is_submitted"]), key=_by_deadline)[:5]
+
         task_manager_tasks = []
-        my_tasks = []
-
+        team = []
         if role in TASK_CREATORS or role == "admin":
-            # Creators see the tasks they authored and submissions against them.
-            total_tasks = _count(db, "SELECT COUNT(*) as c FROM tasks WHERE created_by=?", (uid,))
-            submitted = _count(db,
-                "SELECT COUNT(*) as c FROM task_log tl "
-                "JOIN tasks t ON t.id=tl.task_id WHERE t.created_by=?", (uid,))
-            pending = _count(db,
-                "SELECT COUNT(*) as c FROM submission_log sl "
-                "WHERE sl.receiver_personnel_id=? AND sl.status='Pending'", (uid,))
-            missing = _count(db,
-                "SELECT COUNT(*) as c FROM reports r JOIN tasks t ON t.id=r.task_id "
-                "WHERE t.created_by=? AND r.report_status='Missing'", (uid,))
-            task_manager_tasks = db.execute(
-                "SELECT * FROM tasks WHERE created_by=? ORDER BY created_at DESC LIMIT 5", (uid,)
+            team = _assignments(db, "t.created_by=?", (uid,), window)
+            created = [r for r in db.execute(
+                "SELECT * FROM tasks WHERE created_by=? AND status='active'", (uid,)
+            ).fetchall() if task_in_window(window, r)]
+            for t in sorted((dict(r) for r in created), key=_by_deadline)[:5]:
+                rows = [r for r in team if r["id"] == t["id"]]
+                t["team_total"] = len(rows)
+                t["team_submitted"] = sum(1 for r in rows if r["is_submitted"])
+                task_manager_tasks.append(t)
+
+        stats = _tally(team if role in _APPROVERS else mine)
+
+        if role in _APPROVERS:
+            events = db.execute(
+                "SELECT * FROM events WHERE status='pending_approval' ORDER BY created_at DESC"
             ).fetchall()
-
-        elif role in ("coordinator", "dean"):
-            # Assigners see what they delegated plus their own assigned work.
-            total_tasks = _count(db, "SELECT COUNT(*) as c FROM task_assignments WHERE user_id=?", (uid,))
-            submitted = _count(db,
-                "SELECT COUNT(*) as c FROM task_log tl "
-                "JOIN task_assignments ta ON ta.task_id=tl.task_id AND ta.user_id=tl.personnel_id "
-                "WHERE ta.assigned_by=?", (uid,))
-            pending = _count(db,
-                "SELECT COUNT(*) as c FROM submission_log "
-                "WHERE receiver_personnel_id=? AND status='Pending'", (uid,))
-            missing = _count(db,
-                "SELECT COUNT(*) as c FROM reports r "
-                "JOIN task_assignments ta ON ta.task_id=r.task_id AND ta.user_id=r.personnel_id "
-                "WHERE ta.assigned_by=? AND r.report_status='Missing'", (uid,))
-            my_tasks = db.execute(_MY_ACTIVE_TASKS, (uid,)).fetchall()
-
         else:
-            # Submitters (teacher/registrar) see only their own assigned work.
-            submitted = _count(db, "SELECT COUNT(*) as c FROM task_log WHERE personnel_id=?", (uid,))
-            pending = _count(db,
-                "SELECT COUNT(*) as c FROM task_assignments ta WHERE ta.user_id=? "
-                "AND NOT EXISTS (SELECT 1 FROM task_log tl "
-                "WHERE tl.task_id=ta.task_id AND tl.personnel_id=?)", (uid, uid))
-            missing = _count(db,
-                "SELECT COUNT(*) as c FROM reports "
-                "WHERE personnel_id=? AND report_status='Missing'", (uid,))
-            my_tasks = db.execute(_MY_ACTIVE_TASKS, (uid,)).fetchall()
-            total_tasks = submitted + pending
+            events = db.execute(
+                "SELECT * FROM events WHERE status='pending_approval' AND created_by=? "
+                "ORDER BY created_at DESC", (uid,)
+            ).fetchall()
+        events = [e for e in events if in_window(window, e["target_date"], e["created_at"])]
 
-        events = db.execute(_RECENT_EVENTS).fetchall()
+        # Calendar markers: every open deadline behind the lists above.
+        deadline_dates = sorted({
+            dl.date().isoformat()
+            for r in [*mine, *team] if not r["is_submitted"]
+            if (dl := task_deadline(r["end_date"], r["due_time"]))
+        })
+
+        for r in my_tasks:
+            r.pop("assignee_id", None)
+            r.pop("is_submitted", None)
         return {
-            "total_tasks": total_tasks, "submitted": submitted,
-            "pending": pending, "missing": missing,
-            "task_manager_tasks": [dict(t) for t in task_manager_tasks],
-            "my_tasks": [dict(t) for t in my_tasks],
-            "events": [dict(e) for e in events],
+            **stats,
+            "task_manager_tasks": task_manager_tasks,
+            "my_tasks": my_tasks,
+            "events": [dict(e) for e in events[:5]],
+            "events_total": len(events),
+            "deadline_dates": deadline_dates,
         }
     finally:
         db.close()

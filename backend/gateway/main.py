@@ -3,7 +3,8 @@ Routes all incoming requests to the correct microservice.
 Run from backend/: uvicorn gateway.main:app --port 8000
 
 Service map:
-  8001  auth       /api/auth, /api/users, /api/subjects, /api/grade-levels, /api/task-types
+  8001  auth       /api/auth, /api/users, /api/subjects, /api/grade-levels, /api/task-types,
+                   /api/school-years, /api/notifications
   8002  personnel  /api/personnel
   8003  tasks      /api/tasks, /api/templates, /api/reports, /api/comments, /uploads
   8004  events     /api/events
@@ -30,6 +31,8 @@ APPRAISAL_URL  = os.getenv("APPRAISAL_SERVICE_URL",   "http://localhost:8005")
 ROUTE_MAP: list[tuple[str, str]] = [
     ("/api/auth",        AUTH_URL),
     ("/api/users",       AUTH_URL),
+    ("/api/school-years", AUTH_URL),
+    ("/api/notifications", AUTH_URL),
     ("/api/subjects",    AUTH_URL),
     ("/api/grade-levels", AUTH_URL),
     ("/api/task-types",  AUTH_URL),

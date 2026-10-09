@@ -1,7 +1,9 @@
 import 'package:flutter/services.dart';
 
-/// Title-cases input as the user types: the first letter of each word is
-/// uppercased and the rest lowercased (e.g. "mARK fuentes" → "Mark Fuentes").
+/// Capitalizes names as the user types: the first letter of each word is
+/// uppercased (e.g. "mark p. fuentes" → "Mark P. Fuentes"). The other letters
+/// are left as typed so names like "McArthur", "John Paul II" or "dela Cruz"
+/// (once corrected by the user) are not mangled.
 ///
 /// Case-only transformation preserves length, so the caret position from
 /// [newValue] stays valid.
@@ -17,8 +19,8 @@ class TitleCaseTextInputFormatter extends TextInputFormatter {
     );
   }
 
-  /// Uppercases the first letter of each whitespace- or hyphen-separated word
-  /// and lowercases the remaining letters.
+  /// Uppercases the first letter of each whitespace- or hyphen-separated word,
+  /// leaving the remaining letters unchanged.
   static String titleCase(String input) {
     final buffer = StringBuffer();
     var startOfWord = true;
@@ -27,7 +29,7 @@ class TitleCaseTextInputFormatter extends TextInputFormatter {
         startOfWord = true;
         buffer.write(ch);
       } else {
-        buffer.write(startOfWord ? ch.toUpperCase() : ch.toLowerCase());
+        buffer.write(startOfWord ? ch.toUpperCase() : ch);
         startOfWord = false;
       }
     }

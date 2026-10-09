@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from database import get_db
 from auth import get_current_user, require_personnel_manager, hash_password
+from qualifications import get_qualifications, education_options
 
 router = APIRouter(tags=["Personnel"])
 
@@ -16,6 +17,7 @@ def _user_row(row, db):
         "SELECT grade_level FROM grade_levels WHERE id=?", (d.get("grade_level_id"),)
     ).fetchone()
     d["grade_level"] = gl["grade_level"] if gl else None
+    d.update(get_qualifications(db, d["id"]))
     d["subjects"] = [dict(r) for r in db.execute(
         """SELECT us.subject, gl.grade_level
            FROM user_subjects us
@@ -50,8 +52,15 @@ def list_personnel(search: str = "", limit: int = 0, offset: int = 0,
                    db=Depends(get_db), user=Depends(get_current_user)):
     q = f"%{search}%"
     where = ("FROM users u WHERE u.role != 'admin' "
-             "AND (u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ?)")
-    params = [q, q, q]
+             "AND (u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ? "
+             "OR EXISTS (SELECT 1 FROM user_skills us JOIN skills s ON s.id=us.skill_id "
+             "WHERE us.user_id=u.id AND s.skill_name LIKE ?) "
+             "OR EXISTS (SELECT 1 FROM user_certifications uc "
+             "JOIN certifications c ON c.id=uc.certification_id "
+             "WHERE uc.user_id=u.id AND c.cert_name LIKE ?) "
+             "OR EXISTS (SELECT 1 FROM education_background eb "
+             "WHERE eb.user_id=u.id AND eb.specialization LIKE ?))")
+    params = [q, q, q, q, q, q]
     order = " ORDER BY u.role, u.full_name"
     if limit and limit > 0:
         total = db.execute(f"SELECT COUNT(*) {where}", params).fetchone()[0]
@@ -72,6 +81,47 @@ def get_grade_levels_meta(db=Depends(get_db), user=Depends(get_current_user)):
 @router.get("/api/personnel/meta/subjects")
 def get_subjects_meta(db=Depends(get_db), user=Depends(get_current_user)):
     return [dict(r) for r in db.execute("SELECT * FROM subjects ORDER BY id").fetchall()]
+
+
+@router.get("/api/personnel/meta/skills")
+def get_skills_meta(db=Depends(get_db), user=Depends(get_current_user)):
+    return [dict(r) for r in db.execute(
+        """SELECT s.id, s.skill_name, sc.category_name
+           FROM skills s LEFT JOIN skill_categories sc ON sc.id = s.category_id
+           ORDER BY sc.category_name IS NULL, sc.category_name, s.skill_name""").fetchall()]
+
+
+@router.get("/api/personnel/meta/certifications")
+def get_certifications_meta(db=Depends(get_db), user=Depends(get_current_user)):
+    return [dict(r) for r in db.execute(
+        """SELECT c.id, c.cert_name, cc.category_name, ci.issuer_name, ci.acronym
+           FROM certifications c
+           LEFT JOIN certification_categories cc ON cc.id = c.category_id
+           LEFT JOIN certification_issuers ci ON ci.id = c.issuer_id
+           ORDER BY cc.category_name IS NULL, cc.category_name, c.cert_name""").fetchall()]
+
+
+@router.get("/api/personnel/meta/skill-categories")
+def get_skill_categories_meta(db=Depends(get_db), user=Depends(get_current_user)):
+    return [dict(r) for r in
+            db.execute("SELECT * FROM skill_categories ORDER BY id").fetchall()]
+
+
+@router.get("/api/personnel/meta/certification-categories")
+def get_certification_categories_meta(db=Depends(get_db), user=Depends(get_current_user)):
+    return [dict(r) for r in
+            db.execute("SELECT * FROM certification_categories ORDER BY id").fetchall()]
+
+
+@router.get("/api/personnel/meta/certification-issuers")
+def get_certification_issuers_meta(db=Depends(get_db), user=Depends(get_current_user)):
+    return [dict(r) for r in
+            db.execute("SELECT * FROM certification_issuers ORDER BY issuer_name").fetchall()]
+
+
+@router.get("/api/personnel/meta/education-options")
+def get_education_options_meta(user=Depends(get_current_user)):
+    return education_options()
 
 
 @router.get("/api/personnel/meta/departments")
@@ -104,24 +154,23 @@ def get_personnel(uid: int, db=Depends(get_db), user=Depends(get_current_user)):
     return _user_row(row, db)
 
 
+# Personal information (contact details, birthdate, address, number of
+# children, education, skills, certifications) is editable only by its owner via
+# PUT /api/users/me/profile. Personnel managers handle accounts and role
+# assignments only, so these bodies forbid any other field (422 if sent).
+
 class PersonnelCreateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     username: str
     password: str
     email: Optional[str] = None
-    first_name: str
+    first_name: str  # initial display name; the owner completes their profile
     middle_name: Optional[str] = None
     last_name: str
     suffix: Optional[str] = None
     role: str
     grade_level_id: Optional[int] = None
-    phone_number: Optional[str] = None
-    tin: Optional[str] = None
-    qsis: Optional[str] = None
-    hdmf: Optional[str] = None
-    phic: Optional[str] = None
     date_of_appointment: Optional[str] = None
-    birthdate: Optional[str] = None
-    address: Optional[str] = None
 
 
 @router.post("/api/personnel", status_code=201)
@@ -136,13 +185,11 @@ def create_personnel(body: PersonnelCreateBody, db=Depends(get_db),
     try:
         db.execute(
             """INSERT INTO users (username, password_hash, full_name, first_name, middle_name,
-               last_name, suffix, role, grade_level_id, email, phone_number,
-               tin, qsis, hdmf, phic, date_of_appointment, birthdate, address)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               last_name, suffix, role, grade_level_id, email, date_of_appointment)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (body.username, pw, full_name, body.first_name, body.middle_name,
              body.last_name, body.suffix, body.role, body.grade_level_id,
-             body.email, body.phone_number, body.tin, body.qsis, body.hdmf,
-             body.phic, body.date_of_appointment, body.birthdate, body.address)
+             body.email, body.date_of_appointment)
         )
         db.commit()
     except Exception as e:
@@ -152,22 +199,11 @@ def create_personnel(body: PersonnelCreateBody, db=Depends(get_db),
 
 
 class PersonnelUpdateBody(BaseModel):
-    email: Optional[str] = None
-    first_name: Optional[str] = None
-    middle_name: Optional[str] = None
-    last_name: Optional[str] = None
-    suffix: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
     role: Optional[str] = None
     grade_level_id: Optional[int] = None
-    phone_number: Optional[str] = None
-    tin: Optional[str] = None
-    qsis: Optional[str] = None
-    hdmf: Optional[str] = None
-    phic: Optional[str] = None
     date_of_appointment: Optional[str] = None
-    birthdate: Optional[str] = None
-    address: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = None  # account reset
     coordinator_type: Optional[str] = None
     dean_grade_level_id: Optional[int] = None
     also_teaching: Optional[bool] = None  # admin role who is also teaching staff
@@ -182,14 +218,9 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, db=Depends(get_db),
 
     fields, vals = [], []
     for col, val in [
-        ("email", body.email), ("first_name", body.first_name),
-        ("middle_name", body.middle_name), ("last_name", body.last_name),
-        ("suffix", body.suffix), ("role", body.role),
+        ("role", body.role),
         ("grade_level_id", body.grade_level_id),
-        ("phone_number", body.phone_number),
-        ("tin", body.tin), ("qsis", body.qsis), ("hdmf", body.hdmf),
-        ("phic", body.phic), ("date_of_appointment", body.date_of_appointment),
-        ("birthdate", body.birthdate), ("address", body.address),
+        ("date_of_appointment", body.date_of_appointment),
     ]:
         if val is not None:
             fields.append(f"{col}=?")
@@ -200,15 +231,6 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, db=Depends(get_db),
         vals.append(hash_password(body.password))
 
     if fields:
-        updated = dict(row)
-        for col, val in zip([f.split("=")[0] for f in fields], vals):
-            updated[col] = val
-        full_name = " ".join(filter(None, [
-            updated.get("first_name"), updated.get("middle_name"),
-            updated.get("last_name"), updated.get("suffix")
-        ]))
-        fields.append("full_name=?")
-        vals.append(full_name)
         vals.append(uid)
         db.execute(f"UPDATE users SET {', '.join(fields)} WHERE id=?", vals)
         db.commit()

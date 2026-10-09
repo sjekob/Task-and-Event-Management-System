@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
@@ -7,6 +8,8 @@ import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/skeleton_widgets.dart';
 import '../utils/input_formatters.dart';
+import '../features/personnel/services/personnel_service.dart';
+import '../widgets/catalog_multi_select.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -157,38 +160,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _EditButton(profile: p, onSaved: _load),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
 
-                // Name row
+                const _SectionHeader(icon: Icons.badge_outlined, title: 'Basic Information'),
                 _infoGrid(isMobile, [
                   _InfoField(label: 'First Name',   value: p.firstName),
                   _InfoField(label: 'Middle Name',  value: p.middleName),
                   _InfoField(label: 'Last Name',    value: p.lastName),
-                  _InfoField(label: 'Suffix',       value: p.suffix ?? 'none'),
+                  _InfoField(label: 'Suffix',       value: p.suffix),
                 ]),
-                const SizedBox(height: 14),
 
-                // Contact
+                const _SectionHeader(icon: Icons.contact_mail_outlined, title: 'Contact Information'),
                 _infoGrid(isMobile, [
-                  _InfoField(label: 'Email Address',  value: p.email),
-                  _InfoField(label: 'Phone Number',   value: p.phoneNumber),
+                  _InfoField(label: 'Email Address', value: p.email),
+                  _InfoField(label: 'Phone Number',  value: p.phoneNumber),
+                  _InfoField(label: 'Address',       value: p.address, span: 2),
                 ]),
-                const SizedBox(height: 14),
 
-                _InfoField(label: 'Administrative Role', value: _roleLabel(p.role)),
-                const SizedBox(height: 14),
-
-                // Gov IDs row
+                const _SectionHeader(icon: Icons.family_restroom_outlined, title: 'Personal Details'),
                 _infoGrid(isMobile, [
-                  _InfoField(label: 'TIN',                 value: p.tin),
-                  _InfoField(label: 'QSIS',                value: p.qsis),
-                  _InfoField(label: 'HDMF',                value: p.hdmf),
-                  _InfoField(label: 'PHIC',                value: p.phic),
+                  _InfoField(label: 'Birthdate',          value: p.birthdate),
+                  _InfoField(label: 'Number of Children', value: p.numberOfChildren.toString()),
+                ]),
+
+                const _SectionHeader(icon: Icons.work_outline, title: 'Employment'),
+                _infoGrid(isMobile, [
+                  _InfoField(label: 'Administrative Role', value: _roleLabel(p.role)),
                   _InfoField(label: 'Date of Appointment', value: p.dateOfAppointment),
                 ]),
-                const SizedBox(height: 14),
 
-                _InfoField(label: 'Address', value: p.address),
+                const _SectionHeader(icon: Icons.school_outlined, title: 'Educational Background'),
+                _infoGrid(isMobile, [
+                  _InfoField(label: 'Highest Educational Attainment',
+                      value: p.education.highestAttainment, span: 2),
+                  _InfoField(label: 'Undergraduate Degree',
+                      value: p.education.undergraduateDegree, span: 2),
+                  _InfoField(label: 'Area of Specialization',
+                      value: p.education.specialization, span: 2),
+                  _InfoField(label: 'Postgraduate Program Focus',
+                      value: p.education.postgraduateFocus, span: 2),
+                ]),
+
+                const _SectionHeader(icon: Icons.workspace_premium_outlined, title: 'Certifications & Skills'),
+                _chipGroup('Certifications & Eligibility', [
+                  for (final c in p.certificationDetails)
+                    c.issuerLabel != null ? '${c.name} · ${c.issuerLabel}' : c.name,
+                ]),
+                const SizedBox(height: 14),
+                _chipGroup('Skills', p.skills),
               ],
             ),
           ),
@@ -214,22 +233,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: child,
       );
 
+  /// Fields laid out on a grid that uses the card's full width: 4 columns on
+  /// wide screens, 2 on medium, 1 on phones. A field's `span` widens it.
   Widget _infoGrid(bool isMobile, List<_InfoField> fields) {
-    if (isMobile) {
-      return Column(
-        children: fields
-            .map((f) => Padding(padding: const EdgeInsets.only(bottom: 10), child: f))
-            .toList(),
+    return LayoutBuilder(builder: (context, c) {
+      const gap = 24.0;
+      final cols = isMobile ? 1 : c.maxWidth >= 900 ? 4 : 2;
+      final colW = (c.maxWidth - gap * (cols - 1)) / cols;
+      return Wrap(
+        spacing: gap,
+        runSpacing: 16,
+        children: [
+          for (final f in fields)
+            SizedBox(
+              width: colW * f.span.clamp(1, cols) + gap * (f.span.clamp(1, cols) - 1),
+              child: f,
+            ),
+        ],
       );
-    }
-    return Wrap(
-      spacing: 24,
-      runSpacing: 12,
-      children: fields
-          .map((f) => SizedBox(width: 160, child: f))
-          .toList(),
-    );
+    });
   }
+
+  Widget _chipGroup(String label, List<String> items) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: AppTheme.caption),
+          const SizedBox(height: 6),
+          if (items.isEmpty)
+            Text('None added yet', style: AppTheme.bodyMd)
+          else
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final t in items)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF4FA),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFD0DCEB)),
+                  ),
+                  child: Text(t, style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12.5, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                ),
+            ]),
+        ],
+      );
 
   Widget _subjectGrid(List<UserSubject> subjects, bool isMobile) {
     final cols = isMobile ? 1 : 2;
@@ -286,11 +333,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
 // ── Info field widget ──────────────────────────────────────────────────────────
 
+/// Titled divider between groups of fields (profile view and edit dialog).
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  const _SectionHeader({required this.icon, required this.title});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 22, bottom: 14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Container(
+              width: 28, height: 28,
+              decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FA), borderRadius: BorderRadius.circular(8)),
+              child: Icon(icon, size: 16, color: AppTheme.darkBanner),
+            ),
+            const SizedBox(width: 10),
+            Text(title, style: GoogleFonts.plusJakartaSans(
+                fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+          ]),
+          const SizedBox(height: 10),
+          const Divider(height: 1, color: AppTheme.borderColor),
+        ]),
+      );
+}
+
 class _InfoField extends StatelessWidget {
   final String label;
   final String? value;
+  final int span;
 
-  const _InfoField({required this.label, this.value});
+  const _InfoField({required this.label, this.value, this.span = 1});
 
   @override
   Widget build(BuildContext context) {
@@ -356,6 +431,13 @@ class _EditProfileDialog extends StatefulWidget {
 class _EditProfileDialogState extends State<_EditProfileDialog> {
   late final Map<String, TextEditingController> _ctrl;
   bool _saving = false;
+  // DepEd education dropdowns; options come from the server.
+  Map<String, List<String>> _eduOptions = {};
+  late final Map<String, String?> _edu;
+  late List<String> _skills;
+  late List<String> _certifications;
+  List<CatalogOption> _skillOptions = [];
+  List<CatalogOption> _certOptions = [];
 
   @override
   void initState() {
@@ -368,13 +450,37 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       'suffix':              TextEditingController(text: p.suffix ?? ''),
       'email':               TextEditingController(text: p.email ?? ''),
       'phone_number':        TextEditingController(text: p.phoneNumber ?? ''),
-      'tin':                 TextEditingController(text: p.tin ?? ''),
-      'qsis':                TextEditingController(text: p.qsis ?? ''),
-      'hdmf':                TextEditingController(text: p.hdmf ?? ''),
-      'phic':                TextEditingController(text: p.phic ?? ''),
+      'birthdate':           TextEditingController(text: p.birthdate ?? ''),
+      'number_of_children':  TextEditingController(text: p.numberOfChildren.toString()),
       'date_of_appointment': TextEditingController(text: p.dateOfAppointment ?? ''),
       'address':             TextEditingController(text: p.address ?? ''),
+      'postgraduate_focus':  TextEditingController(text: p.education.postgraduateFocus ?? ''),
     };
+    _edu = {
+      'highest_attainment':   p.education.highestAttainment,
+      'undergraduate_degree': p.education.undergraduateDegree,
+      'specialization':       p.education.specialization,
+    };
+    _skills = List.of(p.skills);
+    _certifications = List.of(p.certifications);
+    PersonnelService.educationOptions().then((o) {
+      if (mounted) setState(() => _eduOptions = o);
+    });
+    Future.wait([PersonnelService.skillsMeta(), PersonnelService.certificationsMeta()])
+        .then((r) {
+      if (!mounted) return;
+      setState(() {
+        _skillOptions = r[0]
+            .map((m) => CatalogOption(m['skill_name'] as String,
+                group: m['category_name'] as String?))
+            .toList();
+        _certOptions = r[1]
+            .map((m) => CatalogOption(m['cert_name'] as String,
+                group: m['category_name'] as String?,
+                detail: (m['issuer_name'] ?? m['acronym']) as String?))
+            .toList();
+      });
+    });
   }
 
   @override
@@ -387,9 +493,24 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     setState(() => _saving = true);
     final appState = context.read<AppState>();
     try {
-      final body = {
+      final body = <String, dynamic>{
         for (final e in _ctrl.entries)
-          if (e.value.text.trim().isNotEmpty) e.key: e.value.text.trim()
+          if (e.key != 'number_of_children' &&
+              e.key != 'postgraduate_focus' && e.value.text.trim().isNotEmpty)
+            e.key: e.value.text.trim(),
+        'number_of_children':
+            int.tryParse(_ctrl['number_of_children']!.text.trim()) ?? 0,
+        // Always sent so entries can be cleared.
+        'skills': _skills,
+        'certifications': _certifications,
+        'education': Education(
+          highestAttainment: _edu['highest_attainment'],
+          undergraduateDegree: _edu['undergraduate_degree'],
+          specialization: _edu['specialization'],
+          postgraduateFocus: _ctrl['postgraduate_focus']!.text.trim().isEmpty
+              ? null
+              : _ctrl['postgraduate_focus']!.text.trim(),
+        ).toJson(),
       };
       await ApiService.updateMyProfile(body);
       // Re-fetch the current user so the header/sidebar/avatar reflect the new
@@ -416,33 +537,54 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 600),
+        constraints: BoxConstraints(
+            maxWidth: 820,
+            maxHeight: MediaQuery.of(context).size.height * 0.88),
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text('Edit Profile',
                   style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16, fontWeight: FontWeight.w700,
+                      fontSize: 20, fontWeight: FontWeight.w700,
                       color: AppTheme.textPrimary)),
-              const SizedBox(height: 16),
+              const SizedBox(height: 4),
+              Text('Your education, certifications and skills are used to suggest you for matching tasks.',
+                  style: AppTheme.bodySm),
+              const SizedBox(height: 4),
               Expanded(
                 child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(right: 6),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      const _SectionHeader(icon: Icons.badge_outlined, title: 'Basic Information'),
                       _row([_field('first_name', 'First Name'), _field('middle_name', 'Middle Name')]),
                       _row([_field('last_name', 'Last Name'), _field('suffix', 'Suffix')]),
+                      const _SectionHeader(icon: Icons.contact_mail_outlined, title: 'Contact Information'),
                       _row([_field('email', 'Email'), _field('phone_number', 'Phone Number')]),
-                      _row([_field('tin', 'TIN'), _field('qsis', 'QSIS')]),
-                      _row([_field('hdmf', 'HDMF'), _field('phic', 'PHIC')]),
-                      _row([_field('date_of_appointment', 'Date of Appointment')]),
                       _row([_field('address', 'Address')]),
+                      const _SectionHeader(icon: Icons.family_restroom_outlined, title: 'Personal Details'),
+                      _row([_field('birthdate', 'Birthdate (YYYY-MM-DD)'),
+                            _field('number_of_children', 'Number of Children')]),
+                      const _SectionHeader(icon: Icons.work_outline, title: 'Employment'),
+                      _row([_field('date_of_appointment', 'Date of Appointment')]),
+                      const _SectionHeader(icon: Icons.school_outlined, title: 'Educational Background'),
+                      _row([_eduDropdown('highest_attainment', 'Highest Educational Attainment'),
+                            _eduDropdown('undergraduate_degree', 'Undergraduate Degree')]),
+                      _row([_eduDropdown('specialization', 'Area of Specialization'),
+                            _field('postgraduate_focus', 'Postgraduate Program Focus')]),
+                      const _SectionHeader(icon: Icons.workspace_premium_outlined, title: 'Certifications & Skills'),
+                      _row([_catalogSelect('Certifications & Eligibility', _certifications,
+                          _certOptions, (v) => setState(() => _certifications = v))]),
+                      _row([_catalogSelect('Skills', _skills, _skillOptions,
+                          (v) => setState(() => _skills = v))]),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const Divider(height: 24, color: AppTheme.borderColor),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -478,10 +620,66 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   static const _nameKeys = {'first_name', 'middle_name', 'last_name', 'suffix'};
 
+  Widget _catalogSelect(String label, List<String> selected,
+          List<CatalogOption> options, ValueChanged<List<String>> onChanged) =>
+      CatalogMultiSelect(
+        label: label,
+        selected: selected,
+        options: options,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          labelStyle: AppTheme.bodySm,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppTheme.borderColor),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppTheme.borderColor),
+          ),
+        ),
+      );
+
+  Widget _eduDropdown(String key, String label) {
+    final options = _eduOptions[key] ?? const <String>[];
+    final value = _edu[key];
+    return DropdownButtonFormField<String>(
+      key: ValueKey('$key-${options.length}'),
+      isExpanded: true,
+      initialValue: options.contains(value) ? value : null,
+      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppTheme.textPrimary),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: AppTheme.bodySm,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: AppTheme.borderColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: AppTheme.borderColor),
+        ),
+      ),
+      items: [
+        const DropdownMenuItem<String>(value: null, child: Text('— None —')),
+        ...options.map((o) => DropdownMenuItem(
+            value: o, child: Text(o, overflow: TextOverflow.ellipsis))),
+      ],
+      onChanged: (v) => setState(() => _edu[key] = v),
+    );
+  }
+
   Widget _field(String key, String label) => TextFormField(
         controller: _ctrl[key],
-        inputFormatters:
-            _nameKeys.contains(key) ? const [TitleCaseTextInputFormatter()] : null,
+        keyboardType: key == 'number_of_children' ? TextInputType.number : null,
+        inputFormatters: _nameKeys.contains(key)
+            ? const [TitleCaseTextInputFormatter()]
+            : key == 'number_of_children'
+                ? [FilteringTextInputFormatter.digitsOnly,
+                   LengthLimitingTextInputFormatter(2)]
+                : null,
         style: GoogleFonts.plusJakartaSans(fontSize: 13),
         decoration: InputDecoration(
           labelText: label,

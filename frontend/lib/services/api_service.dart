@@ -117,10 +117,12 @@ class ApiService {
   }
 
   // ── Tasks ──
-  static Future<List<Task>> getTasks({String search = '', String scope = 'mine'}) async {
+  static Future<List<Task>> getTasks({String search = '', String scope = 'mine',
+      SchoolYearFilter filter = SchoolYearFilter.current}) async {
     final params = <String>[];
     if (search.isNotEmpty) params.add('search=${Uri.encodeComponent(search)}');
     if (scope != 'mine') params.add('scope=$scope');
+    filter.query.forEach((k, v) => params.add('$k=$v'));
     final url = '$baseUrl/api/tasks${params.isEmpty ? '' : '?${params.join('&')}'}';
     final res = await _client.get(Uri.parse(url), headers: await _headers);
     if (res.statusCode == 200) {
@@ -148,9 +150,11 @@ class ApiService {
   }
 
   static Future<PageResult<Task>> getAssignedTasksPage({
-    String? category, int limit = 30, int offset = 0}) async {
+    String? category, int limit = 30, int offset = 0,
+    SchoolYearFilter filter = SchoolYearFilter.current}) async {
     final params = <String>['assigned=1', 'limit=$limit', 'offset=$offset'];
     if (category != null) params.add('category=$category');
+    filter.query.forEach((k, v) => params.add('$k=$v'));
     final res = await _client.get(
         Uri.parse('$baseUrl/api/tasks?${params.join('&')}'), headers: await _headers);
     if (res.statusCode == 200) {
@@ -231,16 +235,16 @@ class ApiService {
   }
 
   // ── Task assignment ──
-  static Future<void> assignTask(int taskId, List<int> userIds) async {
+  /// Assigns [userIds] as [targetRole] (the identity they receive the task as).
+  /// Returns how many were skipped (not allowed by the hierarchy / already assigned).
+  static Future<int> assignTask(int taskId, List<int> userIds, {String? targetRole}) async {
     final res = await _client.post(
       Uri.parse('$baseUrl/api/tasks/$taskId/assign'),
       headers: await _headers,
-      body: jsonEncode({'user_ids': userIds}),
+      body: jsonEncode({'user_ids': userIds, if (targetRole != null) 'target_role': targetRole}),
     );
-    if (res.statusCode != 200) {
-      final err = jsonDecode(res.body);
-      throw Exception(err['detail'] ?? 'Failed to assign users');
-    }
+    if (res.statusCode != 200) throw Exception(_detail(res, 'Failed to assign users'));
+    return ((jsonDecode(res.body) as Map)['skipped'] as List? ?? const []).length;
   }
 
   static Future<void> unassignTask(int taskId, int userId) async {
@@ -262,6 +266,33 @@ class ApiService {
       return data.map((u) => User.fromJson(u)).toList();
     }
     throw Exception('Failed to load assignable users');
+  }
+
+  /// Assignable personnel ranked for a task by skills, certifications,
+  /// number of children and current workload (best match first).
+  static Future<List<AssigneeSuggestion>> getAssigneeSuggestions({
+    String? targetRole,
+    String title = '',
+    String subject = '',
+    String instructions = '',
+    String taskCategory = 'common',
+  }) async {
+    final res = await _client.post(
+      Uri.parse('$baseUrl/api/users/assignable/suggestions'),
+      headers: await _headers,
+      body: jsonEncode({
+        'target_role': targetRole ?? '',
+        'title': title,
+        'subject': subject,
+        'instructions': instructions,
+        'task_category': taskCategory,
+      }),
+    );
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body);
+      return data.map((s) => AssigneeSuggestion.fromJson(s)).toList();
+    }
+    throw Exception('Failed to load suggestions');
   }
 
   // ── Reports ──
@@ -569,9 +600,14 @@ class ApiService {
 
   // ── Appraisal Management ──────────────────────────────────────────────────
 
-  static Future<List<SpecialTask>> getSpecialTasks() async {
+  static Uri _withFilter(String path, SchoolYearFilter f, [Map<String, String> extra = const {}]) =>
+      Uri.parse('$baseUrl$path').replace(
+          queryParameters: {...f.query, ...extra}.isEmpty ? null : {...f.query, ...extra});
+
+  static Future<List<SpecialTask>> getSpecialTasks(
+      {SchoolYearFilter filter = SchoolYearFilter.current}) async {
     final res = await _client.get(
-      Uri.parse('$baseUrl/api/appraisal/special-tasks'),
+      _withFilter('/api/appraisal/special-tasks', filter),
       headers: await _headers,
     );
     if (res.statusCode == 200) {
@@ -594,9 +630,10 @@ class ApiService {
     throw Exception('Failed to evaluate task');
   }
 
-  static Future<List<Map<String, dynamic>>> getReportSubmissions() async {
+  static Future<List<Map<String, dynamic>>> getReportSubmissions(
+      {SchoolYearFilter filter = SchoolYearFilter.current}) async {
     final res = await _client.get(
-      Uri.parse('$baseUrl/api/appraisal/report-submissions'),
+      _withFilter('/api/appraisal/report-submissions', filter),
       headers: await _headers,
     );
     if (res.statusCode == 200) {
@@ -606,9 +643,10 @@ class ApiService {
     throw Exception('Failed to load report submissions');
   }
 
-  static Future<List<EventForAppraisal>> getEventsForAppraisal() async {
+  static Future<List<EventForAppraisal>> getEventsForAppraisal(
+      {SchoolYearFilter filter = SchoolYearFilter.current}) async {
     final res = await _client.get(
-      Uri.parse('$baseUrl/api/appraisal/events'),
+      _withFilter('/api/appraisal/events', filter),
       headers: await _headers,
     );
     if (res.statusCode == 200) {
@@ -628,7 +666,62 @@ class ApiService {
     if (res.statusCode == 201) {
       return EventForAppraisal.fromJson(jsonDecode(res.body));
     }
-    throw Exception('Failed to submit evaluation');
+    throw Exception(_detail(res, 'Failed to submit evaluation'));
+  }
+
+  // ── Badges ──
+  static Future<List<AppraisalBadge>> getBadges(
+      {int? userId, SchoolYearFilter filter = SchoolYearFilter.current}) async {
+    final res = await _client.get(
+      _withFilter('/api/appraisal/badges', filter, {if (userId != null) 'user_id': '$userId'}),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return ((jsonDecode(res.body) as Map)['badges'] as List)
+          .map((b) => AppraisalBadge.fromJson(b as Map<String, dynamic>))
+          .toList();
+    }
+    throw Exception(_detail(res, 'Failed to load badges'));
+  }
+
+  /// [{id, full_name, role, grade_level, earned_count, badges: [...]}]
+  static Future<List<Map<String, dynamic>>> getBadgeLeaderboard(
+      {SchoolYearFilter filter = SchoolYearFilter.current}) async {
+    final res = await _client.get(
+      _withFilter('/api/appraisal/badges/leaderboard', filter),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return (jsonDecode(res.body) as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    }
+    throw Exception(_detail(res, 'Failed to load badges'));
+  }
+
+  // ── School years ──
+  static Future<List<SchoolYear>> getSchoolYears() async {
+    final res = await _client.get(Uri.parse('$baseUrl/api/school-years'), headers: await _headers);
+    if (res.statusCode == 200) {
+      return (jsonDecode(res.body) as List)
+          .map((e) => SchoolYear.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    throw Exception('Failed to load school years');
+  }
+
+  static Future<void> saveSchoolYear(Map<String, dynamic> body, {int? id}) async {
+    final uri = Uri.parse('$baseUrl/api/school-years${id != null ? '/$id' : ''}');
+    final res = id != null
+        ? await _client.put(uri, headers: await _headers, body: jsonEncode(body))
+        : await _client.post(uri, headers: await _headers, body: jsonEncode(body));
+    if (res.statusCode >= 400) throw Exception(_detail(res, 'Could not save the school year'));
+  }
+
+  static Future<void> deleteSchoolYear(int id) async {
+    final res = await _client.delete(Uri.parse('$baseUrl/api/school-years/$id'),
+        headers: await _headers);
+    if (res.statusCode >= 400) throw Exception(_detail(res, 'Could not delete the school year'));
   }
 
   // ── Public Event Evaluation (reached by scanning the event's QR code;
@@ -658,9 +751,11 @@ class ApiService {
 
   // ── Event Management ──────────────────────────────────────────────────────
 
-  static Future<List<Map<String, dynamic>>> getEvents() async {
+  /// Events of the current school year by default; [schoolYear] may be a
+  /// school-year id or 'all' (archived years are excluded unless asked for).
+  static Future<List<Map<String, dynamic>>> getEvents({String? schoolYear}) async {
     final res = await _client.get(
-      Uri.parse('$baseUrl/api/events'),
+      Uri.parse('$baseUrl/api/events${schoolYear != null ? '?school_year=$schoolYear' : ''}'),
       headers: await _headers,
     );
     if (res.statusCode == 200) {
@@ -678,6 +773,7 @@ class ApiService {
     return null;
   }
 
+  /// Throws with the server's reason (e.g. a date conflict) when rejected.
   static Future<Map<String, dynamic>?> createEvent(Map<String, dynamic> payload) async {
     final res = await _client.post(
       Uri.parse('$baseUrl/api/events'),
@@ -685,7 +781,27 @@ class ApiService {
       body: jsonEncode(payload),
     );
     if (res.statusCode == 201) return jsonDecode(res.body) as Map<String, dynamic>;
-    return null;
+    throw Exception(_detail(res, 'Could not save the event'));
+  }
+
+  static String _detail(http.Response res, String fallback) {
+    try {
+      final d = (jsonDecode(res.body) as Map)['detail'];
+      if (d is String && d.isNotEmpty) return d;
+    } catch (_) {}
+    return fallback;
+  }
+
+  /// Whether [targetDate] is free for an event proposal: {available, past,
+  /// message, conflicts}. [excludeId] skips the event being edited.
+  static Future<Map<String, dynamic>> checkEventDate(String targetDate, {int? excludeId}) async {
+    final q = {'target_date': targetDate, if (excludeId != null) 'exclude_id': '$excludeId'};
+    final res = await _client.get(
+      Uri.parse('$baseUrl/api/events/date-check').replace(queryParameters: q),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    throw Exception('Failed to check the date');
   }
 
   static Future<Map<String, dynamic>?> updateEvent(int id, Map<String, dynamic> payload) async {
@@ -694,6 +810,7 @@ class ApiService {
       headers: await _headers,
       body: jsonEncode(payload),
     );
+    if (res.statusCode >= 400) throw Exception(_detail(res, 'Could not save the event'));
     if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
     return null;
   }

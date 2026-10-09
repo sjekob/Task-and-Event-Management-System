@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/common_widgets.dart';
 
-enum NavPage { dashboard, taskManager, myTasks, specialTasks, mySpecialTasks, activity, personnelManagement, appraisal, eventManagement }
+enum NavPage { dashboard, taskManager, myTasks, specialTasks, mySpecialTasks, activity, personnelManagement, appraisal, eventManagement, schoolYears }
 
 // ── Shared dark sidebar palette ───────────────────────────────────────────────
 const Color _kSidebarBg       = Color(0xFF1A1A2E);
@@ -85,6 +85,8 @@ class _AppSidebarState extends State<AppSidebar> {
   bool get _canManagePersonnel =>
       widget.userRole == 'principal' || widget.userRole == 'registrar' ||
       widget.userRole == 'admin';
+  bool get _canManageSchoolYears =>
+      widget.userRole == 'principal' || widget.userRole == 'admin';
   bool get _hasAppraisalAccess =>
       widget.userRole == 'principal' || widget.userRole == 'coordinator' ||
       widget.userRole == 'dean' || widget.userRole == 'admin' ||
@@ -183,6 +185,14 @@ class _AppSidebarState extends State<AppSidebar> {
                     collapsed: _collapsed,
                     onTap: () => widget.onNavigate(NavPage.eventManagement),
                   ),
+                  if (_canManageSchoolYears)
+                    _NavItem(
+                      icon: Icons.date_range_outlined,
+                      label: 'School Year',
+                      isActive: widget.currentPage == NavPage.schoolYears,
+                      collapsed: _collapsed,
+                      onTap: () => widget.onNavigate(NavPage.schoolYears),
+                    ),
                 ],
               ),
             ),
@@ -489,6 +499,7 @@ class MobileNavDrawer extends StatelessWidget {
   bool get _isLeaf => userRole == 'teacher' || userRole == 'registrar';
   bool get _canManagePersonnel =>
       userRole == 'principal' || userRole == 'registrar' || userRole == 'admin';
+  bool get _canManageSchoolYears => userRole == 'principal' || userRole == 'admin';
   bool get _hasAppraisalAccess =>
       userRole == 'principal' || userRole == 'coordinator' ||
       userRole == 'dean' || userRole == 'admin' || userRole == 'teacher';
@@ -603,6 +614,13 @@ class MobileNavDrawer extends StatelessWidget {
                       isActive: currentPage == NavPage.eventManagement,
                       onTap: () => _navigate(context, NavPage.eventManagement),
                     ),
+                    if (_canManageSchoolYears)
+                      _NavItem(
+                        icon: Icons.date_range_outlined,
+                        label: 'School Year',
+                        isActive: currentPage == NavPage.schoolYears,
+                        onTap: () => _navigate(context, NavPage.schoolYears),
+                      ),
                   ],
                 ),
               ),

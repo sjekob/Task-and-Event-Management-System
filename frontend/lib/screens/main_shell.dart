@@ -26,6 +26,7 @@ class _MainShellState extends State<MainShell> {
     if (loc.startsWith('/personnel')) return NavPage.personnelManagement;
     if (loc.startsWith('/appraisal')) return NavPage.appraisal;
     if (loc.startsWith('/events')) return NavPage.eventManagement;
+    if (loc.startsWith('/school-years')) return NavPage.schoolYears;
     return NavPage.dashboard;
   }
 
@@ -40,6 +41,7 @@ class _MainShellState extends State<MainShell> {
       case NavPage.personnelManagement: context.go('/personnel'); break;
       case NavPage.appraisal:         context.go('/appraisal'); break;
       case NavPage.eventManagement:   context.go('/events'); break;
+      case NavPage.schoolYears:       context.go('/school-years'); break;
     }
   }
 

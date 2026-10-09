@@ -1,91 +1,5 @@
 part of 'task_detail_screen.dart';
 
-class _ReportListItem extends StatelessWidget {
-  final Report report;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final ValueChanged<String>? onStatusChange;
-
-  const _ReportListItem({
-    required this.report,
-    required this.isSelected,
-    required this.onTap,
-    this.onStatusChange,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppTheme.cardColor,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? AppTheme.accentBlue : AppTheme.borderColor,
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: AppTheme.sidebarActive,
-                child: Text(
-                  (report.fullName ?? '?')[0].toUpperCase(),
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(report.fullName ?? '', style: AppTheme.labelMd),
-                  if (report.gradeLevel != null)
-                    Text(report.gradeLevel!, style: AppTheme.bodySm),
-                ]),
-              ),
-              _StatusChip(status: report.reportStatus, small: true),
-            ]),
-            if (isSelected && report.reportTitle.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              _SubmissionTypeLabel(type: report.reportType),
-              const SizedBox(height: 6),
-              Text(report.reportTitle, style: AppTheme.bodyMd),
-              if (report.reportDescription != null) ...[
-                const SizedBox(height: 4),
-                Text(report.reportDescription!, style: AppTheme.bodySm),
-              ],
-              if (report.reportFilename != null && report.reportFilePath != null) ...[
-                const SizedBox(height: 6),
-                _FileItem(
-                  filename: report.reportFilename!,
-                  url: '${ApiService.baseUrl}${report.reportFilePath!}',
-                ),
-              ],
-              if (report.reportLinkUrl != null) ...[
-                const SizedBox(height: 6),
-                _LinkItem(url: report.reportLinkUrl!),
-              ],
-              if (onStatusChange != null) ...[
-                const SizedBox(height: 10),
-                _StatusButtons(
-                  onCompleted: () => onStatusChange!('Completed'),
-                  onMissing: () => onStatusChange!('Missing'),
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ── Small components ──────────────────────────────────────────────────────────
 
 class _StatusButtons extends StatelessWidget {
@@ -462,4 +376,80 @@ class _PointsPreviewCard extends StatelessWidget {
       ]),
     );
   }
+}
+
+// ── Layout pieces ─────────────────────────────────────────────────────────────
+
+class _DetailCard extends StatelessWidget {
+  final Widget child;
+  const _DetailCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3E9F3)),
+        ),
+        child: child,
+      );
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+  final Color fg;
+  final Color bg;
+  const _Pill(this.text, {required this.fg, required this.bg});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        child: Text(text, style: GoogleFonts.plusJakartaSans(
+            fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+      );
+}
+
+class _MetaItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color emphasis;
+  final String? note;
+  const _MetaItem({required this.icon, required this.label, required this.value,
+      this.emphasis = AppTheme.textPrimary, this.note});
+
+  @override
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 18, color: AppTheme.textMuted),
+        const SizedBox(width: 8),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: AppTheme.caption),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(value, style: GoogleFonts.plusJakartaSans(
+                fontSize: 14, fontWeight: FontWeight.w600, color: emphasis)),
+            if (note != null) ...[
+              const SizedBox(width: 8),
+              _Pill(note!, fg: const Color(0xFFB91C1C), bg: AppTheme.redBg),
+            ],
+          ]),
+        ]),
+      ]);
+}
+
+class _Legend extends StatelessWidget {
+  final Color color;
+  final String label;
+  final int count;
+  const _Legend({required this.color, required this.label, required this.count});
+
+  @override
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text('$label ', style: AppTheme.bodySm.copyWith(color: AppTheme.textMuted)),
+        Text('$count', style: GoogleFonts.plusJakartaSans(
+            fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+      ]);
 }

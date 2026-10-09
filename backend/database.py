@@ -7,7 +7,10 @@ SCHEMA_VERSION = 10  # bump when schema changes (10: 0/1 CHECK on is_active/is_r
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    # FastAPI may open a request's connection (get_db) on one worker thread and
+    # run the sync endpoint on another. Each connection still serves a single
+    # request at a time, so cross-thread use is safe and must be allowed.
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
@@ -63,6 +66,10 @@ def _build_and_seed():
     (INSERT OR IGNORE). Idempotent and non-destructive — never deletes data."""
     conn = connect_db()
     c = conn.cursor()
+    backfill_education = c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'").fetchone() is not None \
+        and c.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                      "AND name='education_background'").fetchone() is None
     c.executescript("""
     CREATE TABLE IF NOT EXISTS grade_levels (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,10 +97,7 @@ def _build_and_seed():
         avatar_url          TEXT,
         email               TEXT,
         phone_number        TEXT,
-        tin                 TEXT,
-        qsis                TEXT,
-        hdmf                TEXT,
-        phic                TEXT,
+        number_of_children  INTEGER NOT NULL DEFAULT 0 CHECK(number_of_children >= 0),
         date_of_appointment TEXT,
         birthdate           TEXT,
         address             TEXT,
@@ -107,6 +111,89 @@ def _build_and_seed():
         subject        TEXT NOT NULL,
         grade_level_id INTEGER REFERENCES grade_levels(id),
         UNIQUE(user_id, subject, grade_level_id)
+    );
+
+    -- School calendar set by the principal (see school_calendar.py): records
+    -- dated outside the current school year are archived.
+    CREATE TABLE IF NOT EXISTS school_years (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        start_date TEXT NOT NULL,
+        end_date   TEXT NOT NULL,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS school_terms (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        school_year_id INTEGER NOT NULL REFERENCES school_years(id) ON DELETE CASCADE,
+        name           TEXT NOT NULL,
+        start_date     TEXT NOT NULL,
+        end_date       TEXT NOT NULL,
+        UNIQUE(school_year_id, name)
+    );
+
+    -- DepEd-aligned personnel profile used to suggest assignees for a task
+    -- (see qualifications.py; reference data in deped_profile.py).
+    -- ERD: EDUCATION_BACKGROUND (one per personnel).
+    CREATE TABLE IF NOT EXISTS education_background (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id              INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        highest_attainment   TEXT,
+        undergraduate_degree TEXT,
+        specialization       TEXT,
+        postgraduate_focus   TEXT,
+        updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- ERD: SKILL_CATEGORY → SKILL, CERTIFICATION_CATEGORY / CERTIFICATION_ISSUER
+    -- → CERTIFICATION, plus personnel junctions (PERSONNEL_SKILL,
+    -- PERSONNEL_CERTIFICATION). task_keywords: comma-separated task phrases a
+    -- category maps to for automated matching.
+    CREATE TABLE IF NOT EXISTS skill_categories (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        description   TEXT,
+        task_keywords TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS skills (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_name  TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        category_id INTEGER REFERENCES skill_categories(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS certification_categories (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        task_keywords TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS certification_issuers (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        issuer_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        acronym     TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS certifications (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        cert_name   TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        category_id INTEGER REFERENCES certification_categories(id) ON DELETE SET NULL,
+        issuer_id   INTEGER REFERENCES certification_issuers(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_skills (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        skill_id INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        UNIQUE(user_id, skill_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS user_certifications (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        certification_id INTEGER NOT NULL REFERENCES certifications(id) ON DELETE CASCADE,
+        UNIQUE(user_id, certification_id)
     );
 
     CREATE TABLE IF NOT EXISTS coordinator_assignments (
@@ -335,7 +422,11 @@ def _build_and_seed():
         engagement_score INTEGER NOT NULL DEFAULT 0 CHECK(engagement_score BETWEEN 0 AND 5),
         resource_score   INTEGER NOT NULL DEFAULT 0 CHECK(resource_score BETWEEN 0 AND 5),
         feedback_comments TEXT,
-        date_submitted   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        date_submitted   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        evaluator_email       TEXT,
+        evaluator_sex         TEXT,
+        evaluator_age_group   TEXT,
+        evaluator_affiliation TEXT
     );
 
     -- Anti-abuse log for the unauthenticated QR public-evaluation endpoint:
@@ -377,8 +468,72 @@ def _build_and_seed():
             );
         """)
         conn.commit()
+    # Government ID numbers (TIN/GSIS/Pag-IBIG/PhilHealth) were replaced by
+    # qualifications used for assignment suggestions: skills, certifications
+    # (their own tables) and number of children.
+    # Early builds stored skill/certification names directly on the junction
+    # rows; move them into the SKILL / CERTIFICATION catalogs (ERD shape).
+    for _jt, _old_col, _cat, _name_col, _fk in (
+            ("user_skills", "skill", "skills", "skill_name", "skill_id"),
+            ("user_certifications", "certification", "certifications", "cert_name",
+             "certification_id")):
+        if _old_col not in [r[1] for r in c.execute(f"PRAGMA table_info({_jt})").fetchall()]:
+            continue
+        try:
+            # One transaction; if another service already migrated it, the
+            # SELECT of the old column fails and we just roll back.
+            c.executescript(f"""
+                BEGIN IMMEDIATE;
+                INSERT OR IGNORE INTO {_cat} ({_name_col}) SELECT DISTINCT {_old_col} FROM {_jt};
+                ALTER TABLE {_jt} RENAME TO _{_jt}_old;
+                CREATE TABLE {_jt} (
+                    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    {_fk}   INTEGER NOT NULL REFERENCES {_cat}(id) ON DELETE CASCADE,
+                    UNIQUE(user_id, {_fk})
+                );
+                INSERT OR IGNORE INTO {_jt} (user_id, {_fk})
+                    SELECT o.user_id, k.id FROM _{_jt}_old o
+                    JOIN {_cat} k ON k.{_name_col} = o.{_old_col} ORDER BY o.id;
+                DROP TABLE _{_jt}_old;
+                COMMIT;
+            """)
+        except sqlite3.OperationalError:
+            conn.rollback()
+
+    # Free-text skills.category / certifications.issuing_body from earlier builds
+    # → SKILL_CATEGORY / CERTIFICATION_ISSUER tables.
+    _ensure_column(c, "skills", "category_id",
+                   "INTEGER REFERENCES skill_categories(id) ON DELETE SET NULL")
+    _ensure_column(c, "certifications", "category_id",
+                   "INTEGER REFERENCES certification_categories(id) ON DELETE SET NULL")
+    _ensure_column(c, "certifications", "issuer_id",
+                   "INTEGER REFERENCES certification_issuers(id) ON DELETE SET NULL")
+    conn.commit()
+    from qualifications import migrate_legacy_catalog
+    try:
+        migrate_legacy_catalog(c)
+        conn.commit()
+    except sqlite3.OperationalError:
+        conn.rollback()  # another service migrated it concurrently
+
+    _user_cols = [r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()]
+    backfill_qualifications ="number_of_children" not in _user_cols
+    _ensure_column(c, "users", "number_of_children",
+                   "INTEGER NOT NULL DEFAULT 0 CHECK(number_of_children >= 0)")
+    for _old in ("tin", "qsis", "hdmf", "phic"):
+        if _old in _user_cols:
+            try:
+                c.execute(f"ALTER TABLE users DROP COLUMN {_old}")
+            except Exception:
+                pass
+    conn.commit()
     # Record the evaluator's email on the evaluation itself.
     _ensure_column(c, "event_evaluations", "evaluator_email", "TEXT")
+    # Evaluator demographics collected on the public evaluation form.
+    _ensure_column(c, "event_evaluations", "evaluator_sex", "TEXT")
+    _ensure_column(c, "event_evaluations", "evaluator_age_group", "TEXT")
+    _ensure_column(c, "event_evaluations", "evaluator_affiliation", "TEXT")
     conn.commit()
     # Tag a task as 'common' or 'special' — used by the appraisal module to tell
     # the two kinds apart.
@@ -491,7 +646,7 @@ def _build_and_seed():
     except Exception:
         pass  # Already dropped or constrained; ignore
 
-    _seed(conn)
+    _seed(conn, backfill_qualifications, backfill_education)
     conn.close()
 
 
@@ -553,7 +708,7 @@ def create_notification(db, user_id: int, notif_type: str, title: str, body: str
     )
 
 
-def _seed(conn):
+def _seed(conn, backfill_qualifications: bool = False, backfill_education: bool = False):
     import bcrypt
     c = conn.cursor()
 
@@ -572,28 +727,93 @@ def _seed(conn):
           c.execute("SELECT id, grade_level FROM grade_levels").fetchall()}
 
     users = [
-        # username, password, full_name, first, middle, last, suffix, role, gl_id, email, phone, tin, qsis, hdmf, phic, date_appt, birthdate, address
-        ('admin',        'admin123', 'System Admin',              'System',    None,  'Admin',      None,   'admin',       None,            None,                      None,               None,          None,         None,    None,    None,         None,         None),
-        ('principal',    'prin123',  'Principal Liza Ramos',      'Liza',      None,  'Ramos',      None,   'principal',   None,            'lizaramos@school.edu.ph', '+63 912 000 0001', None,          None,         None,    None,    None,         None,         'School Campus, Main St.'),
-        ('coordinator1', 'coord123', 'Coordinator Grace Tan',     'Grace',     None,  'Tan',        None,   'coordinator', None,            'gracetan@school.edu.ph',  '+63 912 000 0002', None,          None,         None,    None,    None,         None,         None),
-        ('coordinator2', 'coord456', 'Coordinator Mark Bautista', 'Mark',      None,  'Bautista',   None,   'coordinator', None,            'markb@school.edu.ph',     '+63 912 000 0003', None,          None,         None,    None,    None,         None,         None),
-        ('registrar',    'reg123',   'Registrar Ana Cruz',        'Ana',       None,  'Cruz',       None,   'registrar',   None,            'anacruz@school.edu.ph',   '+63 912 000 0004', None,          None,         None,    None,    None,         None,         None),
-        ('dean1',        'dean123',  'Dean Maria Santos',         'Maria',     None,  'Santos',     None,   'dean',        gl['Grade 1'],   'mariasantos@school.edu.ph','+63 912 000 0005', None,          None,         None,    None,    None,         None,         None),
-        ('dean2',        'dean456',  'Dean Jose Reyes',           'Jose',      None,  'Reyes',      None,   'dean',        gl['Grade 2'],   'josereyes@school.edu.ph',  '+63 912 000 0006', None,          None,         None,    None,    None,         None,         None),
-        ('teacher1',     'teach123', 'Sheila P. Chevallier',      'Sheila',    'P.',  'Chevallier', None,   'teacher',     gl['Grade 1'],   'sheila.c@school.edu.ph',   '+63 992 812 5954', '987-654-321', '56473829104','7385216','7385216','07-22-2022','1990-15-03', 'Bonifacio Avenue, Barangay II'),
-        ('teacher2',     'teach456', 'Juan D. Santos',            'Juan',      'D.',  'Santos',     None,   'teacher',     gl['Grade 1'],   'juan.s@school.edu.ph',     '+63 912 000 0008', None,          None,         None,    None,    None,         None,         None),
-        ('teacher3',     'teach789', 'Maria C. Reyes',            'Maria',     'C.',  'Reyes',      None,   'teacher',     gl['Grade 2'],   'maria.r@school.edu.ph',    '+63 912 000 0009', None,          None,         None,    None,    None,         None,         None),
+        # username, password, full_name, first, middle, last, suffix, role, gl_id, email, phone, children, date_appt, birthdate, address
+        ('admin',        'admin123', 'System Admin',              'System',    None,  'Admin',      None,   'admin',       None,            None,                      None,               0, None,         None,         None),
+        ('principal',    'prin123',  'Principal Liza Ramos',      'Liza',      None,  'Ramos',      None,   'principal',   None,            'lizaramos@school.edu.ph', '+63 912 000 0001', 2, None,         None,         'School Campus, Main St.'),
+        ('coordinator1', 'coord123', 'Coordinator Grace Tan',     'Grace',     None,  'Tan',        None,   'coordinator', None,            'gracetan@school.edu.ph',  '+63 912 000 0002', 1, None,         None,         None),
+        ('coordinator2', 'coord456', 'Coordinator Mark Bautista', 'Mark',      None,  'Bautista',   None,   'coordinator', None,            'markb@school.edu.ph',     '+63 912 000 0003', 0, None,         None,         None),
+        ('registrar',    'reg123',   'Registrar Ana Cruz',        'Ana',       None,  'Cruz',       None,   'registrar',   None,            'anacruz@school.edu.ph',   '+63 912 000 0004', 3, None,         None,         None),
+        ('dean1',        'dean123',  'Dean Maria Santos',         'Maria',     None,  'Santos',     None,   'dean',        gl['Grade 1'],   'mariasantos@school.edu.ph','+63 912 000 0005', 2, None,         None,         None),
+        ('dean2',        'dean456',  'Dean Jose Reyes',           'Jose',      None,  'Reyes',      None,   'dean',        gl['Grade 2'],   'josereyes@school.edu.ph',  '+63 912 000 0006', 0, None,         None,         None),
+        ('teacher1',     'teach123', 'Sheila P. Chevallier',      'Sheila',    'P.',  'Chevallier', None,   'teacher',     gl['Grade 1'],   'sheila.c@school.edu.ph',   '+63 992 812 5954', 2, '07-22-2022', '1990-15-03', 'Bonifacio Avenue, Barangay II'),
+        ('teacher2',     'teach456', 'Juan D. Santos',            'Juan',      'D.',  'Santos',     None,   'teacher',     gl['Grade 1'],   'juan.s@school.edu.ph',     '+63 912 000 0008', 0, None,         None,         None),
+        ('teacher3',     'teach789', 'Maria C. Reyes',            'Maria',     'C.',  'Reyes',      None,   'teacher',     gl['Grade 2'],   'maria.r@school.edu.ph',    '+63 912 000 0009', 4, None,         None,         None),
     ]
+    new_users = set()
     for (username, password, full_name, first, middle, last, suffix,
-         role, gl_id, email, phone, tin, qsis, hdmf, phic, date_appt, birthdate, address) in users:
+         role, gl_id, email, phone, children, date_appt, birthdate, address) in users:
         pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         c.execute("""INSERT OR IGNORE INTO users
                      (username, password_hash, full_name, first_name, middle_name,
                       last_name, suffix, role, grade_level_id, email, phone_number,
-                      tin, qsis, hdmf, phic, date_of_appointment, birthdate, address)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      number_of_children, date_of_appointment, birthdate, address)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (username, pw, full_name, first, middle, last, suffix,
-                   role, gl_id, email, phone, tin, qsis, hdmf, phic, date_appt, birthdate, address))
+                   role, gl_id, email, phone, children, date_appt, birthdate, address))
+        if c.rowcount:
+            new_users.add(username)
+        elif backfill_qualifications:
+            # Existing DB just migrated off the government-ID columns.
+            c.execute("UPDATE users SET number_of_children=? WHERE username=?",
+                      (children, username))
+            new_users.add(username)
+
+    conn.commit()
+
+    # DepEd skill / certification taxonomy (deped_profile.py).
+    from qualifications import seed_taxonomy, set_skills, set_certifications, set_education
+    seed_taxonomy(c)
+    conn.commit()
+
+    # Sample profiles so assignee suggestions have something to match on.
+    # Only for demo users created (or migrated) in this run, so data a user
+    # later removes is not re-added on every startup.
+    qualifications = {
+        'teacher1':     (['Master of Ceremonies', 'Stage Decoration', 'Graphic Design & Layout'],
+                         ['National Certificate II in Events Management',
+                          'Licensure Examination for Teachers (LET)']),
+        'teacher2':     (['Sound System & A/V', 'SDRRM Coordination', 'Network Troubleshooting'],
+                         ['Standard First Aid', 'Basic Life Support',
+                          'NC II in Computer Systems Servicing']),
+        'teacher3':     (['Reading Remediation', 'Phil-IRI Reading Assessment', 'Exam Authoring'],
+                         ['Licensure Examination for Teachers (LET)',
+                          'Early Language, Literacy, and Numeracy (ELLN)']),
+        'coordinator1': (['Learning Module Development', 'Action Research', 'DepEd e-RPMS Portal'],
+                         ['Licensure Examination for Teachers (LET)',
+                          'Higher-Order Thinking Skills (HOTS) Facilitator']),
+        'coordinator2': (['DepEd LIS Management', 'e-BEIS Encoding', 'Live Stream Audio/Video'],
+                         ['Trainers Methodology Level I (TM I)']),
+        'dean1':        (['Minutes & Memo Drafting', 'Committee Documentation'],
+                         ['Civil Service Professional Eligibility']),
+        'dean2':        (['DepEd Liquidation', 'Property Custodianship'],
+                         ['School Disaster Risk Reduction & Management (SDRRM) Officer']),
+    }
+    # (highest attainment, undergraduate degree, specialization, postgraduate focus)
+    education = {
+        'teacher1':     ("Bachelor's Degree", 'BEEd – Generalist', 'MAPEH', None),
+        'teacher2':     ("With Master's Units", 'BSEd', 'Science', None),
+        'teacher3':     ("Master's Degree (CAR/Full)", 'BEEd – Generalist', 'English',
+                         'Curriculum and Instruction'),
+        'coordinator1': ("Master's Degree (CAR/Full)", 'BSEd', 'Mathematics',
+                         'Curriculum and Instruction'),
+        'coordinator2': ("With Master's Units", 'Bachelor\'s Degree + TCP/DPE (18 Professional Ed Units)',
+                         'TLE/EPP', None),
+        'dean1':        ('Doctoral Degree (EdD/PhD)', 'BEEd – Generalist', 'Filipino',
+                         'Educational Management'),
+        'dean2':        ('With Doctoral Units', 'BSEd', 'Araling Panlipunan',
+                         'Educational Management'),
+    }
+    for uname in qualifications.keys() | education.keys():
+        row = c.execute("SELECT id FROM users WHERE username=?", (uname,)).fetchone()
+        if not row:
+            continue
+        if uname in new_users and uname in qualifications:
+            set_skills(c, row['id'], qualifications[uname][0])
+            set_certifications(c, row['id'], qualifications[uname][1])
+        if (uname in new_users or backfill_education) and uname in education:
+            set_education(c, row['id'], dict(zip(
+                ('highest_attainment', 'undergraduate_degree', 'specialization',
+                 'postgraduate_focus'), education[uname])))
 
     conn.commit()
 

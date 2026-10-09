@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional
 from database import connect_db
 from auth import (get_current_user, require_admin, require_admin_or_principal,
                   require_can_assign, hash_password, ASSIGNABLE_TO)
+from qualifications import (EducationBody, get_qualifications, set_skills,
+                            set_certifications, set_education, validate_education,
+                            validate_catalog_names, score_candidates)
 
 router = APIRouter(tags=["Users"])
 
@@ -23,23 +26,19 @@ def list_users(user=Depends(get_current_user)):
     return [dict(r) for r in rows]
 
 
-@router.get("/api/users/assignable")
-def list_assignable_users(user=Depends(require_can_assign), target_role: str = ""):
+def _assignable_rows(db, user, target_role: str = "") -> list:
     """Personnel the caller may assign a task to. Matching is by the *roles a
     person can act as* (user_roles), so a teacher-who-is-also-a-dean shows up
     under whichever identity is being targeted. When target_role is given, only
     holders of that role are returned (and the returned `role` is that target)."""
-    db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
     allowed_roles = ASSIGNABLE_TO.get(role, set())
     if not allowed_roles:
-        db.close()
         return []
 
     if target_role:
         if target_role not in allowed_roles:
-            db.close()
             return []
         roles_to_show = {target_role}
     else:
@@ -49,7 +48,7 @@ def list_assignable_users(user=Depends(require_can_assign), target_role: str = "
     # Match against the roles a person holds (user_roles → roles), and report that
     # role as the user's role so the UI assigns to the intended identity.
     q = f"""SELECT DISTINCT u.id, u.username, u.full_name, r.roles AS role,
-                   u.grade_level_id, gl.grade_level
+                   u.grade_level_id, gl.grade_level, u.is_active
             FROM users u
             JOIN user_roles ur ON ur.user_id = u.id
             JOIN roles r ON r.id = ur.role_id
@@ -69,13 +68,43 @@ def list_assignable_users(user=Depends(require_can_assign), target_role: str = "
             q += " AND u.grade_level_id=?"
             params.append(dean["gl"])
         else:
-            db.close()
             return []
 
     q += " ORDER BY r.roles, u.full_name"
-    rows = db.execute(q, params).fetchall()
-    db.close()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in db.execute(q, params).fetchall()]
+
+
+@router.get("/api/users/assignable")
+def list_assignable_users(user=Depends(require_can_assign), target_role: str = ""):
+    db = connect_db()
+    try:
+        return _assignable_rows(db, user, target_role)
+    finally:
+        db.close()
+
+
+class SuggestionRequest(BaseModel):
+    target_role: Optional[str] = ""
+    title: Optional[str] = ""
+    subject: Optional[str] = ""
+    instructions: Optional[str] = ""
+    task_category: Optional[str] = "common"
+
+
+@router.post("/api/users/assignable/suggestions")
+def suggest_assignees(req: SuggestionRequest, user=Depends(require_can_assign)):
+    """Assignable personnel ranked for a task by their DepEd profile
+    (specialization, certifications, skills, education) matching the task text,
+    with number of children and open workload lowering the rank.
+    See qualifications.score_candidates for the scoring rules."""
+    db = connect_db()
+    try:
+        candidates = [r for r in _assignable_rows(db, user, req.target_role or "")
+                      if r["is_active"]]
+        task_text = " ".join(filter(None, [req.title, req.subject, req.instructions]))
+        return score_candidates(db, candidates, task_text, req.task_category or "common")
+    finally:
+        db.close()
 
 
 class CreateUserRequest(BaseModel):
@@ -130,6 +159,7 @@ def get_my_profile(user=Depends(get_current_user)):
         (uid,)
     ).fetchall()
     d["subjects"] = [dict(s) for s in subjects]
+    d.update(get_qualifications(db, uid))
     db.close()
     return d
 
@@ -141,10 +171,11 @@ class UpdateProfileRequest(BaseModel):
     suffix: Optional[str] = None
     email: Optional[str] = None
     phone_number: Optional[str] = None
-    tin: Optional[str] = None
-    qsis: Optional[str] = None
-    hdmf: Optional[str] = None
-    phic: Optional[str] = None
+    birthdate: Optional[str] = None
+    number_of_children: Optional[int] = Field(None, ge=0)
+    skills: Optional[List[str]] = None
+    certifications: Optional[List[str]] = None
+    education: Optional[EducationBody] = None
     date_of_appointment: Optional[str] = None
     address: Optional[str] = None
 
@@ -154,7 +185,7 @@ class UpdateProfileRequest(BaseModel):
 # the dynamic SET clause provably safe (defense in depth).
 _PROFILE_COLUMNS = {
     "first_name", "middle_name", "last_name", "suffix", "email", "phone_number",
-    "tin", "qsis", "hdmf", "phic", "date_of_appointment", "address",
+    "birthdate", "number_of_children", "date_of_appointment", "address",
 }
 
 
@@ -162,6 +193,12 @@ _PROFILE_COLUMNS = {
 def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user)):
     db = connect_db()
     try:
+        try:
+            if req.education is not None:
+                validate_education(req.education.dict())
+            validate_catalog_names(db, req.skills, req.certifications)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         uid = int(user["sub"])
         updates = {k: v for k, v in req.dict().items()
                    if v is not None and k in _PROFILE_COLUMNS}
@@ -183,7 +220,13 @@ def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user))
             set_clause = ", ".join(f"{k}=?" for k in updates)
             db.execute(f"UPDATE users SET {set_clause} WHERE id=?",
                        list(updates.values()) + [uid])
-            db.commit()
+        if req.skills is not None:
+            set_skills(db, uid, req.skills)
+        if req.certifications is not None:
+            set_certifications(db, uid, req.certifications)
+        if req.education is not None:
+            set_education(db, uid, req.education.dict())
+        db.commit()
         return {"message": "Profile updated"}
     finally:
         db.close()

@@ -48,6 +48,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
   // Step 1
   late final TextEditingController _titleCtrl;
   late final TextEditingController _dateCtrl;
+  // Days already taken by a pending/approved event (greyed out in the picker),
+  // and the server's verdict on the chosen date (null = free).
+  Set<DateTime> _takenDays = {};
+  String? _dateIssue;
+  bool _checkingDate = false;
   late final TextEditingController _venueCtrl;
   late final TextEditingController _budgetCtrl;
   late final TextEditingController _fundCtrl;
@@ -125,6 +130,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     // Register draft auto-save so a logout / token-expiry persists the work.
     _appState = context.read<AppState>();
     _appState?.registerDraftAutosave(_autoSaveDraft);
+    _loadTakenDays();
 
     final e = widget.existingEvent;
 
@@ -358,10 +364,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
     if (!_persisted && _canSaveAsDraft && _titleCtrl.text.trim().isNotEmpty) {
       _persisted = true;
       final payload = _buildPayload()..['status'] = 'draft';
+      // Fire-and-forget: the screen is going away, so failures are ignored.
       if (_isEditing) {
-        ApiService.updateEvent(widget.existingEvent!['id'] as int, payload);
+        ApiService.updateEvent(widget.existingEvent!['id'] as int, payload).ignore();
       } else {
-        ApiService.createEvent(payload);
+        ApiService.createEvent(payload).ignore();
       }
     }
     _appState?.unregisterDraftAutosave(_autoSaveDraft);
@@ -402,6 +409,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     // Step 1 - Proposal Brief
     if (_titleCtrl.text.trim().isEmpty) return (0, 'Please enter the event title.');
     if (_dateCtrl.text.trim().isEmpty) return (0, 'Please enter the target date.');
+    if (_dateIssue != null) return (0, _dateIssue!);
     if (_venueCtrl.text.trim().isEmpty) return (0, 'Please enter the proposed venue.');
     if (_pCat1Ctrl.text.trim().isEmpty) return (0, 'Please name the first target participant category.');
     if (_pCat2Ctrl.text.trim().isEmpty) return (0, 'Please name the second target participant category.');
@@ -631,7 +639,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: const Color(0xFFE53E3E)),
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: const Color(0xFFE53E3E)),
       );
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -831,24 +840,76 @@ class _AddEventScreenState extends State<AddEventScreen> {
     // A proposal can't target a date that has already passed — start no earlier
     // than today (the backend re-checks this and any same-day conflict).
     final initial = parsed.isBefore(today) ? today : parsed;
+    bool free(DateTime d) => !_takenDays.contains(DateTime(d.year, d.month, d.day));
+    // Start on a selectable day: the picker rejects a taken initialDate.
+    var start = initial;
+    for (var i = 0; i < 366 && !free(start); i++) {
+      start = start.add(const Duration(days: 1));
+    }
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial,
+      initialDate: free(start) ? start : initial,
       firstDate: today,
       lastDate: DateTime(now.year + 5),
+      helpText: 'Select target date (greyed-out days already have an event)',
+      selectableDayPredicate: (d) => free(d) || d == initial,
     );
     if (picked != null) {
       setState(() => _dateCtrl.text = _fmtLongDate(picked));
+      _checkDate();
+    }
+  }
+
+  /// Dates of other live (pending/approved) events, across all school years.
+  Future<void> _loadTakenDays() async {
+    try {
+      final events = await ApiService.getEvents(schoolYear: 'all');
+      final mine = widget.existingEvent?['id'];
+      final days = <DateTime>{};
+      for (final e in events) {
+        final st = (e['status'] ?? '').toString();
+        if (e['id'] == mine || (st != 'approved' && st != 'pending_approval')) continue;
+        final d = parseEventDate(e['target_date']?.toString());
+        if (d != null) days.add(DateTime(d.year, d.month, d.day));
+      }
+      if (mounted) setState(() => _takenDays = days);
+    } catch (_) {/* the server check below still guards submission */}
+    if (_dateCtrl.text.trim().isNotEmpty) _checkDate();
+  }
+
+  /// Server-side conflict check for the chosen date; the message is shown
+  /// under the field and blocks submission.
+  Future<void> _checkDate() async {
+    final text = _dateCtrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _checkingDate = true);
+    try {
+      final r = await ApiService.checkEventDate(text,
+          excludeId: widget.existingEvent?['id'] as int?);
+      if (mounted && _dateCtrl.text.trim() == text) {
+        setState(() => _dateIssue = r['available'] == true ? null : r['message']?.toString());
+      }
+    } catch (_) {
+      // Leave the last verdict; the server re-checks on submit anyway.
+    } finally {
+      if (mounted) setState(() => _checkingDate = false);
     }
   }
 
   Widget _buildDateField() {
+    final ok = _dateIssue == null && _dateCtrl.text.trim().isNotEmpty && !_checkingDate;
     return TextField(
       controller: _dateCtrl,
       readOnly: true,
       onTap: _pickTargetDate,
       style: const TextStyle(fontSize: 13),
       decoration: InputDecoration(
+        errorText: _dateIssue,
+        errorMaxLines: 2,
+        helperText: _checkingDate
+            ? 'Checking the calendar...'
+            : ok ? 'No other event is scheduled on this date.' : null,
+        helperStyle: const TextStyle(fontSize: 11.5, color: Color(0xFF16A34A)),
         hintText: 'Select target date',
         hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 13),
         filled: true, fillColor: const Color(0xFFF7F9FC),
@@ -1511,6 +1572,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     child: Padding(padding: const EdgeInsets.only(right: 8),
                         child: TextField(
                           controller: e.value[kv.value], maxLines: null,
+                          // Person names capitalize as typed.
+                          inputFormatters: kv.value == 'name'
+                              ? const [TitleCaseTextInputFormatter()] : null,
                           style: const TextStyle(fontSize: 12),
                           decoration: InputDecoration(
                             hintText: hints[kv.key],

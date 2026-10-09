@@ -7,6 +7,7 @@ import '../services/app_state.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
+import '../widgets/school_year_picker.dart';
 import 'task_detail_screen.dart';
 import 'edit_task_screen.dart';
 
@@ -29,6 +30,8 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
   String? _errorMsg;
   // Principal-only: 'mine' = tasks they created, 'all' = every task.
   String _scope = 'mine';
+  // Current school year by default; earlier years are archived.
+  SchoolYearFilter _filter = SchoolYearFilter.current;
 
   @override
   void initState() {
@@ -39,7 +42,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
   Future<void> _load() async {
     setState(() { _loading = true; _errorMsg = null; });
     try {
-      final tasks = await ApiService.getTasks(scope: _scope);
+      final tasks = await ApiService.getTasks(scope: _scope, filter: _filter);
       final filtered = tasks.where((t) => t.taskCategory == widget.category).toList();
       if (mounted) setState(() { _tasks = filtered; _loading = false; });
     } catch (e) {
@@ -122,23 +125,32 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
             ),
             const SizedBox(height: 20),
 
-            // ── Scope tabs (principal: their created tasks vs. all tasks) ──
-            if (role == 'principal') ...[
-              Row(children: [
-                _ScopeTab(
-                  label: 'My Created Tasks',
-                  selected: _scope == 'mine',
-                  onTap: () => _setScope('mine'),
+            // ── Scope tabs (principal: their created tasks vs. all tasks) and
+            // the school year shown (older years are archived) ──
+            Wrap(
+              spacing: 8,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (role == 'principal') ...[
+                  _ScopeTab(
+                    label: 'My Created Tasks',
+                    selected: _scope == 'mine',
+                    onTap: () => _setScope('mine'),
+                  ),
+                  _ScopeTab(
+                    label: 'All Tasks',
+                    selected: _scope == 'all',
+                    onTap: () => _setScope('all'),
+                  ),
+                ],
+                SchoolYearPicker(
+                  value: _filter,
+                  onChanged: (f) { setState(() => _filter = f); _load(); },
                 ),
-                const SizedBox(width: 8),
-                _ScopeTab(
-                  label: 'All Tasks',
-                  selected: _scope == 'all',
-                  onTap: () => _setScope('all'),
-                ),
-              ]),
-              const SizedBox(height: 16),
-            ],
+              ],
+            ),
+            const SizedBox(height: 16),
 
             // ── Search ──
             Container(

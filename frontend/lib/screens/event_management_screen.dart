@@ -11,6 +11,8 @@ import '../theme/app_theme.dart';
 import '../utils/event_print_helper.dart';
 import '../utils/date_parse.dart';
 import '../widgets/skeleton_widgets.dart';
+import '../widgets/school_year_picker.dart';
+import '../models/models.dart' show SchoolYearFilter;
 
 part 'event_management_screen_widgets.dart';
 
@@ -50,7 +52,10 @@ DateTime? _parseDate(String? raw) => parseEventDate(raw);
 
 class EventManagementScreen extends StatefulWidget {
   final VoidCallback onAddEvent;
-  const EventManagementScreen({super.key, required this.onAddEvent});
+  /// When set (e.g. from the dashboard: /events?open=12), that event is
+  /// scrolled into view, highlighted, and its details opened once loaded.
+  final int? openEventId;
+  const EventManagementScreen({super.key, required this.onAddEvent, this.openEventId});
 
   @override
   State<EventManagementScreen> createState() => _EventManagementScreenState();
@@ -62,16 +67,88 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   DateTime? _selectedDay;
   bool      _isLoading   = true;
   List<_CalEvent> _events = [];
+  int? _highlightId;
+  final Map<int, GlobalKey> _cardKeys = {};
+  // Current school year by default; earlier years are archived.
+  SchoolYearFilter _filter = SchoolYearFilter.current;
 
   @override
   void initState() {
     super.initState();
-    _loadEvents();
+    _loadEvents().then((_) => _openRequestedEvent());
+  }
+
+  void _openRequestedEvent() {
+    final id = widget.openEventId;
+    if (id == null || !mounted) return;
+    final matches = _events.where((e) => e.id == id);
+    if (matches.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('That event is no longer available.')));
+      return;
+    }
+    final event = matches.first;
+    setState(() { _highlightId = id; _selectedTab = 0; });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final ctx = _cardKeys[id]?.currentContext;
+      if (ctx != null) {
+        await Scrollable.ensureVisible(ctx,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic, alignment: 0.2);
+      }
+      if (!mounted) return;
+      _openDetail(event);
+      Future.delayed(const Duration(seconds: 4), () {
+        if (mounted && _highlightId == id) setState(() => _highlightId = null);
+      });
+    });
+  }
+
+  /// Details popup with the actions that fit the event's status.
+  void _openDetail(_CalEvent e) {
+    switch (e.status) {
+      case _EventStatus.approved:
+        _showEventDetail(context, e,
+            canManage: false, canApprove: false, isPrincipal: _isPrincipal);
+        break;
+      case _EventStatus.disabled:
+        _showEventDetail(context, e,
+            canManage: _canManage, isPrincipal: _isPrincipal);
+        break;
+      default:
+        _showEventDetail(context, e,
+            canManage: _canManage,
+            canApprove: _canApprove,
+            isPrincipal: _isPrincipal,
+            onApprove: () => _approve(e),
+            onDisable: () => _confirmDisable(context, e));
+    }
+  }
+
+  /// Keys the card for scrolling and outlines it while highlighted.
+  Widget _trackable(_CalEvent e, Widget card) {
+    if (e.id == null) return card;
+    final on = e.id == _highlightId;
+    return AnimatedContainer(
+      key: _cardKeys.putIfAbsent(e.id!, () => GlobalKey()),
+      duration: const Duration(milliseconds: 300),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: on ? const Color(0xFF2563EB) : Colors.transparent, width: 2),
+        boxShadow: on
+            ? [BoxShadow(color: const Color(0xFF2563EB).withValues(alpha: 0.18),
+                blurRadius: 12, spreadRadius: 2)]
+            : const [],
+      ),
+      child: card,
+    );
   }
 
   Future<void> _loadEvents() async {
     try {
-      final data = await ApiService.getEvents();
+      final data = await ApiService.getEvents(
+          schoolYear: _filter.schoolYear == 'current' ? null : _filter.schoolYear);
       setState(() {
         _events = data.map((e) => _CalEvent(
           id: e['id'] as int?,
@@ -307,16 +384,20 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
+        Wrap(
+          spacing: 8,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _Tab(label: 'All Events', active: _selectedTab == 0,
                 onTap: () => setState(() => _selectedTab = 0)),
-            if (!_isPrincipal) ...[
-              const SizedBox(width: 8),
+            if (!_isPrincipal)
               _Tab(label: 'My Events', active: _selectedTab == 1,
                   onTap: () => setState(() => _selectedTab = 1)),
-            ],
+            SchoolYearPicker(
+              value: _filter,
+              onChanged: (f) { setState(() => _filter = f); _loadEvents(); },
+            ),
           ],
         ),
         const SizedBox(height: 20),
@@ -335,7 +416,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
         if (_forStatus(_EventStatus.approved).isNotEmpty) ...[
           _sectionLabel('Upcoming / Approved Events'),
           const SizedBox(height: 10),
-          ..._forStatus(_EventStatus.approved).map((e) => _EventCard(
+          ..._forStatus(_EventStatus.approved).map((e) => _trackable(e, _EventCard(
                 event: e,
                 canManage: false,
                 canApprove: false,
@@ -344,11 +425,8 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 onDisable: () {},
                 onApprove: () {},
                 onPrint: () => EventPrintHelper.printEvent(context, e.raw),
-                onTap: () => _showEventDetail(context, e,
-                    canManage: false,
-                    canApprove: false,
-                    isPrincipal: _isPrincipal),
-              )),
+                onTap: () => _openDetail(e),
+              ))),
           const SizedBox(height: 20),
         ],
 
@@ -356,7 +434,7 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
         if (_forStatus(_EventStatus.pendingApproval).isNotEmpty) ...[
           _sectionLabel('Pending Approval'),
           const SizedBox(height: 10),
-          ..._forStatus(_EventStatus.pendingApproval).map((e) => _EventCard(
+          ..._forStatus(_EventStatus.pendingApproval).map((e) => _trackable(e, _EventCard(
                 event: e,
                 canManage: _canManage,
                 canApprove: _canApprove,
@@ -365,13 +443,8 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                 onDisable: () => _confirmDisable(context, e),
                 onApprove: () => _approve(e),
                 onPrint: () => EventPrintHelper.printEvent(context, e.raw),
-                onTap: () => _showEventDetail(context, e,
-                    canManage: _canManage,
-                    canApprove: _canApprove,
-                    isPrincipal: _isPrincipal,
-                    onApprove: () => _approve(e),
-                    onDisable: () => _confirmDisable(context, e)),
-              )),
+                onTap: () => _openDetail(e),
+              ))),
           const SizedBox(height: 20),
         ],
 
@@ -379,14 +452,13 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
         if (_disabledEvents.isNotEmpty && _selectedTab == 0) ...[
           _sectionLabel('Disabled Events'),
           const SizedBox(height: 10),
-          ..._disabledEvents.map((e) => _DisabledEventCard(
+          ..._disabledEvents.map((e) => _trackable(e, _DisabledEventCard(
                 event: e,
                 canManage: _canManage,
                 onEnable: () => _enable(e),
                 onPrint: () => EventPrintHelper.printEvent(context, e.raw),
-                onTap: () => _showEventDetail(context, e,
-                    canManage: _canManage, isPrincipal: _isPrincipal),
-              )),
+                onTap: () => _openDetail(e),
+              ))),
           const SizedBox(height: 20),
         ],
 

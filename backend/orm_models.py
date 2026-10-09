@@ -40,10 +40,7 @@ class User(Base):
     avatar_url = Column(Text)
     email = Column(Text)
     phone_number = Column(Text)
-    tin = Column(Text)
-    qsis = Column(Text)
-    hdmf = Column(Text)
-    phic = Column(Text)
+    number_of_children = Column(Integer, nullable=False, default=0)
     date_of_appointment = Column(Text)
     birthdate = Column(Text)
     address = Column(Text)
@@ -54,6 +51,7 @@ class User(Base):
             "role IN ('admin','principal','coordinator','dean','teacher','registrar')",
             name="ck_users_role",
         ),
+        CheckConstraint("number_of_children >= 0", name="ck_users_children"),
     )
 
 
@@ -64,6 +62,72 @@ class UserSubject(Base):
     subject = Column(Text, nullable=False)
     grade_level_id = Column(Integer, ForeignKey("grade_levels.id"))
     __table_args__ = (UniqueConstraint("user_id", "subject", "grade_level_id"),)
+
+
+class EducationBackground(Base):
+    __tablename__ = "education_background"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+                     unique=True)
+    highest_attainment = Column(Text)
+    undergraduate_degree = Column(Text)
+    specialization = Column(Text)
+    postgraduate_focus = Column(Text)
+    updated_at = Column(TIMESTAMP, server_default=func.now())
+
+
+class SkillCategory(Base):
+    __tablename__ = "skill_categories"
+    id = Column(Integer, primary_key=True)
+    category_name = Column(Text, nullable=False, unique=True)
+    description = Column(Text)
+    task_keywords = Column(Text)
+
+
+class Skill(Base):
+    __tablename__ = "skills"
+    id = Column(Integer, primary_key=True)
+    skill_name = Column(Text, nullable=False, unique=True)
+    category_id = Column(Integer, ForeignKey("skill_categories.id", ondelete="SET NULL"))
+
+
+class CertificationCategory(Base):
+    __tablename__ = "certification_categories"
+    id = Column(Integer, primary_key=True)
+    category_name = Column(Text, nullable=False, unique=True)
+    task_keywords = Column(Text)
+
+
+class CertificationIssuer(Base):
+    __tablename__ = "certification_issuers"
+    id = Column(Integer, primary_key=True)
+    issuer_name = Column(Text, nullable=False, unique=True)
+    acronym = Column(Text)
+
+
+class Certification(Base):
+    __tablename__ = "certifications"
+    id = Column(Integer, primary_key=True)
+    cert_name = Column(Text, nullable=False, unique=True)
+    category_id = Column(Integer, ForeignKey("certification_categories.id", ondelete="SET NULL"))
+    issuer_id = Column(Integer, ForeignKey("certification_issuers.id", ondelete="SET NULL"))
+
+
+class UserSkill(Base):
+    __tablename__ = "user_skills"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    skill_id = Column(Integer, ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    __table_args__ = (UniqueConstraint("user_id", "skill_id"),)
+
+
+class UserCertification(Base):
+    __tablename__ = "user_certifications"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    certification_id = Column(Integer, ForeignKey("certifications.id", ondelete="CASCADE"),
+                              nullable=False)
+    __table_args__ = (UniqueConstraint("user_id", "certification_id"),)
 
 
 class CoordinatorAssignment(Base):

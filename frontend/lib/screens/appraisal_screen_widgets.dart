@@ -1164,13 +1164,24 @@ class _EventsTabState extends State<_EventsTab> {
             style: GoogleFonts.plusJakartaSans(
                 fontSize: 13, fontWeight: FontWeight.w700, color: pctColor)))),
         SizedBox(width: 130, child: Center(child: _StatusChip(status: _effectiveStatus(event)))),
-        SizedBox(width: 100, child: Center(child: IconButton(
-          tooltip: 'Evaluation options',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          icon: const Icon(Icons.assignment_outlined, size: 20, color: Color(0xFF3B82F6)),
-          onPressed: () => _showEvaluationOptions(event),
-        ))),
+        SizedBox(width: 100, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          IconButton(
+            tooltip: 'Evaluation options',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            icon: const Icon(Icons.assignment_outlined, size: 20, color: Color(0xFF3B82F6)),
+            onPressed: () => _showEvaluationOptions(event),
+          ),
+          IconButton(
+            tooltip: 'Evaluator demographics',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            icon: Icon(Icons.groups_outlined, size: 20,
+                color: hasEvals ? const Color(0xFF3B82F6) : Colors.grey.shade400),
+            onPressed: () => showDialog<void>(
+                context: context, builder: (_) => _DemographicsDialog(event: event)),
+          ),
+        ])),
         SizedBox(width: 120, child: Align(
           alignment: Alignment.centerRight,
           child: hasEvals

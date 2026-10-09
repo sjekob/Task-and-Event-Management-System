@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../models/models.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
+import '../widgets/school_year_picker.dart';
 import 'task_detail_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
@@ -26,6 +27,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
   int _offset = 0;
   String _search = '';
   String _statusFilter = 'all'; // 'all' | 'pending' | 'submitted'
+  // Current school year by default; past years hold the user's archived work.
+  SchoolYearFilter _filter = SchoolYearFilter.current;
 
   @override
   void initState() {
@@ -51,7 +54,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     setState(() { _loading = true; _offset = 0; _hasMore = true; });
     try {
       final page = await ApiService.getAssignedTasksPage(
-          category: widget.category, limit: _pageSize, offset: 0);
+          category: widget.category, limit: _pageSize, offset: 0, filter: _filter);
       if (mounted) setState(() {
         _tasks = page.items;
         _offset = _tasks.length;
@@ -68,7 +71,7 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
     setState(() => _loadingMore = true);
     try {
       final page = await ApiService.getAssignedTasksPage(
-          category: widget.category, limit: _pageSize, offset: _offset);
+          category: widget.category, limit: _pageSize, offset: _offset, filter: _filter);
       if (mounted) setState(() {
         _tasks = [..._tasks, ...page.items];
         _offset = _tasks.length;
@@ -143,17 +146,23 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
             ),
             const SizedBox(height: 12),
 
-            // ── Status filter pills ──
-            Row(
+            // ── Status filter pills + school year (archived work) ──
+            Wrap(
+              spacing: 8,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _FilterPill(label: 'All', active: _statusFilter == 'all',
                     onTap: () => setState(() => _statusFilter = 'all')),
-                const SizedBox(width: 8),
                 _FilterPill(label: 'Pending', active: _statusFilter == 'pending',
                     onTap: () => setState(() => _statusFilter = 'pending')),
-                const SizedBox(width: 8),
                 _FilterPill(label: 'Submitted', active: _statusFilter == 'submitted',
                     onTap: () => setState(() => _statusFilter = 'submitted')),
+                const SizedBox(width: 4),
+                SchoolYearPicker(
+                  value: _filter,
+                  onChanged: (f) { setState(() => _filter = f); _load(); },
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -255,11 +264,7 @@ class _MyTaskCard extends StatelessWidget {
     } catch (_) { return d; }
   }
 
-  bool get _isOverdue {
-    final end = task.endDate;
-    if (end == null || end.isEmpty || task.isSubmitted) return false;
-    try { return DateTime.parse(end).isBefore(DateTime.now()); } catch (_) { return false; }
-  }
+  bool get _isOverdue => task.isOverdue;
 
   @override
   Widget build(BuildContext context) {

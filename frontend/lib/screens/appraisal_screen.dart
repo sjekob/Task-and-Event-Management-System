@@ -9,10 +9,12 @@ import '../services/api_service.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/school_year_picker.dart';
 
 part 'appraisal_screen_widgets.dart';
+part 'appraisal_badges_tab.dart';
 
-enum _AppraisalTab { timingPoints, specialTasks, events, analytics }
+enum _AppraisalTab { timingPoints, specialTasks, events, badges, analytics }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shell
@@ -39,16 +41,21 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   bool _loadingSubmissions = true;
   String? _submissionError;
 
+  // School year / term every tab covers (default: current; ended years are archived).
+  SchoolYearFilter _filter = SchoolYearFilter.current;
+  late String _role;
+
   @override
   void initState() {
     super.initState();
     final role = context.read<AppState>().userRole;
+    _role = role;
     if (role == 'dean' || role == 'teacher') {
       // Teachers see their own records only; deans see their grade level. Neither
       // gets the school-wide Analytics tab.
-      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events];
+      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.badges];
     } else {
-      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
+      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.badges, _AppraisalTab.analytics];
     }
     _activeTab = _availableTabs.first;
     _loadSubmissions();
@@ -59,7 +66,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   Future<void> _loadSubmissions() async {
     setState(() { _loadingSubmissions = true; _submissionError = null; });
     try {
-      final s = await ApiService.getReportSubmissions();
+      final s = await ApiService.getReportSubmissions(filter: _filter);
       if (mounted) setState(() => _submissions = s);
     } catch (e) {
       if (mounted) setState(() => _submissionError = e.toString());
@@ -70,7 +77,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   Future<void> _loadTasks() async {
     setState(() { _loadingTasks = true; _taskError = null; });
     try {
-      final t = await ApiService.getSpecialTasks();
+      final t = await ApiService.getSpecialTasks(filter: _filter);
       if (mounted) setState(() => _tasks = t);
     } catch (e) {
       if (mounted) setState(() => _taskError = e.toString());
@@ -81,7 +88,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   Future<void> _loadEvents() async {
     setState(() { _loadingEvents = true; _eventError = null; });
     try {
-      final e = await ApiService.getEventsForAppraisal();
+      final e = await ApiService.getEventsForAppraisal(filter: _filter);
       if (mounted) setState(() => _events = e);
     } catch (e) {
       if (mounted) setState(() => _eventError = e.toString());
@@ -93,6 +100,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     _AppraisalTab.timingPoints => 'Timing Points',
     _AppraisalTab.specialTasks => 'Special Tasks',
     _AppraisalTab.events => 'Events',
+    _AppraisalTab.badges => 'Badges',
     _AppraisalTab.analytics => 'Analytics',
   };
 
@@ -100,8 +108,17 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     _AppraisalTab.timingPoints => Icons.timer_outlined,
     _AppraisalTab.specialTasks => Icons.assignment_outlined,
     _AppraisalTab.events => Icons.calendar_month_outlined,
+    _AppraisalTab.badges => Icons.workspace_premium_outlined,
     _AppraisalTab.analytics => Icons.bar_chart_outlined,
   };
+
+  void _setFilter(SchoolYearFilter f) {
+    if (f == _filter) return;
+    setState(() => _filter = f);
+    _loadSubmissions();
+    _loadTasks();
+    _loadEvents();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +130,16 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
           subtitle: 'Evaluate special tasks and events · Track faculty performance · View annual analytics',
         ),
         const SizedBox(height: 20),
-        _buildTabBar(),
+        Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: WrapAlignment.spaceBetween,
+          children: [
+            _buildTabBar(),
+            SchoolYearPicker(value: _filter, onChanged: _setFilter, includeTerms: true),
+          ],
+        ),
         const SizedBox(height: 16),
         Expanded(child: _buildBody()),
       ]),
@@ -123,7 +149,7 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
   Widget _buildTabBar() {
     int pendingTasks = _tasks.where((t) => t.status == 'pending').length;
     int pendingEvents = _events.where((e) => e.status == 'pending' || e.status == 'upcoming').length;
-    return Row(children: _availableTabs.map((tab) {
+    return Wrap(runSpacing: 8, children: _availableTabs.map((tab) {
       final active = tab == _activeTab;
       int badge = tab == _AppraisalTab.specialTasks ? pendingTasks
           : tab == _AppraisalTab.events ? pendingEvents : 0;
@@ -176,6 +202,12 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         events: _events, loading: _loadingEvents, error: _eventError,
         onRefresh: _loadEvents,
         onEvaluated: (u) { setState(() { final i = _events.indexWhere((e) => e.id == u.id); if (i >= 0) _events[i] = u; }); }),
+    _AppraisalTab.badges => _BadgesTab(
+        filter: _filter,
+        // Principal/admin aren't appraised themselves; supervisors also rank staff.
+        showOwn: _role != 'principal' && _role != 'admin',
+        showLeaderboard: _role == 'principal' || _role == 'admin' ||
+            _role == 'coordinator' || _role == 'dean'),
     _AppraisalTab.analytics => _AnalyticsTab(tasks: _tasks, events: _events),
   };
 }

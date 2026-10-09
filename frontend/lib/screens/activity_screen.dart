@@ -4,6 +4,8 @@ import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
 import '../services/api_service.dart';
 import '../utils/event_format.dart';
+import '../widgets/school_year_picker.dart';
+import '../models/models.dart' show SchoolYearFilter;
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
@@ -16,6 +18,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
   List<Map<String, dynamic>> _events = [];
   bool _loading = true;
   String? _error;
+  // Current school year by default; earlier years are archived.
+  SchoolYearFilter _filter = SchoolYearFilter.current;
 
   @override
   void initState() {
@@ -26,7 +30,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final data = await ApiService.getEvents();
+      final data = await ApiService.getEvents(
+          schoolYear: _filter.schoolYear == 'current' ? null : _filter.schoolYear);
       if (mounted) setState(() { _events = data; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
@@ -92,8 +97,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
               children: [
                 Row(
                   children: [
-                    Text('Upcoming Events', style: AppTheme.heading3),
+                    Text(_filter == SchoolYearFilter.current ? 'Upcoming Events' : 'Events',
+                        style: AppTheme.heading3),
                     const Spacer(),
+                    SchoolYearPicker(
+                      value: _filter,
+                      onChanged: (f) { setState(() => _filter = f); _load(); },
+                    ),
+                    const SizedBox(width: 4),
                     IconButton(
                       onPressed: _load,
                       icon: const Icon(Icons.refresh, size: 18),

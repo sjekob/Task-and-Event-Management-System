@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "vectorlab-ui-ux-skills@anthropic-plugin-directory": true
+  }
+}
