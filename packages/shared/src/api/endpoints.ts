@@ -5,7 +5,7 @@ import type {
   CertificateFile, CertificateSet, CertificationCatalogItem, CertificationMeta, Comment,
   DashboardData, DateCheck, DepedEntry, Department, EducationOptions, EventForAppraisal,
   EventInput, EventRecord, GradeLevel, LeaderboardEntry, LoginResult, Page, Report,
-  ReportStatus, Role, SchoolYear, SchoolYearFilter, SessionUser, SkillMeta, SpecialTask,
+  PublicEvent, ReportStatus, ReportSubmission, Role, SchoolYear, SchoolYearFilter, SessionUser, SkillMeta, SpecialTask,
   SubjectMeta, Task, TaskCategory, TaskInput, TaskTemplate, User,
 } from '../types';
 
@@ -249,7 +249,7 @@ export const appraisal = {
   }) => http.post<SpecialTask>(`/api/appraisal/special-tasks/${taskId}/evaluate`, scores,
     { fallback: 'Failed to evaluate task' }),
   reportSubmissions: (filter?: SchoolYearFilter) =>
-    http.get<Record<string, unknown>[]>('/api/appraisal/report-submissions', { query: yearQuery(filter) }),
+    http.get<ReportSubmission[]>('/api/appraisal/report-submissions', { query: yearQuery(filter) }),
   events: (filter?: SchoolYearFilter) =>
     http.get<EventForAppraisal[]>('/api/appraisal/events', { query: yearQuery(filter) }),
   evaluateEvent: (eventId: number, body: Record<string, unknown>) =>
@@ -264,7 +264,7 @@ export const appraisal = {
 
   // Public QR evaluation (no login).
   publicEvent: (eventId: string | number) =>
-    http.get<Record<string, unknown>>(`/api/appraisal/public/events/${eventId}`,
+    http.get<PublicEvent>(`/api/appraisal/public/events/${eventId}`,
       { anonymous: true, fallback: 'Event not found.' }),
   submitPublicEvaluation: (eventId: string | number, body: Record<string, unknown>) =>
     http.post(`/api/appraisal/public/events/${eventId}/evaluate`, body,

@@ -367,6 +367,21 @@ export interface AttendanceQrCodes {
   }[];
 }
 
+/** GET /api/appraisal/public/events/{id} (QR evaluation, no login) */
+export interface PublicEvent {
+  id: number;
+  title: string;
+  venue?: string | null;
+  target_date?: string | null;
+  organizer_name?: string | null;
+  monitoring_criteria?: string | null;
+  /** the proposal's observation indicators */
+  indicators: string[];
+  demographic_options?: { evaluator_role?: string[]; sex?: string[]; age_group?: string[] };
+  is_open: boolean;
+  lock_reason?: string | null;
+}
+
 // ── Appraisal ─────────────────────────────────────────────────────────────────
 
 export interface SpecialTaskEvaluation {
@@ -417,6 +432,23 @@ export interface EventForAppraisal {
   evaluations: EventEvaluation[];
   /** {total, by_role, by_sex, by_age_group} */
   demographics?: Record<string, unknown>;
+}
+
+/** GET /api/appraisal/report-submissions (timing points, computed server-side) */
+export interface ReportSubmission {
+  id: number;
+  report_id: number;
+  task_id: number;
+  task_name: string;
+  personnel_name: string;
+  personnel_department?: string | null;
+  deadline?: string | null;
+  submitted_at?: string | null;
+  timing_status: string;
+  timing_points: number;
+  content_quality_score?: number | null;
+  format_compliance_score?: number | null;
+  completeness_score?: number | null;
 }
 
 export interface AppraisalBadge {

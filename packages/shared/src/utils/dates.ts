@@ -191,3 +191,10 @@ export function to24h(clock: string | null | undefined): string | null {
   const hm = parseClockTime(clock);
   return hm ? `${pad(hm[0])}:${pad(hm[1])}` : null;
 }
+
+/** "1984-03-15" → "March 15, 1984"; other text is returned as-is. */
+export function formatLongIsoDate(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const d = parseIsoDate(raw);
+  return d ? `${MONTHS_LONG[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` : raw;
+}

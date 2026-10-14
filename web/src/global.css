@@ -34,3 +34,7 @@ body {
 .tn-row:hover {
   background-color: #F6F8FC;
 }
+
+.hover-row:hover {
+  background: #F6F8FC;
+}

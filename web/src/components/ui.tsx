@@ -114,7 +114,7 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
 
 export function UserAvatar({ name, size = 32 }: { name: string; size?: number }) {
   return (
-    <Avatar size={size} radius="xl" color="white" style={{ background: colors.sidebarActive }}>
+    <Avatar size={size} radius="xl" styles={{ placeholder: { background: colors.sidebarActive } }}>
       <Text size={size > 36 ? 'md' : 'xs'} fw={700} c="white">{initials({ full_name: name })}</Text>
     </Avatar>
   );
