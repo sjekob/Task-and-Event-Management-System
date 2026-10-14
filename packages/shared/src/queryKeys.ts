@@ -1,0 +1,36 @@
+import type { SchoolYearFilter } from './types';
+
+/** React Query keys, shared so web and mobile invalidate the same caches. */
+export const qk = {
+  me: ['me'] as const,
+  dashboard: ['dashboard'] as const,
+  tasks: (params: object = {}) => ['tasks', params] as const,
+  allTasks: ['tasks'] as const,
+  task: (id: number) => ['task', id] as const,
+  taskTypes: ['task-types'] as const,
+  templates: ['templates'] as const,
+  assignable: (role?: string | null) => ['assignable', role ?? null] as const,
+  suggestions: (params: object) => ['suggestions', params] as const,
+  personnel: (params: object = {}) => ['personnel', params] as const,
+  allPersonnel: ['personnel'] as const,
+  person: (id: number) => ['person', id] as const,
+  personnelMeta: (what: string) => ['personnel-meta', what] as const,
+  profile: ['profile'] as const,
+  certificates: (userId?: number) => ['certificates', userId ?? 'mine'] as const,
+  certificationCatalog: ['certification-catalog'] as const,
+  events: (schoolYear?: string) => ['events', schoolYear ?? 'current'] as const,
+  allEvents: ['events'] as const,
+  event: (id: number) => ['event', id] as const,
+  deped: (range: object = {}) => ['deped', range] as const,
+  allDeped: ['deped'] as const,
+  schoolYears: ['school-years'] as const,
+  notifications: ['notifications'] as const,
+  unreadCount: ['notifications', 'unread'] as const,
+  audit: (params: object) => ['audit', params] as const,
+  appraisal: (what: string, filter?: SchoolYearFilter, extra?: object) =>
+    ['appraisal', what, filter ?? { schoolYear: 'current' }, extra ?? {}] as const,
+  allAppraisal: ['appraisal'] as const,
+  attendance: (eventId: number, index: number) => ['attendance', eventId, index] as const,
+  gradeLevels: ['grade-levels'] as const,
+  subjects: ['subjects'] as const,
+};

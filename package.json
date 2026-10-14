@@ -1,0 +1,15 @@
+{
+  "name": "tasknet",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "web",
+    "mobile"
+  ],
+  "scripts": {
+    "web": "npm run dev -w web",
+    "mobile": "npm run start -w mobile",
+    "build:web": "npm run build -w web",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

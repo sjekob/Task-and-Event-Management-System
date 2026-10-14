@@ -1,0 +1,21 @@
+{
+  "name": "@tasknet/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TaskNet API client, types, session state and helpers shared by the web and mobile apps.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "*"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
+}

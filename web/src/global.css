@@ -1,0 +1,36 @@
+:root {
+  --tn-bg: #DCE6F5;
+  --tn-dark: #1A1A2E;
+  --tn-muted: #6B7280;
+  --tn-light: #9CA3AF;
+  --tn-border: #E5E7EB;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--tn-bg);
+  color: var(--tn-dark);
+}
+
+/* Multi-line text from the API (instructions, proposal sections). */
+.tn-prewrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media print {
+  .tn-no-print { display: none !important; }
+}
+
+.tn-nav-item:hover {
+  color: white !important;
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tn-row:hover {
+  background-color: #F6F8FC;
+}
