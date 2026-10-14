@@ -144,10 +144,13 @@ class _SubmissionTypeLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFile = type == 'file';
-    final label = isFile ? 'File Attachment' : 'Link Submission';
-    final icon = isFile ? Icons.attach_file_rounded : Icons.link_rounded;
-    final color = isFile ? AppTheme.greenColor : AppTheme.accentBlue;
-    final bg = isFile ? const Color(0xFFF0FDF4) : AppTheme.blueBg;
+    // Auto-completed from attending an event activity (see attendance flow).
+    final isAttendance = type == 'attendance';
+    final label = isAttendance ? 'Event Attendance' : isFile ? 'File Attachment' : 'Link Submission';
+    final icon = isAttendance ? Icons.how_to_reg_rounded
+        : isFile ? Icons.attach_file_rounded : Icons.link_rounded;
+    final color = isFile || isAttendance ? AppTheme.greenColor : AppTheme.accentBlue;
+    final bg = isFile || isAttendance ? const Color(0xFFF0FDF4) : AppTheme.blueBg;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

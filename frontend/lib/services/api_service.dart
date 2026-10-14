@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
+import '../models/deped_calendar.dart';
 import '../widgets/audit_history.dart' show AuditEntry;
 
 /// Token-bucket limiter: smooths request bursts so a runaway loop or rapid
@@ -865,6 +866,119 @@ class ApiService {
     throw Exception(jsonDecode(res.body)['detail'] ?? 'Failed to submit evaluation.');
   }
 
+  // ── Event Attendance (QR Time In / Time Out) ──────────────────────────────
+
+  /// Signed Time In / Time Out QR payloads per activity (proponent/principal).
+  static Future<Map<String, dynamic>> getAttendanceQrCodes(int eventId) async {
+    final res = await _client.get(
+      Uri.parse('$baseUrl/api/events/$eventId/attendance/qr-codes'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    throw Exception(_detail(res, 'Could not load the attendance QR codes'));
+  }
+
+  /// The activity, its scan windows and the caller's attendance record.
+  static Future<Map<String, dynamic>> getAttendanceActivity(int eventId, int index) async {
+    final res = await _client.get(
+      Uri.parse('$baseUrl/api/events/$eventId/attendance/activities/$index'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    throw Exception(_detail(res, 'Could not load this activity'));
+  }
+
+  /// Records a Time In / Time Out. Throws with the server's reason (window
+  /// not active, ...) when rejected. Coordinates are logged only, never checked.
+  static Future<Map<String, dynamic>> scanAttendance(int eventId, {
+    required int activityIndex, required String action, required String code,
+    double? latitude, double? longitude,
+  }) async {
+    final res = await _client.post(
+      Uri.parse('$baseUrl/api/events/$eventId/attendance/scan'),
+      headers: await _headers,
+      body: jsonEncode({
+        'activity_index': activityIndex, 'action': action, 'code': code,
+        'latitude': latitude, 'longitude': longitude,
+      }),
+    );
+    if (res.statusCode == 200) return jsonDecode(res.body) as Map<String, dynamic>;
+    throw Exception(_detail(res, 'Could not record your attendance'));
+  }
+
+  /// Attendee evaluation of one activity; returns the auto-completed special
+  /// task under 'special_task' when the activity defines one.
+  static Future<Map<String, dynamic>> submitActivityEvaluation(
+      int eventId, int index, Map<String, dynamic> evalData) async {
+    final res = await _client.post(
+      Uri.parse('$baseUrl/api/events/$eventId/attendance/activities/$index/evaluate'),
+      headers: await _headers,
+      body: jsonEncode(evalData),
+    );
+    if (res.statusCode == 201) return jsonDecode(res.body) as Map<String, dynamic>;
+    throw Exception(_detail(res, 'Failed to submit evaluation.'));
+  }
+
+  // ── DepEd School Calendar ─────────────────────────────────────────────────
+
+  /// Official DepEd calendar entries, optionally only those overlapping a range.
+  static Future<List<DepedEntry>> getDepedCalendar({DateTime? start, DateTime? end}) async {
+    String iso(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final q = <String, String>{
+      if (start != null) 'start': iso(start),
+      if (end != null) 'end': iso(end),
+    };
+    final res = await _client.get(
+      Uri.parse('$baseUrl/api/deped-calendar').replace(queryParameters: q.isEmpty ? null : q),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) {
+      return (jsonDecode(res.body) as List)
+          .map((e) => DepedEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    throw Exception(_detail(res, 'Could not load the DepEd calendar'));
+  }
+
+  /// Create (id == null) or update a DepEd calendar entry (principal/admin).
+  static Future<void> saveDepedEntry(int? id, Map<String, dynamic> body) async {
+    final uri = Uri.parse('$baseUrl/api/deped-calendar${id == null ? '' : '/$id'}');
+    final res = id == null
+        ? await _client.post(uri, headers: await _headers, body: jsonEncode(body))
+        : await _client.put(uri, headers: await _headers, body: jsonEncode(body));
+    if (res.statusCode == 200 || res.statusCode == 201) return;
+    throw Exception(_detail(res, 'Could not save the DepEd calendar entry'));
+  }
+
+  static Future<void> deleteDepedEntry(int id) async {
+    final res = await _client.delete(
+      Uri.parse('$baseUrl/api/deped-calendar/$id'),
+      headers: await _headers,
+    );
+    if (res.statusCode == 200) return;
+    throw Exception(_detail(res, 'Could not remove the DepEd calendar entry'));
+  }
+
+  /// Creates one mandatory compliance task from a DepEd entry, assigned to
+  /// every active faculty member in [roles]. Returns {task_id, assigned, roles}.
+  static Future<Map<String, dynamic>> generateDepedTasks(int id, {
+    required String title, String? instructions, String? dueDate, required List<String> roles,
+  }) async {
+    final res = await _client.post(
+      Uri.parse('$baseUrl/api/deped-calendar/$id/generate-tasks'),
+      headers: await _headers,
+      body: jsonEncode({
+        'title': title,
+        if (instructions != null && instructions.isNotEmpty) 'instructions': instructions,
+        if (dueDate != null) 'due_date': dueDate,
+        'roles': roles,
+      }),
+    );
+    if (res.statusCode == 201) return jsonDecode(res.body) as Map<String, dynamic>;
+    throw Exception(_detail(res, 'Could not generate the tasks'));
+  }
+
   // ── Event Management ──────────────────────────────────────────────────────
 
   /// Events of the current school year by default; [schoolYear] may be a
@@ -931,12 +1045,14 @@ class ApiService {
     return null;
   }
 
-  static Future<void> approveEvent(int id) async {
+  /// Returns the server summary, incl. TWG special tasks created / skipped.
+  static Future<Map<String, dynamic>> approveEvent(int id) async {
     final res = await _client.patch(
       Uri.parse('$baseUrl/api/events/$id/approve'),
       headers: await _headers,
     );
     if (res.statusCode != 200) throw Exception('Failed to approve event');
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
   static Future<void> disableEvent(int id) async {

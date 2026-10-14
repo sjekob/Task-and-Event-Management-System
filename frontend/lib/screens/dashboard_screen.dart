@@ -6,7 +6,9 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../models/models.dart';
+import '../models/deped_calendar.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/app_calendar.dart';
 import '../widgets/skeleton_widgets.dart';
 import '../utils/date_parse.dart';
 
@@ -83,12 +85,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Upcoming events grouped by calendar day → dot markers + hover tooltip.
   Map<DateTime, List<Map<String, dynamic>>> _eventsByDay = {};
+  // Official DepEd calendar dates → violet markers.
+  Map<DateTime, List<DepedEntry>> _depedByDay = {};
 
   @override
   void initState() {
     super.initState();
     _load();
     _loadEvents();
+    _loadDeped();
+  }
+
+  Future<void> _loadDeped() async {
+    try {
+      final entries = await ApiService.getDepedCalendar();
+      if (mounted) setState(() => _depedByDay = DepedEntry.byDay(entries));
+    } catch (_) {/* best-effort overlay */}
   }
 
   Future<void> _load() async {
@@ -121,10 +133,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {/* best-effort */}
   }
 
-  Future<void> _refresh() => Future.wait([_load(), _loadEvents()]);
-
-  List<Map<String, dynamic>> _eventsFor(int day) =>
-      _eventsByDay[DateTime(_calDate.year, _calDate.month, day)] ?? const [];
+  Future<void> _refresh() => Future.wait([_load(), _loadEvents(), _loadDeped()]);
 
   String _eventTooltip(List<Map<String, dynamic>> events) => events.map((e) {
         final when = (e['target_date'] ?? '').toString().trim();
@@ -458,10 +467,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ── Calendar ────────────────────────────────────────────────────────────────
 
+  /// Opens the expanded calendar on the Events page at [day] (that day
+  /// selected, or just its month when [select] is false).
+  void _openCalendar(DateTime day, {bool select = true}) {
+    final iso = '${day.year}-${day.month.toString().padLeft(2, '0')}'
+        '-${day.day.toString().padLeft(2, '0')}';
+    context.go('/events?view=calendar${select ? '&date=$iso' : '&month=$iso'}');
+  }
+
   Widget _buildCalendarCard() {
-    const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-    final firstDay = DateTime(_calDate.year, _calDate.month, 1).weekday % 7;
-    final daysInMonth = DateTime(_calDate.year, _calDate.month + 1, 0).day;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final upcoming =
@@ -474,104 +488,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _Card(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          Expanded(
-            child: Text('${_monthsLong[_calDate.month - 1]} ${_calDate.year}',
-                style: GoogleFonts.plusJakartaSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary)),
-          ),
-          _IconBtn(
-              icon: Icons.chevron_left_rounded,
-              tooltip: 'Previous month',
-              onTap: () => setState(() =>
-                  _calDate = DateTime(_calDate.year, _calDate.month - 1))),
-          _IconBtn(
-              icon: Icons.chevron_right_rounded,
-              tooltip: 'Next month',
-              onTap: () => setState(() =>
-                  _calDate = DateTime(_calDate.year, _calDate.month + 1))),
-        ]),
-        const SizedBox(height: 10),
-        Row(
-            children: days
-                .map((d) => Expanded(
-                    child: Center(
-                        child: Text(d,
-                            style: GoogleFonts.plusJakartaSans(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textLight)))))
-                .toList()),
-        const SizedBox(height: 4),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7, childAspectRatio: 1),
-          itemCount: firstDay + daysInMonth,
-          itemBuilder: (_, i) {
-            if (i < firstDay) return const SizedBox();
-            final day = i - firstDay + 1;
-            final date = DateTime(_calDate.year, _calDate.month, day);
-            final isToday = date == today;
-            final hasDeadline = _data?.deadlineDates.contains(date) ?? false;
-            final events = _eventsFor(day);
-            Widget cell = Container(
-              margin: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: isToday ? AppTheme.darkBanner : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('$day',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            fontWeight:
-                                isToday ? FontWeight.w700 : FontWeight.w500,
-                            color:
-                                isToday ? Colors.white : AppTheme.textPrimary)),
-                    const SizedBox(height: 3),
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      if (events.isNotEmpty) const _Dot(AppTheme.accentBlue),
-                      if (events.isNotEmpty && hasDeadline)
-                        const SizedBox(width: 3),
-                      if (hasDeadline) const _Dot(AppTheme.amberColor),
-                      if (events.isEmpty && !hasDeadline)
-                        const SizedBox(height: 5),
-                    ]),
-                  ]),
-            );
-            if (events.isNotEmpty) {
-              cell = Tooltip(
-                message: _eventTooltip(events),
-                waitDuration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                    color: AppTheme.darkBanner,
-                    borderRadius: BorderRadius.circular(8)),
-                textStyle: const TextStyle(
-                    color: Colors.white, fontSize: 11.5, height: 1.4),
-                child: cell,
-              );
-            }
-            return cell;
+        AppCalendar(
+          card: false,
+          month: _calDate,
+          onMonthChanged: (m) => setState(() => _calDate = m),
+          onDaySelected: _openCalendar,
+          eventDays: _eventsByDay.keys.toSet(),
+          deadlineDays: _data?.deadlineDates ?? const {},
+          depedDays: _depedByDay.keys.toSet(),
+          tooltipFor: (d) {
+            final events = _eventsByDay[d];
+            final deped = _depedByDay[d] ?? const [];
+            final parts = [
+              for (final e in deped) 'DepEd Memo · ${e.category}\n${e.title}\n${e.rangeLabel}',
+              if (events != null && events.isNotEmpty) _eventTooltip(events),
+            ];
+            return parts.isEmpty ? null : parts.join('\n\n');
           },
+          actions: [
+            AppCalendarAction(
+                icon: Icons.open_in_full_rounded,
+                tooltip: 'Open full calendar',
+                onTap: () => _openCalendar(
+                    DateTime(_calDate.year, _calDate.month, 1), select: false)),
+          ],
         ),
-        const SizedBox(height: 8),
-        Row(children: [
-          const _Dot(AppTheme.accentBlue),
-          const SizedBox(width: 6),
-          Text('Event', style: AppTheme.caption),
-          const SizedBox(width: 16),
-          const _Dot(AppTheme.amberColor),
-          const SizedBox(width: 6),
-          Text('Task deadline', style: AppTheme.caption),
-        ]),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 14),
           child: Divider(height: 1, color: AppTheme.borderColor),
@@ -956,18 +897,6 @@ class _StatusDot extends StatelessWidget {
       );
 }
 
-class _Dot extends StatelessWidget {
-  final Color color;
-  const _Dot(this.color);
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 5,
-        height: 5,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      );
-}
-
 /// Month/day tile for an event date ("OCT / 2"); a calendar icon if unknown.
 class _DateTile extends StatelessWidget {
   final DateTime? date;
@@ -1005,20 +934,3 @@ class _DateTile extends StatelessWidget {
   }
 }
 
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  const _IconBtn(
-      {required this.icon, required this.tooltip, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => IconButton(
-        onPressed: onTap,
-        tooltip: tooltip,
-        icon: Icon(icon, size: 20, color: AppTheme.textMuted),
-        visualDensity: VisualDensity.compact,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-      );
-}

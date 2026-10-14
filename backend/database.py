@@ -537,6 +537,25 @@ def _build_and_seed():
         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(event_id, email)
     );
+
+    -- Attendance per Activity Matrix row (activity_index = position in
+    -- events.activity_matrix). Scans are gated by time window only; the
+    -- attendee's coordinates are logged for the record when available.
+    CREATE TABLE IF NOT EXISTS event_attendance (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id           INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        activity_index     INTEGER NOT NULL,
+        user_id            INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        time_in_at         TIMESTAMP,
+        time_in_latitude   REAL,
+        time_in_longitude  REAL,
+        time_out_at        TIMESTAMP,
+        time_out_latitude  REAL,
+        time_out_longitude REAL,
+        evaluated_at       TIMESTAMP,
+        special_task_id    INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+        UNIQUE(event_id, activity_index, user_id)
+    );
     """)
 
     conn.commit()
@@ -545,6 +564,15 @@ def _build_and_seed():
     # created, so existing databases gain them via ALTER (no wipe needed).
     _ensure_column(c, "events", "department", "TEXT")
     _ensure_column(c, "events", "expected_attendees", "INTEGER")
+    # Attendee evaluations are per activity; NULL = whole-event (public/supervisor).
+    _ensure_column(c, "event_evaluations", "activity_index", "INTEGER")
+    # Special tasks auto-created from attending an event activity.
+    _ensure_column(c, "tasks", "source_event_id",
+                   "INTEGER REFERENCES events(id) ON DELETE SET NULL")
+    _init_deped_calendar(c)
+    # Compliance tasks generated from a DepEd calendar entry.
+    _ensure_column(c, "tasks", "source_deped_id",
+                   "INTEGER REFERENCES deped_calendar_events(id) ON DELETE SET NULL")
     # Dean assignments no longer carry a department — drop it if an old DB has it.
     if "department_id" in [r[1] for r in c.execute("PRAGMA table_info(dean_assignment)").fetchall()]:
         try:
@@ -992,6 +1020,64 @@ def _ensure_column(cur, table: str, column: str, decl: str):
             cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
         except sqlite3.OperationalError:
             pass  # another service added it concurrently — fine
+
+
+DEPED_CATEGORIES = ("Mandatory Examination", "Quarter Compliance", "Holiday",
+                    "Administrative Period")
+
+_DEPED_NOTE = ("Baseline entry for S.Y. 2026-2027 — confirm the dates against the official "
+               "DepEd Order / Memorandum on the school calendar and edit if they differ.")
+
+# Baseline DepEd school-calendar entries (title, start, end, category, mandatory).
+# Fixed national holidays are exact; school-activity dates are placeholders
+# aligned to this school's S.Y. 2026-2027 terms for the principal to confirm.
+_DEPED_SEED = [
+    ("Brigada Eskwela", "2026-06-01", "2026-06-05", "Administrative Period", 1),
+    ("Opening of Classes", "2026-06-08", "2026-06-08", "Administrative Period", 1),
+    ("National Heroes Day", "2026-08-31", "2026-08-31", "Holiday", 1),
+    ("First Quarter Examinations", "2026-09-10", "2026-09-11", "Mandatory Examination", 1),
+    ("Submission of Quarter 1 Grades", "2026-09-21", "2026-09-25", "Quarter Compliance", 1),
+    ("Division Schools Press Conference (DSPC)", "2026-10-19", "2026-10-23",
+     "Administrative Period", 0),
+    ("All Saints' Day", "2026-11-01", "2026-11-01", "Holiday", 1),
+    ("Bonifacio Day", "2026-11-30", "2026-11-30", "Holiday", 1),
+    ("Feast of the Immaculate Conception", "2026-12-08", "2026-12-08", "Holiday", 1),
+    ("Second Quarter Examinations", "2026-12-16", "2026-12-17", "Mandatory Examination", 1),
+    ("Christmas Break", "2026-12-19", "2027-01-03", "Holiday", 1),
+    ("Submission of Quarter 2 Grades", "2027-01-04", "2027-01-08", "Quarter Compliance", 1),
+    ("Mid-Year Performance Review and INSET", "2027-01-25", "2027-01-29",
+     "Administrative Period", 1),
+    ("Third Quarter Examinations", "2027-02-11", "2027-02-12", "Mandatory Examination", 1),
+    ("Fourth Quarter Examinations", "2027-03-17", "2027-03-18", "Mandatory Examination", 1),
+    ("End-of-School-Year Rites", "2027-03-22", "2027-03-24", "Administrative Period", 1),
+    ("Maundy Thursday and Good Friday", "2027-03-25", "2027-03-26", "Holiday", 1),
+]
+
+
+def _init_deped_calendar(c):
+    """DepEd school-calendar reference layer. Seeded once, when the table is
+    first created — later edits/deletions by the principal stick."""
+    exists = c.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                       "AND name='deped_calendar_events'").fetchone()
+    if exists:
+        return
+    cats = ",".join(f"'{x}'" for x in DEPED_CATEGORIES)
+    c.execute(f"""CREATE TABLE deped_calendar_events (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        title        TEXT NOT NULL,
+        description  TEXT,
+        start_date   TEXT NOT NULL,
+        end_date     TEXT NOT NULL,
+        category     TEXT NOT NULL CHECK(category IN ({cats})),
+        is_mandatory INTEGER NOT NULL DEFAULT 1 CHECK(is_mandatory IN (0,1)),
+        created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CHECK(end_date >= start_date)
+    )""")
+    c.executemany(
+        "INSERT INTO deped_calendar_events (title, description, start_date, end_date, "
+        "category, is_mandatory) VALUES (?,?,?,?,?,?)",
+        [(t, _DEPED_NOTE, s, e, cat, m) for t, s, e, cat, m in _DEPED_SEED])
 
 
 def init_db():

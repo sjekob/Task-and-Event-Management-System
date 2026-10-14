@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -9,9 +10,15 @@ import '../utils/input_formatters.dart';
 /// own proposal (served by the backend). Each indicator is marked Evident /
 /// Not Evident with optional remarks. No scoring happens here — the backend
 /// decides everything (which indicators, whether the form is open, the score).
+///
+/// With [activityIndex] set it is the signed-in attendee's evaluation of one
+/// Activity Matrix row, reached right after a successful attendance Time Out.
+/// The attendee is known, so name/email/role are not asked; submitting it may
+/// auto-complete the activity's Special Task.
 class PublicEvaluationScreen extends StatefulWidget {
   final String eventId;
-  const PublicEvaluationScreen({super.key, required this.eventId});
+  final int? activityIndex;
+  const PublicEvaluationScreen({super.key, required this.eventId, this.activityIndex});
 
   @override
   State<PublicEvaluationScreen> createState() => _PublicEvaluationScreenState();
@@ -47,6 +54,10 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   String? _ageGroup;
   List<_Indicator> _indicators = [];
   bool _submitting = false;
+  Map<String, dynamic>? _activity; // attendee mode: activity + attendance record
+  Map<String, dynamic>? _specialTask; // attendee mode: auto-completed task
+
+  bool get _attendee => widget.activityIndex != null;
 
   @override
   void initState() {
@@ -70,6 +81,19 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     setState(() => _state = _ViewState.loading);
     try {
       final event = await ApiService.getPublicEvent(widget.eventId);
+      if (_attendee) {
+        _activity = await ApiService.getAttendanceActivity(
+            int.parse(widget.eventId), widget.activityIndex!);
+        final record = _activity!['record'] as Map?;
+        final lock = record?['evaluated_at'] != null
+            ? 'You have already evaluated this activity.'
+            : record?['time_out_at'] == null
+                ? 'Scan the Time Out QR of this activity before evaluating it.'
+                : null;
+        // Attendance (not the public date gate) decides whether this is open.
+        event['is_open'] = lock == null;
+        event['lock_reason'] = lock;
+      }
       if (!mounted) return;
       final rawIndicators = (event['indicators'] as List?) ?? const [];
       final indicators = rawIndicators
@@ -106,7 +130,7 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_validEmail(_emailCtrl.text.trim())) {
+    if (!_attendee && !_validEmail(_emailCtrl.text.trim())) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Please enter a valid email address.'),
           backgroundColor: Colors.red));
@@ -126,6 +150,25 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
     }
     setState(() => _submitting = true);
     try {
+      if (_attendee) {
+        final res = await ApiService.submitActivityEvaluation(
+            int.parse(widget.eventId), widget.activityIndex!, {
+          'sex': _sex,
+          'age_group': _ageGroup,
+          'affiliation': _affiliationCtrl.text.trim().isEmpty ? null : _affiliationCtrl.text.trim(),
+          'indicators': _indicators
+              .map((i) => {'label': i.label, 'evident': i.evident})
+              .toList(),
+          'comments': _commentsCtrl.text.trim().isEmpty ? null : _commentsCtrl.text.trim(),
+        });
+        if (mounted) {
+          setState(() {
+            _specialTask = res['special_task'] as Map<String, dynamic>?;
+            _state = _ViewState.submitted;
+          });
+        }
+        return;
+      }
       await ApiService.submitPublicEvaluation(widget.eventId, {
         'evaluator_name': _nameCtrl.text.trim().isEmpty ? null : _nameCtrl.text.trim(),
         'evaluator_email': _emailCtrl.text.trim(),
@@ -188,9 +231,44 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
         return _statusPanel(Icons.lock_outline, AppTheme.amberColor,
             _event?['title'] as String? ?? 'Event Evaluation', _message);
       case _ViewState.submitted:
-        return _statusPanel(Icons.check_circle_outline, AppTheme.greenColor,
-            'Evaluation Submitted!',
-            'Thank you for your response. Your feedback helps improve our future events.');
+        final task = _specialTask;
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          _statusPanel(Icons.check_circle_outline, AppTheme.greenColor,
+              'Evaluation Submitted!',
+              'Thank you for your response. Your feedback helps improve our future events.'),
+          if (task != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFBBF7D0))),
+              child: Row(children: [
+                const Icon(Icons.task_alt, color: AppTheme.greenColor),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Special task completed',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.greenColor)),
+                  Text(task['title']?.toString() ?? '',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                  Text('Added to My Special Tasks',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppTheme.textMuted)),
+                ])),
+              ]),
+            ),
+          ],
+          if (_attendee) ...[
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () => context.go(task != null ? '/my-special-tasks' : '/dashboard'),
+              child: Text(task != null ? 'View My Special Tasks' : 'Go to dashboard'),
+            ),
+          ],
+        ]);
       case _ViewState.form:
         return _buildForm();
     }
@@ -246,6 +324,10 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
           Text(event['title'] as String? ?? 'Event Evaluation',
               style: GoogleFonts.plusJakartaSans(
                   fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+          if (_attendee && ((_activity?['activity'] as Map?)?['event'] ?? '').toString().isNotEmpty)
+            Text('Activity: ${(_activity!['activity'] as Map)['event']}',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF334155))),
           const SizedBox(height: 4),
           Text(
             [
@@ -271,7 +353,8 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
       ],
       const SizedBox(height: 20),
 
-      // ── Name & role ──────────────────────────────────────────────────────
+      // ── Name & role (public only; attendees are signed in) ────────────────
+      if (!_attendee) ...[
       Row(children: [
         Expanded(child: TextField(
           controller: _nameCtrl,
@@ -302,6 +385,7 @@ class _PublicEvaluationScreenState extends State<PublicEvaluationScreen> {
         style: const TextStyle(fontSize: 13),
       ),
       const SizedBox(height: 16),
+      ],
 
       // ── Demographics (for the event's evaluation report) ────────────────
       Text('About you',

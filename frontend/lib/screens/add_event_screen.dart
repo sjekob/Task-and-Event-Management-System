@@ -6,7 +6,16 @@ import '../utils/input_formatters.dart';
 import '../utils/date_parse.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../models/models.dart' show User;
 import '../services/app_state.dart';
+
+/// TWG member automation: create a special task for this member on approval,
+/// assigned to the linked TaskNet user.
+class _TwgMeta {
+  bool automate = false;
+  int? userId;
+  String? userName;
+}
 
 class AddEventScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -52,6 +61,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
   // and the server's verdict on the chosen date (null = free).
   Set<DateTime> _takenDays = {};
   String? _dateIssue;
+  // Non-blocking: the date overlaps a mandatory DepEd calendar entry.
+  String? _depedWarning;
   bool _checkingDate = false;
   late final TextEditingController _venueCtrl;
   late final TextEditingController _budgetCtrl;
@@ -80,6 +91,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
   late List<Map<String, TextEditingController>> _snackRows;
   late List<Map<String, TextEditingController>> _execRows;
   late List<Map<String, dynamic>> _twgGroups;
+  // Per-member automation state, keyed by the member's controller map.
+  final _twgMeta = Expando<_TwgMeta>();
+  _TwgMeta _meta(Map<String, TextEditingController> m) => _twgMeta[m] ??= _TwgMeta();
+  List<User>? _users; // TaskNet users, loaded when first linking a member
 
   // Step 6
   late final TextEditingController _meCtrl;
@@ -290,10 +305,15 @@ class _AddEventScreenState extends State<AddEventScreen> {
             final members = <Map<String, TextEditingController>>[];
             if (g['members'] is List) {
               for (final m in g['members']) {
-                members.add(_newMember(
+                final member = _newMember(
                   name: m['name'] ?? '', designation: m['designation'] ?? '',
                   tor: m['tor'] ?? '', output: m['output'] ?? '',
-                ));
+                );
+                final meta = _meta(member)
+                  ..automate = m['automate_special_task'] == true
+                  ..userId = m['user_id'] is int ? m['user_id'] as int : null;
+                if (meta.automate) meta.userName = (m['name'] ?? '').toString();
+                members.add(member);
               }
             }
             if (members.isEmpty) members.add(_newMember());
@@ -473,6 +493,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
         if (m['designation']!.text.trim().isEmpty) return (4, 'Please fill in the designation for ${title.text} member ${j + 1}.');
         if (m['tor']!.text.trim().isEmpty) return (4, 'Please fill in the terms of reference for ${title.text} member ${j + 1}.');
         if (m['output']!.text.trim().isEmpty) return (4, 'Please fill in the output for ${title.text} member ${j + 1}.');
+        final meta = _meta(m);
+        if (meta.automate && meta.userId == null) {
+          return (4, 'Choose the TaskNet user for ${title.text} member ${j + 1} to automate their special task.');
+        }
       }
     }
 
@@ -508,6 +532,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
           .map((m) => {
                 'name': m['name']!.text, 'designation': m['designation']!.text,
                 'tor': m['tor']!.text, 'output': m['output']!.text,
+                'automate_special_task': _meta(m).automate,
+                if (_meta(m).automate) 'user_id': _meta(m).userId,
               })
           .toList(),
     }).toList();
@@ -887,7 +913,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
       final r = await ApiService.checkEventDate(text,
           excludeId: widget.existingEvent?['id'] as int?);
       if (mounted && _dateCtrl.text.trim() == text) {
-        setState(() => _dateIssue = r['available'] == true ? null : r['message']?.toString());
+        setState(() {
+          _dateIssue = r['available'] == true ? null : r['message']?.toString();
+          _depedWarning = r['deped_warning']?.toString();
+        });
       }
     } catch (_) {
       // Leave the last verdict; the server re-checks on submit anyway.
@@ -925,6 +954,31 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
+  /// Shown under the date; the proponent may keep the date or pick another.
+  Widget _depedWarningBadge() => Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFFCD34D)),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFB45309)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(_depedWarning!,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
+              const SizedBox(height: 2),
+              const Text('You can keep this date or choose one that doesn\'t conflict.',
+                  style: TextStyle(fontSize: 11.5, color: Color(0xFF92400E))),
+            ]),
+          ),
+        ]),
+      );
+
   // ── Step 1 ────────────────────────────────────────────────────────────────
   Widget _buildProposalBrief() {
     return SingleChildScrollView(
@@ -960,6 +1014,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 _fLabel('c. Target Date'),
                 _buildDateField(),
+                if (_depedWarning != null && !_checkingDate) _depedWarningBadge(),
               ])),
               const SizedBox(width: 16),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1186,10 +1241,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
                       borderRadius: BorderRadius.vertical(top: Radius.circular(8))),
                   child: const Row(children: [
                     Expanded(flex: 2, child: Text('Day', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    SizedBox(width: 8),
                     Expanded(flex: 2, child: Text('Time', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    SizedBox(width: 8),
                     Expanded(flex: 3, child: Text('Event', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                    SizedBox(width: 8),
                     Expanded(flex: 3, child: Text('Speaker', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-                    SizedBox(width: 36),
+                    SizedBox(width: 8),
+                    SizedBox(width: 52, child: Text('Actions', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
                   ]),
                 ),
                 const Divider(height: 1, color: Color(0xFFE2E8F0)),
@@ -1205,9 +1264,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
                           const SizedBox(width: 8),
                           Expanded(flex: 3, child: _mini(e.value['speaker']!, 'Speaker name')),
                           const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: () => setState(() => _matrixRows.removeAt(e.key)),
-                            child: const Icon(Icons.remove_circle_outline, size: 20, color: Color(0xFFE53E3E)),
+                          SizedBox(
+                            width: 52,
+                            child: Center(
+                              child: GestureDetector(
+                                onTap: () => setState(() => _matrixRows.removeAt(e.key)),
+                                child: const Icon(Icons.remove_circle_outline, size: 20, color: Color(0xFFE53E3E)),
+                              ),
+                            ),
                           ),
                         ]),
                       ),
@@ -1311,6 +1375,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   hints: ['Full name', 'e.g. Chairperson', 'e.g. Leads the Committee', 'e.g. Checked reports'],
                   onAdd: () => setState(() => members.add(_newMember())),
                   onRemove: (i) => setState(() => members.removeAt(i)),
+                  extraHeader: 'Automate Special Task',
+                  extraCell: (i) => _automateCell(members[i]),
                 ),
                 const SizedBox(height: 16),
               ]);
@@ -1541,6 +1607,75 @@ class _AddEventScreenState extends State<AddEventScreen> {
     ]);
   }
 
+  // ── TWG special-task automation ──────────────────────────────────────────
+
+  static const _extraColWidth = 132.0;
+
+  Widget _automateCell(Map<String, TextEditingController> member) {
+    final meta = _meta(member);
+    return SizedBox(
+      width: _extraColWidth,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Checkbox(
+          value: meta.automate,
+          onChanged: (v) => _setAutomate(member, v ?? false),
+          activeColor: const Color(0xFF1E2126),
+        ),
+        if (meta.automate && meta.userName != null)
+          InkWell(
+            onTap: () => _setAutomate(member, true, repick: true),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text('Assign to ${meta.userName}',
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 11, color: Color(0xFF3B82F6), decoration: TextDecoration.underline)),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  /// Ticking links the member to a TaskNet user: an exact, unique name match
+  /// links automatically; otherwise (or with [repick]) the user picks one.
+  Future<void> _setAutomate(Map<String, TextEditingController> member, bool on,
+      {bool repick = false}) async {
+    final meta = _meta(member);
+    if (!on) {
+      setState(() => meta.automate = false);
+      return;
+    }
+    try {
+      _users ??= await ApiService.getUsers();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not load TaskNet users. Please try again.'),
+            backgroundColor: Colors.red));
+      }
+      return;
+    }
+    if (!mounted) return;
+    final typed = member['name']!.text.trim().toLowerCase();
+    final matches = _users!.where((u) => u.fullName.trim().toLowerCase() == typed).toList();
+    User? picked = !repick && typed.isNotEmpty && matches.length == 1 ? matches.first : null;
+    picked ??= await showDialog<User>(
+      context: context,
+      builder: (_) => _UserPickerDialog(users: _users!, initialQuery: member['name']!.text.trim()),
+    );
+    if (picked == null || !mounted) return;
+    final user = picked;
+    setState(() {
+      meta
+        ..automate = true
+        ..userId = user.id
+        ..userName = user.fullName;
+      if (member['name']!.text.trim().isEmpty) member['name']!.text = user.fullName;
+    });
+  }
+
   Widget _committeeTable({
     required List<Map<String, TextEditingController>> rows,
     required List<String> headers,
@@ -1548,6 +1683,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
     required List<String> hints,
     required VoidCallback onAdd,
     required ValueChanged<int> onRemove,
+    String? extraHeader,
+    Widget Function(int index)? extraCell,
   }) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Container(
@@ -1561,6 +1698,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
             child: Row(children: [
               ...headers.map((h) => Expanded(child: Text(h,
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)))),
+              if (extraHeader != null)
+                SizedBox(width: _extraColWidth, child: Text(extraHeader, textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
               const SizedBox(width: 36),
             ]),
           ),
@@ -1587,6 +1727,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
                             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                           ),
                         )))),
+                if (extraCell != null) extraCell(e.key),
+                const SizedBox(width: 8),
                 GestureDetector(onTap: () => onRemove(e.key),
                     child: const Padding(padding: EdgeInsets.only(top: 10),
                         child: Icon(Icons.remove_circle_outline, size: 20, color: Color(0xFFE53E3E)))),
@@ -1647,3 +1789,70 @@ Widget _tField(TextEditingController c, {String hint = '', int maxLines = 1, boo
 Widget _secTitle(String t) => Padding(
     padding: const EdgeInsets.only(bottom: 16),
     child: Text(t, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))));
+
+/// Searchable list of TaskNet users for linking a TWG member.
+class _UserPickerDialog extends StatefulWidget {
+  final List<User> users;
+  final String initialQuery;
+  const _UserPickerDialog({required this.users, this.initialQuery = ''});
+
+  @override
+  State<_UserPickerDialog> createState() => _UserPickerDialogState();
+}
+
+class _UserPickerDialogState extends State<_UserPickerDialog> {
+  late final _search = TextEditingController(text: widget.initialQuery);
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _search.text.trim().toLowerCase();
+    final list = widget.users
+        .where((u) => q.isEmpty || u.fullName.toLowerCase().contains(q))
+        .toList();
+    return AlertDialog(
+      title: const Text('Assign special task to', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+      content: SizedBox(
+        width: 380,
+        height: 360,
+        child: Column(children: [
+          TextField(
+            controller: _search,
+            autofocus: true,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Search name',
+              prefixIcon: const Icon(Icons.search, size: 18),
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: list.isEmpty
+                ? const Center(child: Text('No matching users', style: TextStyle(color: Color(0xFF718096))))
+                : ListView.builder(
+                    itemCount: list.length,
+                    itemBuilder: (_, i) => ListTile(
+                      dense: true,
+                      leading: CircleAvatar(radius: 14, child: Text(list[i].initials, style: const TextStyle(fontSize: 12))),
+                      title: Text(list[i].fullName, style: const TextStyle(fontSize: 13)),
+                      subtitle: Text(list[i].role, style: const TextStyle(fontSize: 11)),
+                      onTap: () => Navigator.pop(context, list[i]),
+                    ),
+                  ),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      ],
+    );
+  }
+}

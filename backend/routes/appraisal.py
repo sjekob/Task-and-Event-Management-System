@@ -371,8 +371,9 @@ def evaluate_event(event_id: int, body: EventEvalBody, db=Depends(get_db),
 
     uid = int(user["sub"])
     # Same rule as the public form: one evaluation per person per event.
-    if db.execute("SELECT 1 FROM event_evaluations WHERE event_id=? AND evaluator_id=?",
-                  (event_id, uid)).fetchone():
+    # (Per-activity attendee evaluations carry an activity_index and don't count.)
+    if db.execute("SELECT 1 FROM event_evaluations WHERE event_id=? AND evaluator_id=? "
+                  "AND activity_index IS NULL", (event_id, uid)).fetchone():
         raise HTTPException(409, "You have already evaluated this event.")
     db.execute(
         """INSERT INTO event_evaluations

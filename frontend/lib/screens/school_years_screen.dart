@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/deped_calendar_widgets.dart';
 
 /// Principal/admin page for setting when each school year and its terms start
 /// and end. Tasks, events and appraisal records dated in a school year that
@@ -146,6 +147,8 @@ class _SchoolYearsScreenState extends State<SchoolYearsScreen> {
             _YearCard(year: y, onEdit: () => _edit(y), onDelete: () => _delete(y)),
             const SizedBox(height: 12),
           ],
+        const SizedBox(height: 20),
+        const DepedCalendarManager(),
       ]),
     );
   }

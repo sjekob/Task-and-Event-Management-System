@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:table_calendar/table_calendar.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_theme.dart';
@@ -12,7 +12,10 @@ import '../utils/event_print_helper.dart';
 import '../utils/date_parse.dart';
 import '../widgets/skeleton_widgets.dart';
 import '../widgets/school_year_picker.dart';
+import '../widgets/event_calendar_view.dart';
+import '../widgets/app_calendar.dart';
 import '../models/models.dart' show SchoolYearFilter;
+import '../models/deped_calendar.dart';
 
 part 'event_management_screen_widgets.dart';
 
@@ -55,7 +58,13 @@ class EventManagementScreen extends StatefulWidget {
   /// When set (e.g. from the dashboard: /events?open=12), that event is
   /// scrolled into view, highlighted, and its details opened once loaded.
   final int? openEventId;
-  const EventManagementScreen({super.key, required this.onAddEvent, this.openEventId});
+  /// Open straight into the expanded calendar (e.g. from the dashboard's
+  /// mini calendar: /events?view=calendar&date=2026-10-12).
+  final bool expandCalendar;
+  final DateTime? calendarDay;
+  final bool selectCalendarDay;
+  const EventManagementScreen({super.key, required this.onAddEvent, this.openEventId,
+      this.expandCalendar = false, this.calendarDay, this.selectCalendarDay = false});
 
   @override
   State<EventManagementScreen> createState() => _EventManagementScreenState();
@@ -65,8 +74,10 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   int       _selectedTab = 0;
   DateTime  _focusedDay  = DateTime.now();
   DateTime? _selectedDay;
+  late bool _calendarExpanded = widget.expandCalendar;
   bool      _isLoading   = true;
   List<_CalEvent> _events = [];
+  List<DepedEntry> _deped = [];
   int? _highlightId;
   final Map<int, GlobalKey> _cardKeys = {};
   // Current school year by default; earlier years are archived.
@@ -76,6 +87,14 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
   void initState() {
     super.initState();
     _loadEvents().then((_) => _openRequestedEvent());
+    _loadDeped();
+  }
+
+  Future<void> _loadDeped() async {
+    try {
+      final entries = await ApiService.getDepedCalendar();
+      if (mounted) setState(() => _deped = entries);
+    } catch (_) {/* best-effort overlay */}
   }
 
   void _openRequestedEvent() {
@@ -222,6 +241,36 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
     return map;
   }
 
+  static const _statusNames = {
+    _EventStatus.approved: 'approved', _EventStatus.pendingApproval: 'pending_approval',
+    _EventStatus.disabled: 'disabled', _EventStatus.draft: 'draft',
+  };
+
+  /// Calendar rows: the raw API maps with the locally-current status.
+  List<Map<String, dynamic>> get _calendarRows => [
+        for (final e in _activeEvents) {...e.raw, 'status': _statusNames[e.status]},
+      ];
+
+  void _expandCalendar([DateTime? day]) => setState(() {
+        _calendarExpanded = true;
+        if (day != null) { _selectedDay = day; _focusedDay = day; }
+      });
+
+  void _openCalendarEvent(Map<String, dynamic> raw) {
+    final match = _activeEvents.where((e) => e.id != null && e.id == raw['id']);
+    if (match.isNotEmpty) _openDetail(match.first);
+  }
+
+  Widget _buildExpandedCalendar() => EventCalendarView(
+        events: _calendarRows,
+        depedEntries: _deped,
+        initialDay: _selectedDay ?? widget.calendarDay ?? _focusedDay,
+        selectInitialDay: _selectedDay != null ||
+            (widget.calendarDay != null && widget.selectCalendarDay),
+        onOpenEvent: _openCalendarEvent,
+        onCollapse: () => setState(() => _calendarExpanded = false),
+      );
+
   Future<void> _disable(_CalEvent event) async {
     if (event.id != null) {
       try { await ApiService.disableEvent(event.id!); } catch (_) {}
@@ -240,7 +289,19 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
 
   Future<void> _approve(_CalEvent event) async {
     if (event.id != null) {
-      try { await ApiService.approveEvent(event.id!); } catch (_) {}
+      try {
+        final res = await ApiService.approveEvent(event.id!);
+        final created = res['special_tasks_created'] as int? ?? 0;
+        final skipped = (res['special_tasks_skipped'] as List? ?? const []).join(', ');
+        if (mounted && (created > 0 || skipped.isNotEmpty)) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text([
+              if (created > 0) '$created TWG special task${created == 1 ? '' : 's'} assigned.',
+              if (skipped.isNotEmpty) 'Not assigned (no matching TaskNet user): $skipped.',
+            ].join(' ')),
+          ));
+        }
+      } catch (_) {}
     }
     final idx = _events.indexWhere((e) => e.id == event.id);
     if (idx != -1) setState(() => _events[idx] = event.copyWith(status: _EventStatus.approved));
@@ -282,12 +343,29 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
       body: _isLoading
           ? const EventManagementSkeleton()
           : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+              padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, 20, isMobile ? 16 : 24, 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildBanner(),
                   const SizedBox(height: 20),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, anim) => FadeTransition(
+                      opacity: anim,
+                      child: ScaleTransition(
+                        scale: Tween(begin: 0.98, end: 1.0).animate(anim),
+                        alignment: Alignment.topRight,
+                        child: child,
+                      ),
+                    ),
+                    child: _calendarExpanded
+                        ? KeyedSubtree(key: const ValueKey('expanded'), child: _buildExpandedCalendar())
+                        : KeyedSubtree(key: const ValueKey('list'), child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   if (isMobile)
                     _buildEventList(context)
                   else
@@ -302,10 +380,10 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                             focusedDay: _focusedDay,
                             selectedDay: _selectedDay,
                             eventsByDay: _eventsByDay,
-                            onDaySelected: (sel, foc) => setState(() {
-                              _selectedDay = sel; _focusedDay = foc;
-                            }),
+                            deped: _deped,
+                            onDaySelected: (sel, foc) => _expandCalendar(sel),
                             onPageChanged: (foc) => setState(() => _focusedDay = foc),
+                            onExpand: () => _expandCalendar(),
                           ),
                         ),
                       ],
@@ -318,12 +396,15 @@ class _EventManagementScreenState extends State<EventManagementScreen> {
                       focusedDay: _focusedDay,
                       selectedDay: _selectedDay,
                       eventsByDay: _eventsByDay,
-                      onDaySelected: (sel, foc) => setState(() {
-                        _selectedDay = sel; _focusedDay = foc;
-                      }),
+                      deped: _deped,
+                      onDaySelected: (sel, foc) => _expandCalendar(sel),
                       onPageChanged: (foc) => setState(() => _focusedDay = foc),
+                      onExpand: () => _expandCalendar(),
                     ),
                   ],
+                ],
+              )),
+                  ),
                 ],
               ),
             ),

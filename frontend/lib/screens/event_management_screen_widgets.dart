@@ -102,6 +102,9 @@ class _EventDetailPage extends StatelessWidget {
     final pending = event.status == _EventStatus.pendingApproval;
     final showApprove = canApprove && pending;
     final showDisable = isPrincipal && pending;
+    final me = context.read<AppState>().currentUser;
+    final showAttendanceQr = event.status == _EventStatus.approved && event.id != null &&
+        me != null && (me.can('approve_events') || event.createdBy == me.id);
 
     final hasFocal = _notEmpty(raw['focal_name']);
     final hasParticipants = _notEmpty(raw['participants']);
@@ -262,6 +265,20 @@ class _EventDetailPage extends StatelessWidget {
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFFDC2626),
                               side: const BorderSide(color: Color(0xFFFCA5A5)),
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        if (showAttendanceQr)
+                          OutlinedButton.icon(
+                            onPressed: () => showDialog(
+                                context: context,
+                                builder: (_) => _AttendanceQrDialog(eventId: event.id!)),
+                            icon: const Icon(Icons.qr_code_2, size: 18),
+                            label: const Text('Attendance QR codes'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF1A1A2E),
+                              side: const BorderSide(color: Color(0xFFE2E8F0)),
                               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
@@ -730,12 +747,6 @@ Widget _tc(String text, {bool bold = false}) => Padding(
               color: bold ? const Color(0xFF1A1A2E) : const Color(0xFF4A5568))),
     );
 
-String _monthName(int month) {
-  const months = ['','January','February','March','April','May','June',
-      'July','August','September','October','November','December'];
-  return months[month];
-}
-
 class _StatusBadge extends StatelessWidget {
   final _EventStatus status;
   const _StatusBadge({required this.status});
@@ -1168,109 +1179,201 @@ class _ConfirmDeleteDialog extends StatelessWidget {
 
 // ─── Side Calendar ────────────────────────────────────────────────────────────
 
-class _Dot extends StatelessWidget {
-  const _Dot();
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 5, height: 5,
-        decoration: const BoxDecoration(color: Color(0xFF48BB78), shape: BoxShape.circle),
-      );
-}
-
 class _SideCalendar extends StatelessWidget {
   final DateTime focusedDay; final DateTime? selectedDay;
   final Map<DateTime, List<_CalEvent>> eventsByDay;
+  final List<DepedEntry> deped;
   final Function(DateTime, DateTime) onDaySelected;
   final Function(DateTime) onPageChanged;
+  /// Opens the expanded calendar (also triggered by tapping a day).
+  final VoidCallback onExpand;
   const _SideCalendar({required this.focusedDay, required this.selectedDay,
-      required this.eventsByDay, required this.onDaySelected, required this.onPageChanged});
-
-  List<_CalEvent> _eventsFor(DateTime day) =>
-      eventsByDay[DateTime(day.year, day.month, day.day)] ?? const [];
+      required this.eventsByDay, this.deped = const [], required this.onDaySelected,
+      required this.onPageChanged, required this.onExpand});
 
   // Hover tooltip text: title · when · where for each event on the day.
-  String _tooltipText(List<_CalEvent> events) => events.map((e) {
-        final when = (e.raw['target_date'] ?? '').toString().trim();
-        final where = (e.raw['venue'] ?? '').toString().trim();
-        final lines = <String>[e.title];
-        if (when.isNotEmpty) lines.add('When: $when');
-        if (where.isNotEmpty) lines.add('Where: $where');
-        return lines.join('\n');
-      }).join('\n\n');
-
-  // A single day cell rendered to match the original calendarStyle, wrapped in
-  // a hover Tooltip when the day has events.
-  Widget _dayCell(DateTime day, {Color? bg, required Color textColor, bool bold = false}) {
-    final events = _eventsFor(day);
-    Widget cell = Container(
-      margin: const EdgeInsets.all(4),
-      alignment: Alignment.center,
-      decoration: bg != null ? BoxDecoration(color: bg, shape: BoxShape.circle) : null,
-      child: Stack(alignment: Alignment.center, children: [
-        Text('${day.day}',
-            style: TextStyle(fontSize: 13, color: textColor,
-                fontWeight: bold ? FontWeight.w600 : FontWeight.w400)),
-        if (events.isNotEmpty)
-          const Positioned(bottom: 1, child: _Dot()),
-      ]),
-    );
-    if (events.isEmpty) return cell;
-    return Tooltip(
-      message: _tooltipText(events),
-      waitDuration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A2E),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      textStyle: const TextStyle(color: Colors.white, fontSize: 11.5, height: 1.4),
-      child: cell,
-    );
+  String? _tooltipText(DateTime day) {
+    final memos = [
+      for (final d in deped)
+        if (d.covers(day)) 'DepEd Memo · ${d.category}\n${d.title}\n${d.rangeLabel}',
+    ];
+    final events = eventsByDay[day];
+    if (events == null || events.isEmpty) return memos.isEmpty ? null : memos.join('\n\n');
+    return [...memos, ...events.map((e) {
+      final when = (e.raw['target_date'] ?? '').toString().trim();
+      final where = (e.raw['venue'] ?? '').toString().trim();
+      final lines = <String>[e.title];
+      if (when.isNotEmpty) lines.add('When: $when');
+      if (where.isNotEmpty) lines.add('Where: $where');
+      return lines.join('\n');
+    })].join('\n\n');
   }
 
   @override
+  Widget build(BuildContext context) => AppCalendar(
+        month: focusedDay,
+        onMonthChanged: onPageChanged,
+        selectedDay: selectedDay,
+        onDaySelected: (d) => onDaySelected(d, d),
+        eventDays: eventsByDay.keys.toSet(),
+        depedDays: DepedEntry.byDay(deped).keys.toSet(),
+        tooltipFor: _tooltipText,
+        actions: [
+          AppCalendarAction(
+              icon: Icons.open_in_full_rounded, tooltip: 'Open full calendar', onTap: onExpand),
+        ],
+      );
+}
+
+// ─── Attendance QR Codes ──────────────────────────────────────────────────────
+
+/// Time In / Time Out QR codes for every Activity Matrix row. Each QR opens the
+/// attendance scan page; the code in it is signed by the server.
+class _AttendanceQrDialog extends StatefulWidget {
+  final int eventId;
+  const _AttendanceQrDialog({required this.eventId});
+
+  @override
+  State<_AttendanceQrDialog> createState() => _AttendanceQrDialogState();
+}
+
+class _AttendanceQrDialogState extends State<_AttendanceQrDialog> {
+  late final Future<Map<String, dynamic>> _future =
+      ApiService.getAttendanceQrCodes(widget.eventId);
+
+  String _url(int index, String action, String code) =>
+      '${Uri.base.origin}/#/attendance/${widget.eventId}/$index/scan'
+      '?action=$action&code=$code';
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      padding: const EdgeInsets.only(bottom: 8),
-      child: TableCalendar(
-        firstDay: DateTime(2020), lastDay: DateTime(2030), focusedDay: focusedDay,
-        selectedDayPredicate: (day) => isSameDay(selectedDay, day),
-        onDaySelected: onDaySelected, onPageChanged: onPageChanged,
-        availableCalendarFormats: const {CalendarFormat.month: 'Month'},
-        calendarBuilders: CalendarBuilders(
-          defaultBuilder: (_, day, __) =>
-              _dayCell(day, textColor: const Color(0xFF1A1A2E)),
-          todayBuilder: (_, day, __) => _dayCell(day,
-              bg: const Color(0xFFACC2DF), textColor: Colors.white, bold: true),
-          selectedBuilder: (_, day, __) => _dayCell(day,
-              bg: const Color(0xFF1E2126), textColor: Colors.white, bold: true),
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 760),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: _future,
+            builder: (context, snap) {
+              final header = Row(children: [
+                Expanded(child: Text('Attendance QR Codes',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary))),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ]);
+              if (snap.connectionState != ConnectionState.done) {
+                return Column(mainAxisSize: MainAxisSize.min, children: [
+                  header,
+                  const Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()),
+                ]);
+              }
+              if (snap.hasError) {
+                return Column(mainAxisSize: MainAxisSize.min, children: [
+                  header,
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(snap.error.toString().replaceFirst('Exception: ', ''),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 13, color: Color(0xFFE53E3E))),
+                  ),
+                ]);
+              }
+              final data = snap.data!;
+              final activities = (data['activities'] as List? ?? const []).cast<Map>();
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  Text(data['title']?.toString() ?? '',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppTheme.textMuted)),
+                  const SizedBox(height: 12),
+                  if (activities.isEmpty)
+                    const _QrNotice('This event has no Activity Matrix rows.'),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: activities.length,
+                      separatorBuilder: (_, __) => const Divider(height: 28, color: Color(0xFFE2E8F0)),
+                      itemBuilder: (_, i) => _activity(activities[i]),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
-        calendarStyle: const CalendarStyle(
-          todayDecoration: BoxDecoration(color: Color(0xFFACC2DF), shape: BoxShape.circle),
-          todayTextStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-          selectedDecoration: BoxDecoration(color: Color(0xFF1E2126), shape: BoxShape.circle),
-          selectedTextStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-          defaultTextStyle: TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)),
-          weekendTextStyle: TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)),
-          outsideDaysVisible: false,
-          cellMargin: EdgeInsets.all(4),
-        ),
-        headerStyle: HeaderStyle(
-          formatButtonVisible: false, titleCentered: true,
-          headerPadding: const EdgeInsets.symmetric(vertical: 12),
-          titleTextFormatter: (date, locale) => '${_monthName(date.month)}\n${date.year}',
-          titleTextStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
-          leftChevronIcon: const Icon(Icons.chevron_left, size: 20, color: Color(0xFF4A5568)),
-          rightChevronIcon: const Icon(Icons.chevron_right, size: 20, color: Color(0xFF4A5568)),
-        ),
-        daysOfWeekStyle: const DaysOfWeekStyle(
-          weekdayStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF718096)),
-          weekendStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF718096)),
-        ),
-        daysOfWeekHeight: 28, rowHeight: 38,
       ),
     );
   }
+
+  Widget _activity(Map a) {
+    final index = a['index'] as int;
+    final name = (a['event'] ?? '').toString().trim();
+    final task = (a['special_task_title'] ?? '').toString().trim();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(name.isEmpty ? 'Activity ${index + 1}' : name,
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+      Text([a['day'], a['time']].where((v) => (v ?? '').toString().isNotEmpty).join('  ·  '),
+          style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppTheme.textMuted)),
+      if (task.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('Automated special task: $task',
+              style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppTheme.greenColor)),
+        ),
+      if (a['schedule_readable'] != true)
+        const _QrNotice("This row's day/time can't be read (use e.g. \"4:00-5:00 PM\"), "
+            'so its scans will be rejected.'),
+      const SizedBox(height: 10),
+      Wrap(spacing: 16, runSpacing: 12, children: [
+        _qr('Time In', _url(index, 'time_in', a['time_in_code'].toString())),
+        _qr('Time Out', _url(index, 'time_out', a['time_out_code'].toString())),
+      ]),
+    ]);
+  }
+
+  Widget _qr(String label, String url) => SizedBox(
+        width: 250,
+        child: Column(children: [
+          Text(label,
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(10)),
+            child: QrImageView(data: url, version: QrVersions.auto, size: 170),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(url,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(fontSize: 9, color: const Color(0xFF3B82F6))),
+        ]),
+      );
+}
+
+class _QrNotice extends StatelessWidget {
+  final String text;
+  const _QrNotice(this.text);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 6, bottom: 6),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFFDE68A))),
+        child: Text(text, style: const TextStyle(fontSize: 12, color: Color(0xFF92400E))),
+      );
 }

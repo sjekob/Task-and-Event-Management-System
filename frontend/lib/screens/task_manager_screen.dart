@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/skeleton_widgets.dart';
 import '../widgets/school_year_picker.dart';
+import '../widgets/deped_calendar_widgets.dart';
 import 'task_detail_screen.dart';
 import 'edit_task_screen.dart';
 
@@ -102,6 +103,20 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
     ));
   }
 
+  Future<void> _generateFromDeped() async {
+    final res = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => const DepedTaskDialog(),
+    );
+    if (res == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Mandatory task assigned to ${res['assigned']} faculty account'
+          '${res['assigned'] == 1 ? '' : 's'}.'),
+      backgroundColor: const Color(0xFF16A34A),
+    ));
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const TaskManagerSkeleton();
@@ -146,6 +161,13 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                   value: _filter,
                   onChanged: (f) { setState(() => _filter = f); _load(); },
                 ),
+                // Principal/admin: system-wide compliance tasks from DepEd dates.
+                if (widget.category == 'common' && context.read<AppState>().can('manage_school_years'))
+                  OutlinedButton.icon(
+                    onPressed: _generateFromDeped,
+                    icon: const Icon(Icons.event_note_rounded, size: 18),
+                    label: const Text('Generate from DepEd Calendar'),
+                  ),
               ],
             ),
             const SizedBox(height: 16),

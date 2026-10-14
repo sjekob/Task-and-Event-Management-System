@@ -17,6 +17,7 @@ import 'screens/appraisal_screen.dart';
 import 'screens/event_management_screen.dart';
 import 'screens/add_event_screen.dart';
 import 'screens/public_evaluation_screen.dart';
+import 'screens/attendance_scan_screen.dart';
 import 'screens/school_years_screen.dart';
 import 'screens/audit_log_screen.dart';
 
@@ -56,8 +57,16 @@ class _TaskNetAppState extends State<TaskNetApp> {
         final loggedIn = widget.appState.isLoggedIn;
         final loc = state.matchedLocation;
         if (loc.startsWith('/eval/')) return null; // public QR landing page — no auth
-        if (!loggedIn && loc != '/login') return '/login';
-        if (loggedIn && loc == '/login') return '/dashboard';
+        // Remember where a signed-out user was headed (e.g. a scanned attendance
+        // QR) and send them back there after login.
+        if (!loggedIn && loc != '/login') {
+          return '/login?from=${Uri.encodeComponent(state.uri.toString())}';
+        }
+        if (loggedIn && loc == '/login') {
+          final from = state.uri.queryParameters['from'];
+          return (from != null && from.startsWith('/') && !from.startsWith('/login'))
+              ? from : '/dashboard';
+        }
         return null;
       },
       routes: [
@@ -69,6 +78,24 @@ class _TaskNetAppState extends State<TaskNetApp> {
           path: '/eval/:eventId',
           builder: (context, state) => PublicEvaluationScreen(
             eventId: state.pathParameters['eventId']!,
+          ),
+        ),
+        // Attendance QR landing (login required): records Time In / Time Out
+        // with the device's location, then the activity's evaluation.
+        GoRoute(
+          path: '/attendance/:eventId/:index/scan',
+          builder: (context, state) => AttendanceScanScreen(
+            eventId: int.parse(state.pathParameters['eventId']!),
+            activityIndex: int.parse(state.pathParameters['index']!),
+            action: state.uri.queryParameters['action'] ?? '',
+            code: state.uri.queryParameters['code'] ?? '',
+          ),
+        ),
+        GoRoute(
+          path: '/attendance/:eventId/:index/evaluate',
+          builder: (context, state) => PublicEvaluationScreen(
+            eventId: state.pathParameters['eventId']!,
+            activityIndex: int.parse(state.pathParameters['index']!),
           ),
         ),
         ShellRoute(
@@ -178,12 +205,18 @@ class _TaskNetAppState extends State<TaskNetApp> {
             GoRoute(
               path: '/events',
               builder: (context, state) {
-                final open = int.tryParse(state.uri.queryParameters['open'] ?? '');
+                final q = state.uri.queryParameters;
+                final open = int.tryParse(q['open'] ?? '');
+                final selectedDay = DateTime.tryParse(q['date'] ?? '');
+                final calendarDay = selectedDay ?? DateTime.tryParse(q['month'] ?? '');
                 return EventManagementScreen(
-                  // New key per requested event so a second dashboard click re-opens.
-                  key: ValueKey('events-$open'),
+                  // New key per request so a second dashboard click re-opens.
+                  key: ValueKey('events-$open-${q['view']}-${q['date']}-${q['month']}'),
                   onAddEvent: () => context.go('/events/new'),
                   openEventId: open,
+                  expandCalendar: q['view'] == 'calendar',
+                  calendarDay: calendarDay,
+                  selectCalendarDay: selectedDay != null,
                 );
               },
             ),

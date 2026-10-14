@@ -1,15 +1,18 @@
+import json
 from datetime import date
 from fastapi import APIRouter, HTTPException, Depends, Request
 import audit
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from typing import Any, Optional
 from database import get_db, create_notification
 from auth import (get_current_user, require_event_manager, require_event_approver,
                   has_permission)
 from date_utils import parse_event_date
 from school_calendar import resolve_window, in_window
+from routes.deped_calendar import mandatory_on, conflict_warning
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
+
 
 
 def _date_conflicts(db, d, exclude_id=None) -> list:
@@ -41,10 +44,49 @@ def _validate_target_date(db, target_date, exclude_id=None):
                  "please pick a different date.")
 
 
+# ── Activity matrix ───────────────────────────────────────────────────────────
+
+class ActivityMatrixRow(BaseModel):
+    """One row of the proposal's Activity Matrix (stored as a JSON array in
+    events.activity_matrix). Unknown keys are kept so nothing is dropped."""
+    model_config = ConfigDict(extra="allow")
+
+    day: Optional[str] = ""
+    time: Optional[str] = ""
+    event: Optional[str] = ""
+    speaker: Optional[str] = ""
+    # Title of the Special Task to auto-create for this activity; blank → None.
+    special_task_title: Optional[str] = None
+
+    @field_validator("special_task_title", mode="before")
+    @classmethod
+    def _blank_to_none(cls, v):
+        if v is None:
+            return None
+        v = str(v).strip()
+        return v or None
+
+
+def _normalize_activity_matrix(raw: Any) -> Optional[str]:
+    """Validate the activity matrix (JSON string or list) and return it as a
+    JSON string where every row carries `special_task_title`."""
+    if raw is None or raw == "":
+        return None
+    rows = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(rows, list):
+        raise ValueError("activity_matrix must be a JSON array")
+    return json.dumps([ActivityMatrixRow.model_validate(r).model_dump() for r in rows])
+
+
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def _event_row(row, db):
     d = dict(row)
+    # Older events predate special_task_title — backfill it on the way out.
+    try:
+        d["activity_matrix"] = _normalize_activity_matrix(d.get("activity_matrix"))
+    except (ValueError, ValidationError):
+        pass
     creator = db.execute(
         "SELECT full_name, role FROM users WHERE id=?", (d.get("created_by"),)
     ).fetchone()
@@ -59,11 +101,12 @@ def _event_row(row, db):
 def check_event_date(target_date: str, exclude_id: Optional[int] = None,
                      db=Depends(get_db), user=Depends(get_current_user)):
     """Conflict check for the proposal form, run as soon as a date is picked.
-    Same rules the create/update endpoints enforce."""
+    Same rules the create/update endpoints enforce. Overlaps with mandatory
+    DepEd calendar entries are reported as a non-blocking warning."""
     d = parse_event_date(target_date)
     if d is None:
         return {"date": None, "available": True, "past": False, "conflicts": [],
-                "message": None}
+                "message": None, "deped_conflicts": [], "deped_warning": None}
     past = d < date.today()
     conflicts = _date_conflicts(db, d, exclude_id)
     if past:
@@ -74,8 +117,10 @@ def check_event_date(target_date: str, exclude_id: Optional[int] = None,
                    f"({'approved' if c['status'] == 'approved' else 'pending approval'}).")
     else:
         message = None
+    deped = mandatory_on(db, d)
     return {"date": d.isoformat(), "available": not past and not conflicts,
-            "past": past, "conflicts": conflicts, "message": message}
+            "past": past, "conflicts": conflicts, "message": message,
+            "deped_conflicts": deped, "deped_warning": conflict_warning(deped)}
 
 
 @router.get("/{event_id}")
@@ -112,6 +157,16 @@ class EventCreateBody(BaseModel):
     indicators: Optional[str] = None
     comments: Optional[str] = None
     status: Optional[str] = 'pending_approval'
+
+    @field_validator("activity_matrix", mode="before")
+    @classmethod
+    def _check_activity_matrix(cls, v):
+        try:
+            return _normalize_activity_matrix(v)
+        except json.JSONDecodeError:
+            raise ValueError("activity_matrix must be valid JSON")
+        except ValidationError as e:
+            raise ValueError(f"invalid activity_matrix row: {e.errors()[0]['msg']}")
 
 
 CREATE_STATUSES = ('draft', 'pending_approval')
@@ -247,6 +302,77 @@ def update_event(event_id: int, body: EventCreateBody, db=Depends(get_db),
     return _event_row(row, db)
 
 
+def _twg_assignee(db, member: dict) -> Optional[int]:
+    """The TaskNet user a TWG member row refers to: its linked user_id, else a
+    unique case-insensitive full-name match (older proposals). None if unknown."""
+    uid = member.get("user_id")
+    if isinstance(uid, int) and db.execute(
+            "SELECT 1 FROM users WHERE id=? AND is_active=1", (uid,)).fetchone():
+        return uid
+    name = (member.get("name") or "").strip()
+    if not name:
+        return None
+    rows = db.execute("SELECT id FROM users WHERE is_active=1 AND LOWER(full_name)=LOWER(?)",
+                      (name,)).fetchall()
+    return rows[0]["id"] if len(rows) == 1 else None
+
+
+def _create_twg_special_tasks(db, event_id: int) -> dict:
+    """On approval: one pending special task per TWG member flagged
+    `automate_special_task`, assigned to that member and due on the event's
+    target date. Re-approving never duplicates (same event + title + assignee)."""
+    ev = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+    try:
+        groups = json.loads(ev["twg_groups"] or "[]")
+    except (TypeError, ValueError):
+        groups = []
+    target = parse_event_date(ev["target_date"])
+    due = target.isoformat() if target else None
+    assigner = ev["created_by"]
+    created, skipped = [], []
+    for g in groups if isinstance(groups, list) else []:
+        if not isinstance(g, dict):
+            continue
+        committee = (g.get("title") or "").strip()
+        for m in g.get("members") or []:
+            if not isinstance(m, dict) or m.get("automate_special_task") is not True:
+                continue
+            output = (m.get("output") or "").strip()
+            tor = (m.get("tor") or "").strip()
+            title = output or tor
+            name = (m.get("name") or "").strip() or "Unnamed member"
+            uid = _twg_assignee(db, m)
+            if not title or uid is None:
+                skipped.append(name)
+                continue
+            if db.execute(
+                    """SELECT 1 FROM tasks t JOIN task_assignments ta ON ta.task_id=t.id
+                       WHERE t.source_event_id=? AND t.task_category='special'
+                         AND t.title=? AND ta.user_id=?""", (event_id, title, uid)).fetchone():
+                continue
+            lines = [f"Event: {ev['title']}"]
+            if committee:
+                lines.append(f"Committee: {committee}")
+            if (m.get("designation") or "").strip():
+                lines.append(f"Designation: {m['designation'].strip()}")
+            if tor:
+                lines.append(f"Terms of Reference: {tor}")
+            if output:
+                lines.append(f"Output: {output}")
+            task_id = db.execute(
+                """INSERT INTO tasks (title, instructions, task_category, start_date, end_date,
+                                      status, created_by, source_event_id)
+                   VALUES (?,?,'special',?,?,'active',?,?)""",
+                (title, "\n".join(lines), date.today().isoformat(), due,
+                 assigner, event_id)).lastrowid
+            db.execute("INSERT INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?)",
+                       (task_id, uid, assigner))
+            create_notification(db, uid, "task", f"New special task: {title}",
+                                f"From the approved event {ev['title']}", task_id)
+            created.append({"task_id": task_id, "title": title, "user_id": uid})
+    return {"created": created, "skipped": skipped}
+
+
 @router.patch("/{event_id}/approve")
 def approve_event(event_id: int, request: Request, db=Depends(get_db),
                   user=Depends(require_event_approver)):
@@ -255,8 +381,11 @@ def approve_event(event_id: int, request: Request, db=Depends(get_db),
         raise HTTPException(404, "Event not found")
     db.execute("UPDATE events SET status='approved' WHERE id=?", (event_id,))
     _audit_status(db, user, request, event_id, ev, "approved", "Approved event")
+    tasks = _create_twg_special_tasks(db, event_id)
     db.commit()
-    return {"message": "Event approved"}
+    return {"message": "Event approved",
+            "special_tasks_created": len(tasks["created"]),
+            "special_tasks_skipped": tasks["skipped"]}
 
 
 def _require_event_control(db, event_id: int, user: dict):

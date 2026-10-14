@@ -8,7 +8,7 @@ Service map:
                    /api/certificates
   8002  personnel  /api/personnel
   8003  tasks      /api/tasks, /api/templates, /api/reports, /api/comments, /uploads
-  8004  events     /api/events
+  8004  events     /api/events, /api/deped-calendar
   8005  appraisal  /api/appraisal, /api/dashboard
 """
 import os
@@ -46,6 +46,7 @@ ROUTE_MAP: list[tuple[str, str]] = [
     ("/api/tasks",       TASKS_URL),
     ("/uploads",         TASKS_URL),
     ("/api/events",      EVENTS_URL),
+    ("/api/deped-calendar", EVENTS_URL),
     ("/api/appraisal",   APPRAISAL_URL),
     ("/api/dashboard",   APPRAISAL_URL),
 ]

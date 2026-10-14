@@ -1,5 +1,6 @@
 """Events Service — port 8004
-Handles: event calendar, activity events, approvals.
+Handles: event calendar, activity events, approvals, attendance scans,
+DepEd school-calendar reference.
 Run from backend/: uvicorn services.events.main:app --port 8004
 """
 import os
@@ -9,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from cors import get_cors_config
 from database import init_db
 from routes.events import router as events_router
+from routes.attendance import router as attendance_router
+from routes.deped_calendar import router as deped_calendar_router
 
 SERVICE_PORT = int(os.getenv("EVENTS_SERVICE_PORT", "8004"))
 
@@ -35,6 +38,8 @@ def startup():
 
 
 app.include_router(events_router)
+app.include_router(attendance_router)
+app.include_router(deped_calendar_router)
 
 
 @app.get("/health")
