@@ -21,12 +21,34 @@ MAX_BYTES = 15 * 1024 * 1024
 MAX_PDF_PAGES = 10      # pages read from a PDF's text layer
 MAX_OCR_PAGES = 5       # pages rendered and OCR'd when the PDF is a scan
 MAX_INSTRUCTIONS = 8000
+MIN_TEXT_PER_PAGE = 150  # below this a PDF page is treated as a scan and OCR'd
 
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 SUPPORTED = (".pdf", ".docx", ".txt") + _IMAGE_EXTS
 
 
 # ── Reading ───────────────────────────────────────────────────────────────────
+
+# Contact details and page numbers: letterhead/footer text, not content.
+_BOILERPLATE = re.compile(
+    r"(telephone|tel\.?\s*no|mobile|fax|e-?mail|website|www\.|https?://|@[a-z0-9-]+\.|"
+    r"page\s+\d+\s+of\s+\d+|^\s*page\s+\d+\s*$|^\s*\d+\s*$)", re.I)
+
+
+def _is_boilerplate(line: str) -> bool:
+    return bool(_BOILERPLATE.search(line))
+
+
+def _strip_boilerplate(text: str) -> str:
+    """The text with running headers/footers removed: lines repeated on
+    several pages, and contact/page-number lines."""
+    lines = [ln.strip() for ln in text.splitlines()]
+    counts = {}
+    for ln in lines:
+        if ln:
+            counts[ln] = counts.get(ln, 0) + 1
+    return "\n".join(ln for ln in lines
+                     if ln and counts[ln] < 2 and not _is_boilerplate(re.sub(r"\d+", "1", ln)))
 
 def _docx_text(data: bytes) -> str:
     """Paragraph text of a .docx (its main document part), one line each."""
@@ -83,6 +105,32 @@ def _ocr_page(img) -> tuple:
     return text, segments
 
 
+def _rows_text(segments: list) -> str:
+    """Page text in reading order, joining pieces that sit on the same row.
+    Tesseract often reads a form's label column and value column as separate
+    blocks; this puts each label back next to its value."""
+    if not segments:
+        return ""
+    rows = []
+    for seg in sorted(segments, key=lambda s: (s["top"], s["words"][0][1])):
+        mid = (seg["top"] + seg["bottom"]) / 2
+        row = rows[-1] if rows else None
+        if row and row["top"] <= mid <= row["bottom"]:
+            row["segs"].append(seg)
+            row["bottom"] = max(row["bottom"], min(seg["bottom"], row["bottom"] + 6))
+        else:
+            rows.append({"top": seg["top"], "bottom": seg["bottom"], "segs": [seg]})
+    heights = sorted(r["bottom"] - r["top"] for r in rows)
+    line = heights[len(heights) // 2] or 20
+    out, prev_bottom = [], None
+    for r in rows:
+        if prev_bottom is not None and r["top"] - prev_bottom > line * 1.2:
+            out.append("")  # paragraph gap
+        out.append("  ".join(sg["text"] for sg in sorted(r["segs"], key=lambda sg: sg["words"][0][1])))
+        prev_bottom = r["bottom"]
+    return "\n".join(out)
+
+
 def read_text(data: bytes, filename: str) -> dict:
     """{text, method, pages}: method is 'text' (read directly) or 'ocr'
     (recognised from an image); pages holds each OCR'd page's positioned lines.
@@ -106,14 +154,18 @@ def read_text(data: bytes, filename: str) -> dict:
             raise ValueError("That Word file couldn't be opened. Save it as .docx or PDF and try again.")
 
     if ext == ".pdf":
-        text = ""
+        text, page_count = "", 1
         if PdfReader is not None:
             try:
                 reader = PdfReader(io.BytesIO(data))
-                text = "\n".join((p.extract_text() or "") for p in reader.pages[:MAX_PDF_PAGES])
+                pages = reader.pages[:MAX_PDF_PAGES]
+                page_count = max(1, len(pages))
+                text = "\n".join((p.extract_text() or "") for p in pages)
             except Exception:
                 text = ""
-        if len(text.strip()) >= 40:
+        # A real text layer has a few hundred characters a page. Less than that
+        # usually means only a header/footer is text and the body is a scan.
+        if len(_strip_boilerplate(text)) >= MIN_TEXT_PER_PAGE * page_count:
             return {"text": text, "method": "text"}
         # A scanned PDF has no text layer: render its pages and OCR them.
         if pypdfium2 is not None and pytesseract is not None:
@@ -121,7 +173,7 @@ def read_text(data: bytes, filename: str) -> dict:
                 pdf = pypdfium2.PdfDocument(data)
                 pages = [_ocr_page(pdf[i].render(scale=2.5).to_pil())
                          for i in range(min(MAX_OCR_PAGES, len(pdf)))]
-                ocr = "\n".join(t for t, _ in pages if t)
+                ocr = "\n\n".join(_rows_text(seg) or (t or "") for t, seg in pages)
                 if ocr.strip():
                     return {"text": ocr, "method": "ocr", "pages": [seg for _, seg in pages]}
             except Exception:
@@ -139,7 +191,7 @@ def read_text(data: bytes, filename: str) -> dict:
         text, segments = None, []
     if not text or not text.strip():
         raise ValueError("No readable text was found in that image. Try a sharper, straighter photo.")
-    return {"text": text, "method": "ocr", "pages": [segments]}
+    return {"text": _rows_text(segments) or text, "method": "ocr", "pages": [segments]}
 
 
 # ── Dates and times ───────────────────────────────────────────────────────────
@@ -173,7 +225,7 @@ _SINGLE = [
     re.compile(r"(?<!\d)(?P<mn>\d{1,2})/(?P<d>\d{1,2})/(?P<y>(?:19|20)\d{2})(?!\d)"),
 ]
 
-_END_CUES = ("deadline", "due", "on or before", "not later than", "no later than", "until",
+_END_CUES = ("deadline", "due", "target date", "date of activity", "on or before", "not later than", "no later than", "until",
              "submit", "submission", "end date", "ends", "end:", "closing", "by ")
 _START_CUES = ("start date", "starts", "start:", "begin", "commence", "effective", "from ", "opening")
 
@@ -274,8 +326,10 @@ def _due_time(text: str) -> Optional[str]:
 
 # ── Title and instructions ────────────────────────────────────────────────────
 
+_ENUM = r"(?:[a-z0-9]{1,4}[.)]\s*)?"  # outline numbering: "a.", "1)", "iv."
 _TITLE_LABEL = re.compile(
-    r"^\s*(?:task\s*(?:title|name)?|title|subject|activity|topic|assignment|re)\s*[:\-–]\s*(?P<v>\S.*)$", re.I)
+    r"^\s*" + _ENUM + r"(?:task\s*(?:title|name)?|title|subject|activity(?:\s*title)?|topic|assignment|re)"
+    r"\s*[:\-–>]\s*(?P<v>\S.*)$", re.I)
 _BODY_LABEL = re.compile(
     r"^\s*(?:instructions?|description|details|directions|guidelines|procedures?|what to do|requirements?)"
     r"\s*[:\-–]?\s*(?P<v>.*)$", re.I)
@@ -284,8 +338,23 @@ _FIELD_LABEL = re.compile(
     r"\s*[:\-–]", re.I)
 
 
+def _strip_boilerplate_lines(text: str) -> str:
+    """Drop running headers/footers (identical lines on several pages, ignoring
+    page numbers) and contact/page-number lines, keeping blank lines."""
+    raw = text.replace("\r", "\n").split("\n")
+    key = lambda ln: re.sub(r"\d+", "#", re.sub(r"\s+", " ", ln.strip()).lower())
+    counts = {}
+    for ln in raw:
+        if ln.strip():
+            counts[key(ln)] = counts.get(key(ln), 0) + 1
+    return "\n".join(ln for ln in raw
+                     if not ln.strip() or (counts[key(ln)] < 2 and not _is_boilerplate(ln)))
+
+
 def _clean(text: str) -> list:
     lines = [re.sub(r"[ \t ]+", " ", ln).strip() for ln in text.replace("\r", "\n").split("\n")]
+    # OCR specks from seals and logos come out as short gibberish lines.
+    lines = [ln for ln in lines if not ln or len(re.findall(r"[A-Za-z0-9]", ln)) >= 4]
     out = []
     for ln in lines:  # collapse runs of blank lines
         if ln or (out and out[-1]):
@@ -297,7 +366,7 @@ def _clean(text: str) -> list:
 
 def parse(text: str) -> dict:
     """Task fields found in a document's text. Missing ones are None."""
-    lines = _clean(text)
+    lines = _clean(_strip_boilerplate_lines(text))
     body_text = "\n".join(lines)
 
     # Title: a labelled line, else the first line that reads like a heading.
@@ -309,7 +378,8 @@ def parse(text: str) -> dict:
             break
     if title is None:
         for i, ln in enumerate(lines[:15]):
-            if len(re.findall(r"[A-Za-z]", ln)) >= 3 and not _FIELD_LABEL.match(ln) and not _BODY_LABEL.match(ln):
+            # A heading has at least one real word (OCR specks like "sR NG Bp" don't).
+            if re.search(r"[A-Za-z]{4,}", ln) and not _FIELD_LABEL.match(ln) and not _BODY_LABEL.match(ln):
                 title, title_idx = ln, i
                 break
     if title:
@@ -317,8 +387,10 @@ def parse(text: str) -> dict:
 
     # Instructions: the labelled section when there is one, else everything
     # but the title line, so nothing in the document is dropped.
+    # (Only a section that starts early counts: "Directions:" on the last page
+    # of a long proposal is a form's footnote, not the task's instructions.)
     body_idx = next((i for i, ln in enumerate(lines)
-                     if _BODY_LABEL.match(ln) and i != title_idx), None)
+                     if _BODY_LABEL.match(ln) and i != title_idx and i <= max(10, len(lines) * 0.4)), None)
     if body_idx is not None:
         first = _BODY_LABEL.match(lines[body_idx])["v"].strip()
         body = ([first] if first else []) + lines[body_idx + 1:]
