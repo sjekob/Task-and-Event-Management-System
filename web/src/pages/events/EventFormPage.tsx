@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ActionIcon, Alert, Anchor, Box, Button, Checkbox, Group, Loader, Modal, NumberInput, Paper, Radio,
-  ScrollArea, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
+  ScrollArea, Stack, Table, Text, Textarea, TextInput, Title, UnstyledButton,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { IconAlertTriangle, IconArrowLeft, IconCircleMinus, IconPlus, IconSearch, IconUsersGroup } from '@tabler/icons-react';
@@ -164,6 +164,8 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
             excludeDate={(d) => taken.has(typeof d === 'string' ? d.slice(0, 10) : isoDate(new Date(d)))}
             onChange={(v) => v && set('targetDate', longDate(parseEventDate(v)!))}
             valueFormat="MMMM D, YYYY" error={dateIssue}
+            // Hint under the input so it lines up with the Venue field beside it.
+            inputWrapperOrder={['label', 'input', 'description', 'error']}
             description={checkingDate ? 'Checking the calendar...' : !dateIssue && form.targetDate ? 'No other event is scheduled on this date.' : 'Greyed-out days already have an event'} />
           {depedWarning && !checkingDate && (
             <Alert mt={8} p="xs" color="yellow" icon={<IconAlertTriangle size={18} />}>
@@ -176,15 +178,15 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
       </Group>
       <div>
         <Text size="sm" fw={500} mb={6}>e. Target Participants</Text>
-        <Table withTableBorder verticalSpacing={6}>
-          <Table.Thead bg="#F7F9FC"><Table.Tr><Table.Th /><Table.Th ta="center">MALE</Table.Th><Table.Th ta="center">FEMALE</Table.Th><Table.Th ta="center">TOTAL</Table.Th></Table.Tr></Table.Thead>
+        <Table withTableBorder verticalSpacing={8} className="tn-pax">
+          <Table.Thead><Table.Tr><Table.Th /><Table.Th ta="center">MALE</Table.Th><Table.Th ta="center">FEMALE</Table.Th><Table.Th ta="center">TOTAL</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>
             {([0, 1] as const).map((i) => (
               <Table.Tr key={i}>
                 <Table.Td><TextInput variant="unstyled" placeholder="Category" value={form.participants[i].category}
                   onChange={(e) => setPax(i, { category: e.currentTarget.value })} aria-label={`Participant category ${i + 1}`} /></Table.Td>
-                <Table.Td><NumberInput min={0} hideControls value={form.participants[i].male} onChange={(v) => setPax(i, { male: Number(v) || 0 })} aria-label="Male" /></Table.Td>
-                <Table.Td><NumberInput min={0} hideControls value={form.participants[i].female} onChange={(v) => setPax(i, { female: Number(v) || 0 })} aria-label="Female" /></Table.Td>
+                <Table.Td><NumberInput min={0} hideControls ta="center" value={form.participants[i].male} onChange={(v) => setPax(i, { male: Number(v) || 0 })} aria-label="Male" /></Table.Td>
+                <Table.Td><NumberInput min={0} hideControls ta="center" value={form.participants[i].female} onChange={(v) => setPax(i, { female: Number(v) || 0 })} aria-label="Female" /></Table.Td>
                 <Table.Td ta="center" fw={600}>{form.participants[i].male + form.participants[i].female}</Table.Td>
               </Table.Tr>
             ))}
@@ -388,20 +390,18 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
 
   const last = step === PROPOSAL_STEPS.length - 1;
   return (
-    <Box maw={1240} mx="auto">
+    <Box className="tn-proposal">
       <Group gap={8} mb="md">
-        <ActionIcon variant="subtle" color="dark" size="lg" onClick={() => navigate('/events')} aria-label="Back"><IconArrowLeft /></ActionIcon>
+        <ActionIcon variant="subtle" color="dark" size="lg" onClick={() => navigate('/events')} aria-label="Back to events"><IconArrowLeft /></ActionIcon>
         <Title order={2} fz={22}>{editing ? 'Edit Event' : 'Add New Event'}</Title>
       </Group>
-      <Stepper active={step} onStepClick={setStep} color="ink.8" size="sm" allowNextStepsSelect mb="md">
-        {PROPOSAL_STEPS.map((t) => <Stepper.Step key={t} label={t} />)}
-      </Stepper>
-      <Paper p={24} radius="lg">{steps[step]}</Paper>
-      <Group justify="space-between" mt="md" p="md" style={{ background: '#E1EBF8', borderRadius: 12, border: '1px solid #ACC2DF' }}>
+      <StepTabs active={step} onChange={setStep} />
+      <Paper p={{ base: 16, sm: 24 }} radius="lg" mt="md">{steps[step]}</Paper>
+      <Group justify="space-between" className="tn-proposal-footer" wrap="nowrap">
         {step > 0 ? <Button variant="default" w={120} onClick={() => setStep(step - 1)}>Back</Button> : <span />}
-        <Group gap={12}>
-          {draftable && <Button variant="outline" color="ink.8" w={140} disabled={submitting} onClick={() => void submit(true)}>Save as Draft</Button>}
-          <Button color="ink.8" w={160} loading={submitting} onClick={() => (last ? void submit(false) : setStep(step + 1))}>
+        <Group gap={12} wrap="nowrap">
+          {draftable && <Button variant="default" disabled={submitting} onClick={() => void submit(true)}>Save as Draft</Button>}
+          <Button color="ink.8" miw={150} loading={submitting} onClick={() => (last ? void submit(false) : setStep(step + 1))}>
             {!last ? 'Next →' : editing ? 'Save Changes' : 'Submit Proposal'}
           </Button>
         </Group>
@@ -455,6 +455,28 @@ function UserLinkModal({ initialQuery, repick, onClose, onPick }: {
             ))}
       </ScrollArea>
     </Modal>
+  );
+}
+
+/** Equal-width step tabs: numbered circle and label over a progress bar (filled up to the current step). */
+function StepTabs({ active, onChange }: { active: number; onChange: (i: number) => void }) {
+  return (
+    <ScrollArea type="never">
+      <Group gap={8} wrap="nowrap" role="tablist" aria-label="Proposal sections" miw={760}>
+        {PROPOSAL_STEPS.map((label, i) => {
+          const reached = i <= active;
+          return (
+            <UnstyledButton key={label} role="tab" aria-selected={i === active} onClick={() => onChange(i)}
+              className="tn-step" data-reached={reached || undefined} data-active={i === active || undefined}>
+              <Group gap={10} wrap="nowrap" pb={10}>
+                <span className="tn-step-num">{i + 1}</span>
+                <Text size="sm" fw={i === active ? 700 : 500} truncate>{label}</Text>
+              </Group>
+            </UnstyledButton>
+          );
+        })}
+      </Group>
+    </ScrollArea>
   );
 }
 

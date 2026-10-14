@@ -38,3 +38,68 @@ body {
 .hover-row:hover {
   background: #F6F8FC;
 }
+
+/* ── Event proposal form (Add / Edit Event) ── */
+.tn-proposal {
+  padding-bottom: 8px;
+}
+.tn-proposal .mantine-Input-input:not([data-variant='unstyled']) {
+  background: #f3f5f9;
+  border-color: transparent;
+  min-height: 42px;
+}
+.tn-proposal .mantine-Input-input:not([data-variant='unstyled']):focus,
+.tn-proposal .mantine-Input-input:not([data-variant='unstyled']):focus-within {
+  background: #fff;
+  border-color: var(--mantine-color-brand-6);
+}
+.tn-proposal .mantine-Input-input[data-error] {
+  border-color: var(--mantine-color-error);
+}
+.tn-pax .mantine-NumberInput-input {
+  text-align: center;
+}
+.tn-pax thead th {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.tn-step {
+  flex: 1 1 0;
+  min-width: 0;
+  border-bottom: 3px solid #c9d6ea;
+  color: #6b7280;
+}
+.tn-step[data-reached] {
+  border-bottom-color: #1a1a2e;
+}
+.tn-step[data-active] {
+  color: #1a1a2e;
+}
+.tn-step-num {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: #a9bde0;
+}
+.tn-step[data-reached] .tn-step-num {
+  background: #1a1a2e;
+}
+.tn-step:focus-visible {
+  outline: 2px solid var(--mantine-color-brand-6);
+  outline-offset: 2px;
+}
+.tn-proposal-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 16px;
+  padding: 12px 0;
+  background: var(--tn-bg);
+  border-top: 1px solid #c9d6ea;
+}
