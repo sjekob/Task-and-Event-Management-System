@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../services/app_state.dart';
@@ -86,16 +85,18 @@ class _PersonnelView extends StatelessWidget {
     final action = user.isActive ? 'deactivate' : 'reactivate';
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      // Close with the dialog's own context: the page context belongs to the
+      // router's inner navigator, and popping it would close the page.
+      builder: (dialogCtx) => AlertDialog(
         title: Text('Confirm ${action[0].toUpperCase()}${action.substring(1)}'),
         content:
             Text('Are you sure you want to $action ${user.fullName}?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(dialogCtx, false),
               child: const Text('Cancel')),
           ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.pop(dialogCtx, true),
               style: ElevatedButton.styleFrom(
                   backgroundColor:
                       user.isActive ? Colors.red : Colors.green),
@@ -512,8 +513,24 @@ class _UserDataTable extends StatelessWidget {
         color: isDeactivated ? _kDeactTxt : Colors.black87, fontSize: 13);
     final link =
         dim.copyWith(color: isDeactivated ? _kDeactTxt : _kLinkBlue);
-    final subj =
-        u.subjects.isNotEmpty ? u.subjects.first.subject : '—';
+    // Every subject the person teaches (each once, even across grade levels).
+    final subj = u.subjects.isEmpty
+        ? '—'
+        : u.subjects.map((s) => s.subject).toSet().join(', ');
+
+    // Grades the person covers: a dean's assigned grade, else the grades of
+    // their subject rows, else their advisory grade.
+    final subjectGrades = u.subjects
+        .map((s) => s.gradeLevel)
+        .whereType<String>()
+        .toSet()
+        .toList()
+      ..sort();
+    final grades = u.role == 'dean' && u.deanGradeLevel != null
+        ? u.deanGradeLevel!
+        : subjectGrades.isNotEmpty
+            ? subjectGrades.join(', ')
+            : (u.gradeLevel ?? '—');
 
     t(String v, {TextStyle? style}) =>
         Text(v, overflow: TextOverflow.ellipsis, style: style ?? dim);
@@ -532,8 +549,8 @@ class _UserDataTable extends StatelessWidget {
         DataCell(t(u.username)),
         DataCell(t(u.phoneNumber ?? '—')),
         DataCell(t(u.email ?? '—')),
-        DataCell(t(subj)),
-        DataCell(t(u.gradeLevel ?? '—')),
+        DataCell(Tooltip(message: subj, child: t(subj))),
+        DataCell(t(grades)),
         DataCell(t(u.roleLabel)),
         DataCell(_ActionMenu(
             user: u,

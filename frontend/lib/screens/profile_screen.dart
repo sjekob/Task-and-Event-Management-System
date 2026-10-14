@@ -11,6 +11,9 @@ import '../utils/input_formatters.dart';
 import '../features/personnel/services/personnel_service.dart';
 import '../widgets/catalog_multi_select.dart';
 import '../widgets/certificates_panel.dart';
+import '../widgets/user_avatar.dart';
+import '../widgets/photo_position_dialog.dart';
+import 'package:file_picker/file_picker.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -106,22 +109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _card(
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 36,
-                  backgroundColor: AppTheme.sidebarActive,
-                  backgroundImage: p.avatarUrl != null
-                      ? NetworkImage(p.avatarUrl!)
-                      : null,
-                  child: p.avatarUrl == null
-                      ? Text(
-                          p.initials,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 24),
-                        )
-                      : null,
-                ),
+                _photo(p),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -210,7 +198,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const CertificatesPanel(canUpload: true),
 
                 const _SectionHeader(icon: Icons.psychology_outlined, title: 'Skills'),
-                _chipGroup('Skills', p.skills),
+                _chipGroup(null, p.skills),
               ],
             ),
           ),
@@ -223,6 +211,117 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  bool _photoBusy = false;
+
+  /// The profile photo with a camera button to upload or remove it.
+  Widget _photo(User p) => Stack(clipBehavior: Clip.none, children: [
+        UserAvatar(
+          avatarUrl: p.avatarUrl,
+          initials: p.initials,
+          radius: 40,
+          backgroundColor: AppTheme.sidebarActive,
+        ),
+        if (_photoBusy)
+          const Positioned.fill(
+            child: Center(
+              child: SizedBox(width: 26, height: 26,
+                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white)),
+            ),
+          ),
+        Positioned(
+          right: -4,
+          bottom: -4,
+          child: PopupMenuButton<String>(
+            tooltip: 'Change profile photo',
+            enabled: !_photoBusy,
+            onSelected: (v) => switch (v) {
+              'upload' => _uploadPhoto(),
+              'position' => _positionPhoto(),
+              _ => _removePhoto(),
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'upload', child: ListTile(
+                  dense: true, leading: Icon(Icons.upload_outlined), title: Text('Upload photo'))),
+              if (p.avatarUrl != null)
+                const PopupMenuItem(value: 'position', child: ListTile(
+                    dense: true, leading: Icon(Icons.crop_free), title: Text('Adjust position'))),
+              if (p.avatarUrl != null)
+                const PopupMenuItem(value: 'remove', child: ListTile(
+                    dense: true, leading: Icon(Icons.delete_outline), title: Text('Remove photo'))),
+            ],
+            child: Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(
+                color: AppTheme.darkBanner,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(Icons.photo_camera_outlined, size: 15, color: Colors.white),
+            ),
+          ),
+        ),
+      ]);
+
+  Future<void> _uploadPhoto() async {
+    final picked = await FilePicker.platform.pickFiles(
+      withData: true,
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+    );
+    final file = picked?.files.firstOrNull;
+    if (file == null || file.bytes == null) return;
+    final ok = await _changePhoto(() => ApiService.uploadAvatar(file.bytes!, file.name),
+        'Profile photo updated.');
+    // Straight away let them choose which part of the photo shows.
+    if (ok && mounted) await _positionPhoto();
+  }
+
+  Future<void> _positionPhoto() async {
+    String? source;
+    try {
+      source = await ApiService.getAvatarSource();
+    } catch (_) {}
+    if (!mounted) return;
+    if (source == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Upload the photo again to adjust its position.')));
+      return;
+    }
+    final crop = await showDialog<PhotoCrop>(
+      context: context,
+      builder: (_) => PhotoPositionDialog(sourceUrl: source!),
+    );
+    if (crop == null) return;
+    await _changePhoto(() => ApiService.setAvatarPosition(crop.left, crop.top, crop.size),
+        'Photo position saved.');
+  }
+
+  Future<void> _removePhoto() =>
+      _changePhoto(ApiService.removeAvatar, 'Profile photo removed.');
+
+  /// Runs a photo change, refreshes the profile and the app's user (so the
+  /// top bar and sidebar update); returns whether it succeeded.
+  Future<bool> _changePhoto(Future<Object?> Function() action, String done) async {
+    final appState = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _photoBusy = true);
+    try {
+      await action();
+      await _load();
+      await appState.tryAutoLogin();   // top bar and sidebar show the new photo
+      messenger.showSnackBar(SnackBar(content: Text(done)));
+      return true;
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: AppTheme.redColor,
+      ));
+      return false;
+    } finally {
+      if (mounted) setState(() => _photoBusy = false);
+    }
   }
 
   Widget _card({required Widget child}) => Container(
@@ -257,70 +356,77 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  Widget _chipGroup(String label, List<String> items) => Column(
+  Widget _chipGroup(String? label, List<String> items) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: AppTheme.caption),
-          const SizedBox(height: 6),
+          if (label != null) ...[
+            Text(label, style: AppTheme.caption),
+            const SizedBox(height: 6),
+          ],
           if (items.isEmpty)
             Text('None added yet', style: AppTheme.bodyMd)
           else
-            Wrap(spacing: 8, runSpacing: 8, children: [
+            Wrap(spacing: 10, runSpacing: 10, children: [
               for (final t in items)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF4FA),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFD0DCEB)),
+                    color: const Color(0xFFEAF1FB),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: const Color(0xFFBCCDE6)),
                   ),
-                  child: Text(t, style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12.5, fontWeight: FontWeight.w500, color: AppTheme.textPrimary)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF1E3A8A)),
+                    const SizedBox(width: 7),
+                    Text(t, style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                  ]),
                 ),
             ]),
         ],
       );
 
-  Widget _subjectGrid(List<UserSubject> subjects, bool isMobile) {
-    final cols = isMobile ? 1 : 2;
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: cols,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
-        childAspectRatio: 3.2,
-      ),
-      itemCount: subjects.length,
-      itemBuilder: (_, i) {
-        final s = subjects[i];
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTheme.cardColor,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: AppTheme.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('Subject-grade Assignment',
-                  style: AppTheme.bodySm.copyWith(color: AppTheme.textMuted)),
-              const SizedBox(height: 4),
-              Text(s.subject,
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16, fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary)),
-              if (s.gradeLevel != null)
-                Text(s.gradeLevel!, style: AppTheme.bodyMd),
-            ],
-          ),
-        );
-      },
-    );
-  }
+  /// One compact card listing each subject and the grade it is taught in.
+  Widget _subjectGrid(List<UserSubject> subjects, bool isMobile) => _card(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Subject-grade Assignments',
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+          const SizedBox(height: 14),
+          Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final s in subjects)
+              Container(
+                width: isMobile ? double.infinity : 220,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F9FC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.borderColor),
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 34, height: 34,
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FA), borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.menu_book_outlined, size: 18, color: AppTheme.darkBanner),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(s.subject,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14.5, fontWeight: FontWeight.w700,
+                              color: AppTheme.textPrimary)),
+                      if (s.gradeLevel != null)
+                        Text(s.gradeLevel!, style: AppTheme.bodySm),
+                    ]),
+                  ),
+                ]),
+              ),
+          ]),
+        ]),
+      );
 
   String _roleLabel(String role) {
     switch (role) {
@@ -659,7 +765,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
           onChanged: onChanged,
           contentPadding: EdgeInsets.zero,
           dense: true,
-          activeColor: AppTheme.accentBlue,
+          activeThumbColor: AppTheme.accentBlue,
           title: Text(title, style: GoogleFonts.plusJakartaSans(fontSize: 13,
               fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
           subtitle: Text(subtitle, style: GoogleFonts.plusJakartaSans(

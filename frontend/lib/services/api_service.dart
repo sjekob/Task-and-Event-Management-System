@@ -599,6 +599,51 @@ class ApiService {
   }
 
   // ── Profile ──
+  /// Absolute URL for a server-relative media path such as an avatar.
+  static String? mediaUrl(String? path) {
+    if (path == null || path.isEmpty) return null;
+    return path.startsWith('http') ? path : '$baseUrl$path';
+  }
+
+  /// Server path of the kept full photo behind the current avatar (null if
+  /// there is none), used to re-position it.
+  static Future<String?> getAvatarSource() async {
+    final res = await _client.get(Uri.parse('$baseUrl/api/users/me/avatar'),
+        headers: await _headers);
+    if (res.statusCode != 200) throw Exception('Could not load the photo');
+    return (jsonDecode(res.body) as Map<String, dynamic>)['source_url'] as String?;
+  }
+
+  /// Re-crop the avatar: fractions of the full photo (see PhotoCrop).
+  static Future<void> setAvatarPosition(double left, double top, double size) async {
+    final res = await _client.put(Uri.parse('$baseUrl/api/users/me/avatar/position'),
+        headers: await _headers,
+        body: jsonEncode({'left': left, 'top': top, 'size': size}));
+    if (res.statusCode != 200) {
+      throw Exception(_errorDetail(res.body, 'Could not save the position'));
+    }
+  }
+
+  /// Upload the signed-in person's profile photo; returns its path.
+  static Future<String> uploadAvatar(List<int> bytes, String filename) async {
+    final t = await token;
+    final req = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/users/me/avatar'));
+    if (t != null) req.headers['Authorization'] = 'Bearer $t';
+    req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+    final streamed = await _client.send(req);
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode != 200) {
+      throw Exception(_errorDetail(body, 'Could not upload the photo'));
+    }
+    return (jsonDecode(body) as Map<String, dynamic>)['avatar_url'] as String;
+  }
+
+  static Future<void> removeAvatar() async {
+    final res = await _client.delete(Uri.parse('$baseUrl/api/users/me/avatar'),
+        headers: await _headers);
+    if (res.statusCode != 200) throw Exception('Could not remove the photo');
+  }
+
   static Future<User> getMyProfile() async {
     final res = await _client.get(
       Uri.parse('$baseUrl/api/users/me/profile'),

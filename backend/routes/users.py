@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile
 import audit
 from pydantic import BaseModel, Field
 from datetime import date
 from typing import List, Optional
+import io
+import re
+import os
+import secrets
 from database import connect_db
 from auth import (get_current_user, require_admin, require_admin_or_principal,
                   require_can_assign, hash_password, ASSIGNABLE_TO)
@@ -204,6 +208,151 @@ _PROFILE_COLUMNS = {
     "birthdate", "number_of_children", "date_of_appointment", "address",
     "has_elderly_or_infant_care", "overtime_opt_in",
 }
+
+
+# ── Profile photo ─────────────────────────────────────────────────────────────
+# An upload is kept twice, both re-encoded as JPEG (only real images survive,
+# EXIF/GPS metadata is dropped): "<uid>_<tag>_src.jpg" (the whole photo, up to
+# 1600 px, for re-positioning later) and "<uid>_<tag>_<v>.jpg" (the 400 px
+# square shown as the avatar). Re-positioning writes a new <v> so browsers
+# don't show a cached crop.
+
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
+AVATAR_PX = 400
+SOURCE_MAX_PX = 1600
+_AVATAR_NAME = re.compile(r"^(\d+)_([0-9a-f]+)_([0-9a-z]+)\.jpg$")
+
+
+def _avatar_dir() -> str:
+    from files import UPLOAD_DIR
+    path = os.path.join(UPLOAD_DIR, "avatars")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _source_name(avatar_url: Optional[str]) -> Optional[str]:
+    """The kept full photo behind an avatar, if there is one."""
+    m = _AVATAR_NAME.match(os.path.basename(avatar_url or ""))
+    if not m or not (avatar_url or "").startswith("/uploads/avatars/"):
+        return None
+    name = f"{m.group(1)}_{m.group(2)}_src.jpg"
+    return name if os.path.exists(os.path.join(_avatar_dir(), name)) else None
+
+
+def _delete(name: Optional[str]):
+    if name:
+        try:
+            os.remove(os.path.join(_avatar_dir(), os.path.basename(name)))
+        except OSError:
+            pass
+
+
+def _crop_square(img, left: float, top: float, size: float):
+    """Square crop given as fractions: left/top of the image width/height,
+    size of the image's shorter side. Clamped to stay inside the image."""
+    w, h = img.size
+    side = max(1, round(min(w, h) * min(max(size, 0.05), 1.0)))
+    x = min(max(round(left * w), 0), w - side)
+    y = min(max(round(top * h), 0), h - side)
+    return img.crop((x, y, x + side, y + side)).resize((AVATAR_PX, AVATAR_PX))
+
+
+def _set_avatar(uid: int, url: Optional[str]) -> Optional[str]:
+    """Store the new avatar URL; returns the previous one."""
+    db = connect_db()
+    try:
+        old = db.execute("SELECT avatar_url FROM users WHERE id=?", (uid,)).fetchone()
+        db.execute("UPDATE users SET avatar_url=? WHERE id=?", (url, uid))
+        db.commit()
+        return old[0] if old else None
+    finally:
+        db.close()
+
+
+def _current_avatar(uid: int) -> Optional[str]:
+    db = connect_db()
+    try:
+        row = db.execute("SELECT avatar_url FROM users WHERE id=?", (uid,)).fetchone()
+        return row[0] if row else None
+    finally:
+        db.close()
+
+
+@router.post("/api/users/me/avatar")
+async def upload_my_avatar(file: UploadFile, user=Depends(get_current_user)):
+    """Set the signed-in person's profile photo (centred square crop; adjust
+    it afterwards with PUT /api/users/me/avatar/position)."""
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    data = await file.read(AVATAR_MAX_BYTES + 1)
+    if len(data) > AVATAR_MAX_BYTES:
+        raise HTTPException(413, "The photo is larger than 5 MB. Choose a smaller one.")
+    try:
+        img = Image.open(io.BytesIO(data))
+        if img.format not in ("JPEG", "PNG", "WEBP"):
+            raise HTTPException(400, "Use a JPG, PNG or WEBP photo.")
+        img = ImageOps.exif_transpose(img).convert("RGB")   # respect phone rotation
+        img.thumbnail((SOURCE_MAX_PX, SOURCE_MAX_PX))
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "That file isn't a photo we can read. Use a JPG, PNG or WEBP.")
+
+    uid = int(user["sub"])
+    tag = secrets.token_hex(6)
+    img.save(os.path.join(_avatar_dir(), f"{uid}_{tag}_src.jpg"), "JPEG", quality=88)
+    w, h = img.size
+    side = min(w, h)
+    crop = _crop_square(img, (w - side) / 2 / w, (h - side) / 2 / h, 1.0)
+    name = f"{uid}_{tag}_{secrets.token_hex(3)}.jpg"
+    crop.save(os.path.join(_avatar_dir(), name), "JPEG", quality=85, optimize=True)
+
+    old = _set_avatar(uid, f"/uploads/avatars/{name}")
+    if old:
+        _delete(_source_name(old))
+        _delete(old if old.startswith("/uploads/avatars/") else None)
+    return {"avatar_url": f"/uploads/avatars/{name}",
+            "source_url": f"/uploads/avatars/{uid}_{tag}_src.jpg"}
+
+
+@router.get("/api/users/me/avatar")
+def my_avatar(user=Depends(get_current_user)):
+    url = _current_avatar(int(user["sub"]))
+    src = _source_name(url)
+    return {"avatar_url": url, "source_url": f"/uploads/avatars/{src}" if src else None}
+
+
+class AvatarPosition(BaseModel):
+    left: float = Field(ge=0, le=1)    # fraction of the photo's width
+    top: float = Field(ge=0, le=1)     # fraction of the photo's height
+    size: float = Field(gt=0, le=1)    # fraction of the photo's shorter side
+
+
+@router.put("/api/users/me/avatar/position")
+def position_my_avatar(body: AvatarPosition, user=Depends(get_current_user)):
+    """Re-crop the avatar from the kept full photo."""
+    from PIL import Image
+
+    uid = int(user["sub"])
+    old = _current_avatar(uid)
+    src = _source_name(old)
+    if not src:
+        raise HTTPException(404, "Upload a photo first.")
+    m = _AVATAR_NAME.match(src)
+    with Image.open(os.path.join(_avatar_dir(), src)) as img:
+        crop = _crop_square(img.convert("RGB"), body.left, body.top, body.size)
+    name = f"{uid}_{m.group(2)}_{secrets.token_hex(3)}.jpg"
+    crop.save(os.path.join(_avatar_dir(), name), "JPEG", quality=85, optimize=True)
+    _set_avatar(uid, f"/uploads/avatars/{name}")
+    _delete(old)
+    return {"avatar_url": f"/uploads/avatars/{name}"}
+
+
+@router.delete("/api/users/me/avatar")
+def remove_my_avatar(user=Depends(get_current_user)):
+    old = _set_avatar(int(user["sub"]), None)
+    if old and old.startswith("/uploads/avatars/"):
+        _delete(_source_name(old))
+        _delete(old)
+    return {"message": "Profile photo removed"}
 
 
 @router.put("/api/users/me/profile")

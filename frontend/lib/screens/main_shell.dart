@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../services/app_state.dart';
+import '../widgets/user_avatar.dart';
 import '../widgets/sidebar.dart';
 
 class MainShell extends StatefulWidget {
@@ -94,6 +95,7 @@ class _MainShellState extends State<MainShell> {
               userRole: role,
               permissions: context.watch<AppState>().currentUser?.permissions ?? const {},
               userInitials: user?.initials ?? 'U',
+              userAvatarUrl: user?.avatarUrl,
               onNavigate: _onNavigate,
               onLogout: _logout,
             )
@@ -105,6 +107,7 @@ class _MainShellState extends State<MainShell> {
               currentPage: currentPage,
               userName: displayName,
               userRole: role,
+              userAvatarUrl: user?.avatarUrl,
               permissions: context.watch<AppState>().currentUser?.permissions ?? const {},
               onNavigate: _onNavigate,
               onLogout: _logout,
@@ -114,7 +117,8 @@ class _MainShellState extends State<MainShell> {
           Expanded(
             child: Column(
               children: [
-                _buildTopBar(isMobile, loc, role, displayName, user?.initials ?? 'U'),
+                _buildTopBar(isMobile, loc, role, displayName, user?.initials ?? 'U',
+                    user?.avatarUrl),
                 Expanded(child: widget.child),
               ],
             ),
@@ -124,7 +128,8 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
-  Widget _buildTopBar(bool isMobile, String loc, String role, String displayName, String initials) {
+  Widget _buildTopBar(bool isMobile, String loc, String role, String displayName, String initials,
+      String? avatarUrl) {
     return Container(
       padding: EdgeInsets.fromLTRB(isMobile ? 12 : 24, 16, isMobile ? 12 : 24, 16),
       color: AppTheme.bgColor,
@@ -181,14 +186,11 @@ class _MainShellState extends State<MainShell> {
           const SizedBox(width: 12),
           GestureDetector(
             onTap: () => context.go('/profile'),
-            child: CircleAvatar(
+            child: UserAvatar(
+              avatarUrl: avatarUrl,
+              initials: initials,
               radius: 20,
               backgroundColor: AppTheme.sidebarActive,
-              child: Text(initials,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16)),
             ),
           ),
         ],

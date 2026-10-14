@@ -280,136 +280,164 @@ def build_erd_page():
     return diagram("personnel-erd", "Personnel Profiling ERD (3NF)", cells, w=2320, h=1260)
 
 
-# ── Page 2: sample relational data model with inputs ─────────────────────────
+# ── Page 2: sample relational data (black & white tables, real rows) ─────────
+# Native draw.io tables (editable cells). Arrows run from the referenced table
+# (the "one" side) to the table holding the foreign key.
 
-def html_table(name, header, rows, note=""):
-    th = "".join(f'<th style="border:1px solid #999;padding:2px 6px;background:#eeeeee">{html.escape(h)}</th>'
-                 for h in header)
-    trs = "".join(
-        "<tr>" + "".join(f'<td style="border:1px solid #999;padding:2px 6px">{html.escape(str(c))}</td>'
-                         for c in r) + "</tr>"
-        for r in rows)
-    title = f"<b>{html.escape(name)}</b>" + (f" <i style='color:#b45309'>{html.escape(note)}</i>" if note else "")
-    return (f'{title}<table style="border-collapse:collapse;font-size:10px;margin-top:4px">'
-            f"<tr>{th}</tr>{trs}</table>")
+ROW_PX = 24
+CHAR_PX = 6.6
+CELL_PAD = 18
 
+REL_TABLES = {
+    # name: (x, y, [columns], [rows])
+    "roles": (80, 60, ["id", "roles"],
+              [[1, "admin"], [2, "principal"], [3, "coordinator"], [4, "dean"],
+               [5, "teacher"], [6, "registrar"]]),
+    "grade_levels": (300, 60, ["id", "grade_level"],
+                     [[1, "Grade 1"], [2, "Grade 2"], [3, "Grade 3"]]),
+    "subjects": (620, 60, ["id", "subject_name"],
+                 [[3, "English"], [4, "Filipino"], [7, "Mathematics"], [9, "Science"]]),
+    "skill_categories": (1000, 60, ["id", "category_name"],
+                         [[1, "Instructional & Curriculum Design"], [2, "ICT & Digital Operations"],
+                          [3, "Event Operations & Logistics"],
+                          [4, "Administrative Governance & Compliance"]]),
+    "certification_issuers": (1460, 60, ["id", "issuer_name", "acronym"],
+                              [[1, "Professional Regulation Commission", "PRC"],
+                               [3, "National Educators Academy of the Philippines", "NEAP"],
+                               [5, "Philippine Red Cross", "NULL"]]),
+    "users": (80, 330, ["id", "username", "first_name", "last_name", "role", "grade_level_id"],
+              [[2, "principal", "Liza", "Ramos", "principal", "NULL"],
+               [6, "dean1", "Maria", "Santos", "dean", 1],
+               [8, "teacher1", "Mark", "Fuentes", "teacher", 1],
+               [9, "teacher2", "Juan", "Santos", "teacher", 1]]),
+    "skills": (1000, 330, ["id", "skill_name", "category_id"],
+               [[1, "Event Hosting", 3], [2, "Photography", 2], [3, "Layout Design", 2],
+                [4, "Sports Coaching", 3], [5, "Disaster Preparedness", 4],
+                [6, "ICT Troubleshooting", 2]]),
+    "certifications": (1460, 330, ["id", "cert_name", "issuer_id"],
+                       [[2, "Standard First Aid", 5], [3, "Basic Life Support", 5],
+                        [4, "Licensed Professional Teacher", 1],
+                        [49, "Comprehensive Sexuality Education (CSE) Core Trainer", 3]]),
+    "user_roles": (80, 640, ["id", "user_id", "role_id"], [[11, 6, 5]]),
+    "user_subjects": (620, 640, ["id", "user_id", "subject_id", "grade_level_id"],
+                      [[1, 8, 7, 1], [2, 8, 9, 1], [419, 9, 3, 1], [420, 9, 4, 1]]),
+    "education_background": (80, 880, ["id", "user_id", "highest_attainment", "specialization"],
+                             [[3, 9, "With Master's Units", "Science"],
+                              [5, 8, "Doctoral Degree (EdD/PhD)", "Science"]]),
+    "user_skills": (960, 640, ["id", "user_id", "skill_id"],
+                    [[4, 9, 4], [5, 9, 5], [6, 9, 6], [21, 8, 1], [22, 8, 2], [23, 8, 3]]),
+    "skill_keywords": (1180, 640, ["id", "skill_id", "keyword"],
+                       [[10, 2, "photo"], [11, 2, "event coverage"], [12, 2, "camera"],
+                        [15, 2, "photo documentation"]]),
+    "certificate_files": (1460, 640, ["id", "user_id", "certification_id", "status",
+                                      "date_issued"],
+                          [[13, 8, 49, "submitted", "2026-08-01"]]),
+    "certificate_checks": (1460, 880, ["id", "certificate_file_id", "check_key", "status"],
+                           [[17, 13, "readable", "pass"], [18, 13, "is_certificate", "pass"],
+                            [19, 13, "issuer", "pass"], [20, 13, "title", "warn"],
+                            [21, 13, "name", "warn"]]),
+    "audit_log": (560, 880, ["id", "actor_id", "action", "entity_type", "entity_id"],
+                  [[1, 2, "personnel.update", "user", 6], [2, 5, "account.deactivate", "user", 9],
+                   [3, 5, "account.reactivate", "user", 9]]),
+    "audit_log_changes": (560, 1100, ["id", "audit_id", "field_name", "old_value", "new_value"],
+                          [[1, 1, "dean_grade_level", "null", '"Grade 3"'],
+                           [2, 2, "active", "true", "false"],
+                           [3, 3, "active", "false", "true"]]),
+}
 
-def input_box(title, who, fields):
-    lines = "".join(f"<b>{html.escape(k)}:</b> {html.escape(v)}<br>" for k, v in fields)
-    return (f"<b>{html.escape(title)}</b><br><i>{html.escape(who)}</i><br>"
-            f"<span style='color:#1d4ed8'>INPUT</span><br>{lines}")
-
-
-STEPS = [
-    ("1. Create the account", "Principal · Personnel → Add User", [
-        ("Username", "teacher2"), ("Password", "••••••••"),
-        ("Name", "Juan D. Santos"), ("Role", "Teacher"), ("Grade level", "Grade 1"),
-    ], [
-        ("users", ["id", "username", "password_hash", "first_name", "middle_name", "last_name",
-                   "role", "grade_level_id", "number_of_children", "is_active",
-                   "full_name (computed)"],
-         [[9, "teacher2", "$2b$12$…", "Juan", "D.", "Santos", "teacher", 1, 0, 1,
-           "Juan D. Santos"]], ""),
-        ("user_held_roles (view)", ["user_id", "role"], [[9, "teacher"]],
-         "(no user_roles row: teacher is Juan's primary role)"),
-        ("audit_log", ["id", "created_at", "actor_id", "actor_role", "action", "entity_type",
-                       "entity_id", "summary"],
-         [[1, "2026-10-09T01:02:11Z", "2 (Liza Ramos)", "principal", "account.create", "user", 9,
-           "Created account teacher2 as teacher"]], "(example)"),
-        ("audit_log_changes", ["id", "audit_id", "field_name", "old_value", "new_value"],
-         [[1, 1, "role", "null", '"teacher"'], [2, 1, "grade_level", "null", '"Grade 1"']],
-         "(example)"),
-    ]),
-    ("2. Assign the teaching load", "Principal · Personnel → Edit", [
-        ("Subject-grade", "English · Grade 1"), ("Subject-grade", "Filipino · Grade 1"),
-    ], [
-        ("user_subjects", ["id", "user_id", "subject_id", "grade_level_id"],
-         [[3, 9, "3 (English)", 1], [4, 9, "4 (Filipino)", 1]], ""),
-    ]),
-    ("3. Education and skills", "Juan · My Profile → Edit (dropdowns)", [
-        ("Highest attainment", "With Master's Units"), ("Undergraduate", "BSEd"),
-        ("Specialization", "Science"),
-        ("Skills", "Sports Coaching, Disaster Preparedness, ICT Troubleshooting"),
-    ], [
-        ("education_background", ["id", "user_id", "highest_attainment", "undergraduate_degree",
-                                  "specialization", "postgraduate_focus"],
-         [[3, 9, "With Master's Units", "BSEd", "Science", "null"]], ""),
-        ("user_skills", ["id", "user_id", "skill_id", "→ skill (category)"],
-         [[4, 9, 4, "Sports Coaching (Event Operations & Logistics)"],
-          [5, 9, 5, "Disaster Preparedness (Administrative Governance & Compliance)"],
-          [6, 9, 6, "ICT Troubleshooting (ICT & Digital Operations)"]], ""),
-    ]),
-    ("4. Upload a certificate", "Juan · My Profile → Upload certificate", [
-        ("File", "first_aid.png (photo)"),
-        ("Text read (OCR)", "PHILIPPINE RED CROSS · JUAN D. SANTOS · STANDARD FIRST AID · "
-                            "March 15, 2025 · No. PRC-SFA-2025-00123"),
-        ("Confirmed as", "Standard First Aid"),
-    ], [
-        ("certificate_files", ["id", "user_id", "certification_id", "mime", "detected_title",
-                               "match_confidence", "certificate_no", "date_issued",
-                               "expiry_date", "status"],
-         [[21, 9, "2 (Standard First Aid)", "image/png", "Standard First Aid", "1.00",
-           "PRC-SFA-2025-00123", "2025-03-15", "null", "submitted"]], "(example)"),
-        ("certificate_checks", ["id", "certificate_file_id", "check_key", "status", "detail"],
-         [[101, 21, "issuer", "pass", "Issued by Philippine Red Cross"],
-          [102, 21, "name", "pass", "Issued to the profile owner"],
-          [103, 21, "dates", "pass", "Dated 2025-03-15"],
-          [104, 21, "number", "pass", "No. PRC-SFA-2025-00123"],
-          [105, 21, "duplicate", "pass", "No one else uploaded this file"]],
-         "(example; overall rating 'high' is computed from these rows)"),
-    ]),
-    ("5. Verify the certificate", "Registrar · Personnel → View Details → Review", [
-        ("Decision", "Verify"), ("Note", "Checked against the original"),
-    ], [
-        ("certificate_files (updated)", ["id", "status", "review_note", "reviewed_by", "reviewed_at"],
-         [[21, "verified", "Checked against the original", "5 (registrar)", "2026-10-09 08:12:40"]],
-         "(example)"),
-        ("audit_log", ["id", "created_at", "actor_id", "actor_role", "action", "entity_type",
-                       "entity_id", "summary"],
-         [[4, "2026-10-09T08:12:40Z", "5 (Ana Cruz)", "registrar", "certificate.verified",
-           "certificate", 21, "Verified certificate Standard First Aid"]], "(example)"),
-        ("audit_log_changes", ["id", "audit_id", "field_name", "old_value", "new_value"],
-         [[7, 4, "status", '"submitted"', '"verified"'],
-          [8, 4, "note", "null", '"Checked against the original"']], "(example)"),
-    ]),
+# (referenced, referencing, exit (x,y), entry (x,y), waypoints) - every
+# arrow has its own lane so none crosses a table.
+REL_LINKS = [
+    ("roles", "users", (0.5, 1), (0.17, 0), []),
+    ("grade_levels", "users", (0.5, 1), (0.62, 0), []),
+    ("roles", "user_roles", (0, 0.5), (0, 0.5), [("V", 50)]),
+    ("users", "user_roles", (0.12, 1), (0.35, 0), []),
+    ("grade_levels", "user_subjects", (1, 0.5), (0, 0.5), [("V", 585)]),
+    ("subjects", "user_subjects", (0.5, 1), (0.25, 0), []),
+    ("users", "user_subjects", (0.8, 1), (0.6, 0), [("H", 530)]),
+    ("users", "education_background", (0.62, 1), (0.7, 0), []),
+    ("users", "user_skills", (0.88, 1), (0.3, 0), [("H", 555)]),
+    ("skills", "user_skills", (0.2, 1), (0.75, 0), [("H", 605)]),
+    ("skill_categories", "skills", (0.5, 1), (0.5, 0), []),
+    ("skills", "skill_keywords", (0.8, 1), (0.5, 0), [("H", 605)]),
+    ("certification_issuers", "certifications", (0.5, 1), (0.5, 0), []),
+    ("users", "certificate_files", (0.95, 1), (0.2, 0), [("H", 580)]),
+    ("certifications", "certificate_files", (0.6, 1), (0.6, 0), []),
+    ("certificate_files", "certificate_checks", (0.5, 1), (0.5, 0), []),
+    ("users", "audit_log", (0.99, 1), (0.2, 0), [("H", 850)]),
+    ("audit_log", "audit_log_changes", (0.5, 1), (0.5, 0), []),
 ]
 
+BW = "strokeColor=#000000;fontColor=#000000;"
 
-def table_height(rows):
-    return 34 + 20 * (len(rows) + 1)
+
+def _col_widths(cols, rows):
+    return [int(max(len(str(v)) for v in [c] + [r[i] for r in rows]) * CHAR_PX + CELL_PAD)
+            for i, c in enumerate(cols)]
 
 
 def build_sample_page():
     cells = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>']
-    cells.append(text("s-title", "<b style='font-size:18px'>Sample relational data model — "
-                      "inputs and the rows they create</b><br>"
-                      "Steps 1–4 are Juan's actual rows in the seeded database; "
-                      "rows marked (example) illustrate what the step writes.",
-                      40, -50, 1100, 46))
-    y = 20
-    n = 0
-    for title, who, fields, tables in STEPS:
-        heights = [table_height(t[2]) for t in tables]
-        row_h = max(150, sum(heights) + 12 * (len(tables) - 1))
-        n += 1
-        cells.append(text(f"in{n}", input_box(title, who, fields), 40, y, 300, row_h,
-                          "rounded=1;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=11;"
-                          "fillColor=#eff6ff;strokeColor=#2563eb;dashed=1;spacingLeft=8;spacingTop=6;"))
-        ty = y
-        prev = f"in{n}"
-        for k, ((name, header, rows, note), th) in enumerate(zip(tables, heights)):
-            cid = f"tb{n}_{k}"
-            cells.append(text(cid, html_table(name, header, rows, note), 400, ty, 1150, th,
-                              "rounded=0;html=1;align=left;verticalAlign=top;whiteSpace=wrap;"
-                              "fontSize=11;fillColor=#ffffff;strokeColor=#cccccc;spacingLeft=6;"
-                              "spacingTop=4;overflow=hidden;"))
+    cells.append(text("s-title", "<b style='font-size:18px'>Sample relational data</b><br>"
+                      "Rows from the TaskNet database; arrows point from the referenced table "
+                      "to the table holding the foreign key.",
+                      80, -10, 1200, 44, "text;html=1;align=left;verticalAlign=top;"
+                      "whiteSpace=wrap;fontSize=11;strokeColor=none;fillColor=none;fontColor=#000000;"))
+    ids, geo = {}, {}
+    for t, (x, y, cols, rows) in REL_TABLES.items():
+        widths = _col_widths(cols, rows)
+        w, h = sum(widths), ROW_PX * (len(rows) + 1)
+        tid = f"rt_{t}"
+        ids[t] = tid
+        geo[t] = (x, y, w, h)
+        cells.append(text(f"{tid}_name", f"<b>{html.escape(t)}</b>", x, y - 22, w, 20,
+                          "text;html=1;align=left;verticalAlign=bottom;fontSize=12;strokeColor=none;"
+                          "fillColor=none;fontColor=#000000;"))
+        cells.append(
+            f'<mxCell id="{tid}" value="" style="shape=table;startSize=0;container=1;collapsible=0;'
+            f'childLayout=tableLayout;fontSize=11;fillColor=#FFFFFF;{BW}strokeWidth=1;" '
+            f'vertex="1" parent="1"><mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" '
+            f'as="geometry"/></mxCell>')
+        for ri, row in enumerate([cols] + rows):
+            rid = f"{tid}_r{ri}"
             cells.append(
-                f'<mxCell id="a{n}_{k}" value="writes" style="edgeStyle=orthogonalEdgeStyle;'
-                f'html=1;endArrow=block;fontSize=9;strokeColor=#2563eb;" edge="1" parent="1" '
-                f'source="in{n}" target="{cid}"><mxGeometry relative="1" as="geometry"/></mxCell>')
-            ty += th + 12
-        y += row_h + 40
-    return diagram("personnel-sample", "Sample Data (inputs → rows)", cells, w=1650, h=y + 60)
+                f'<mxCell id="{rid}" value="" style="shape=tableRow;horizontal=0;startSize=0;'
+                f'swimlaneHead=0;swimlaneBody=0;strokeColor=inherit;top=0;left=0;bottom=0;right=0;'
+                f'collapsible=0;dropTarget=0;fillColor=none;points=[[0,0.5],[1,0.5]];'
+                f'portConstraint=eastwest;fontSize=11;" vertex="1" parent="{tid}">'
+                f'<mxGeometry y="{ri * ROW_PX}" width="{w}" height="{ROW_PX}" as="geometry"/></mxCell>')
+            cx = 0
+            for ci, (val, cw) in enumerate(zip(row, widths)):
+                bold = "fontStyle=1;" if ri == 0 else ""
+                cells.append(
+                    f'<mxCell id="{rid}_c{ci}" value="{esc(str(val))}" '
+                    f'style="shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;'
+                    f'strokeColor=inherit;overflow=hidden;fillColor=none;top=0;left=0;bottom=0;'
+                    f'right=0;pointerEvents=1;fontSize=11;align=center;{bold}{BW}" vertex="1" '
+                    f'parent="{rid}"><mxGeometry x="{cx}" width="{cw}" height="{ROW_PX}" '
+                    f'as="geometry"><mxRectangle width="{cw}" height="{ROW_PX}" '
+                    f'as="alternateBounds"/></mxGeometry></mxCell>')
+                cx += cw
+    for n, (parent, child, (ex, ey), (nx, ny), lanes) in enumerate(REL_LINKS, start=1):
+        px, py, pw, ph = geo[parent]
+        cx, cy, cw, ch = geo[child]
+        sx, sy = px + ex * pw, py + ey * ph      # where the arrow leaves
+        tx, ty = cx + nx * cw, cy + ny * ch      # where it arrives
+        pts = []
+        for kind, v in lanes:
+            if kind == "H":    # run horizontally at y=v
+                pts += [(sx, v), (tx, v)]
+            else:              # "V": run vertically at x=v
+                pts += [(v, sy), (v, ty)]
+        points = "".join(f'<mxPoint x="{x:.0f}" y="{y:.0f}"/>' for x, y in pts)
+        cells.append(
+            f'<mxCell id="rl{n}" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;'
+            f'endArrow=block;endFill=1;strokeWidth=1.2;exitX={ex};exitY={ey};exitDx=0;exitDy=0;'
+            f'entryX={nx};entryY={ny};entryDx=0;entryDy=0;{BW}" edge="1" parent="1" '
+            f'source="{ids[parent]}" target="{ids[child]}"><mxGeometry relative="1" as="geometry">'
+            + (f'<Array as="points">{points}</Array>' if points else '')
+            + '</mxGeometry></mxCell>')
+    return diagram("personnel-sample", "Sample Relational Data", cells, w=1900, h=1300)
 
 
 def build():

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../widgets/common_widgets.dart';
+import 'user_avatar.dart';
 
 enum NavPage { dashboard, taskManager, myTasks, specialTasks, mySpecialTasks, activity, personnelManagement, appraisal, eventManagement, schoolYears, auditLog }
 
@@ -20,6 +21,7 @@ class AppSidebar extends StatefulWidget {
   final NavPage currentPage;
   final String userName;
   final String userRole;
+  final String? userAvatarUrl;
   /// Permissions granted by the backend; decide which sections show.
   final Set<String> permissions;
   final ValueChanged<NavPage> onNavigate;
@@ -32,6 +34,7 @@ class AppSidebar extends StatefulWidget {
     required this.currentPage,
     required this.userName,
     required this.userRole,
+    this.userAvatarUrl,
     this.permissions = const {},
     required this.onNavigate,
     required this.onLogout,
@@ -270,18 +273,15 @@ class _AppSidebarState extends State<AppSidebar> {
           : Column(
               children: [
                 Row(children: [
-                  CircleAvatar(
+                  UserAvatar(
+                    avatarUrl: widget.userAvatarUrl,
+                    initials: widget.userName.isNotEmpty
+                        ? widget.userName[0].toUpperCase()
+                        : 'U',
                     radius: 17,
-                    backgroundColor: Colors.white.withOpacity(0.15),
-                    child: Text(
-                      widget.userName.isNotEmpty
-                          ? widget.userName[0].toUpperCase()
-                          : 'U',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600),
-                    ),
+                    backgroundColor: Colors.white.withValues(alpha: 0.15),
+                    textStyle: const TextStyle(
+                        color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -483,6 +483,7 @@ class MobileNavDrawer extends StatelessWidget {
   /// Permissions granted by the backend; decide which sections show.
   final Set<String> permissions;
   final String userInitials;
+  final String? userAvatarUrl;
   final ValueChanged<NavPage> onNavigate;
   final VoidCallback onLogout;
 
@@ -493,6 +494,7 @@ class MobileNavDrawer extends StatelessWidget {
     required this.userRole,
     this.permissions = const {},
     required this.userInitials,
+    this.userAvatarUrl,
     required this.onNavigate,
     required this.onLogout,
   });
@@ -642,14 +644,13 @@ class MobileNavDrawer extends StatelessWidget {
               child: Column(
                 children: [
                   Row(children: [
-                    CircleAvatar(
+                    UserAvatar(
+                      avatarUrl: userAvatarUrl,
+                      initials: userInitials,
                       radius: 17,
-                      backgroundColor: Colors.white.withOpacity(0.15),
-                      child: Text(userInitials,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600)),
+                      backgroundColor: Colors.white.withValues(alpha: 0.15),
+                      textStyle: const TextStyle(
+                          color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
