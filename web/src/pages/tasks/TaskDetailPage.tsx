@@ -478,11 +478,14 @@ function SubmitPanel({ task, ownActions, onSend, onChanged }: {
   task: Task; ownActions: (c: Comment) => object; onSend: (c: string) => Promise<void>; onChanged: () => Promise<unknown>;
 }) {
   const report = task.my_report;
+  // Recorded in the task log without a report (e.g. marked done before reports existed).
+  const logged = !report && task.submission_status === 'submitted';
   return (
     <Stack gap={14}>
       <Text fw={700} size="lg">Your Submission</Text>
-      {!report && <PointsPreview task={task} />}
-      {report ? <SubmittedState task={task} report={report} onChanged={onChanged} /> : <ReportForm task={task} onChanged={onChanged} />}
+      {!report && !logged && <PointsPreview task={task} />}
+      {report ? <SubmittedState task={task} report={report} onChanged={onChanged} />
+        : logged ? <LoggedSubmission /> : <ReportForm task={task} onChanged={onChanged} />}
       <Paper radius="lg" withBorder>
         <Text fw={700} size="sm" p={16} pb={10}>Private Comments</Text>
         <Box px={16}>
@@ -493,6 +496,18 @@ function SubmitPanel({ task, ownActions, onSend, onChanged }: {
         <InlineCommentInput onSend={onSend} />
       </Paper>
     </Stack>
+  );
+}
+
+function LoggedSubmission() {
+  return (
+    <Group wrap="nowrap" gap={10} p={12} style={{ background: colors.greenBg, borderRadius: 12, border: '1px solid rgba(34,197,94,0.3)' }}>
+      <IconCircleCheckFilled size={20} color={colors.green} />
+      <div>
+        <Text fw={700} size="sm" c={colors.green}>Submitted</Text>
+        <Text size="xs" c={colors.green} opacity={0.75}>Recorded in the task log; there is no report file to show.</Text>
+      </div>
+    </Group>
   );
 }
 

@@ -1,89 +1,78 @@
-# TaskNet — Task Management System
+# TaskNet — Task and Event Management System
 
-A full-stack task management system for educational institutions.
+Task, event, personnel and performance-appraisal management for a DepEd school.
 
-## Tech Stack
-- **Frontend**: HTML/CSS/JS (Flutter-inspired UI)  
-- **Backend**: FastAPI (Python)
-- **Database**: SQLite
+## Stack
 
-## Quick Start
+| Part | Technology | Folder |
+|------|------------|--------|
+| Web app | React 19 + Vite + Mantine | `web/` |
+| Mobile app | React Native (Expo SDK 57, expo-router) | `mobile/` |
+| Shared code | TypeScript API client, types, session, helpers | `packages/shared/` |
+| Backend | FastAPI (Python) | `backend/` |
+| Database | PostgreSQL 16 | Docker or your own server |
 
-```bash
-chmod +x start.sh
-./start.sh
+The web and mobile apps both use `@tasknet/shared`, so API calls, data types and
+business rules (deadlines, points, appraisal scores, the DepEd proposal print
+layout) are written once.
+
+The old Flutter app in `frontend/` is kept only as a reference until the new apps
+are signed off. It will then be removed in a separate commit.
+
+## Run it locally
+
+You need Node.js 20+, Python 3.11+ and Docker (for PostgreSQL).
+
+### 1. Backend and database
+
+```powershell
+.\start.ps1        # Windows: starts PostgreSQL in Docker, the services and the gateway on :8000
 ```
 
-Then open `frontend/index.html` in your browser.
+Or run everything in Docker with `docker compose up --build`. See
+[backend/README.md](backend/README.md) for the details, the demo accounts, and how to
+import an existing SQLite `tasknet.db` into PostgreSQL.
 
-> **Note**: The frontend connects to `http://localhost:8000` by default.  
-> If deploying, update the `API` constant in `frontend/index.html`.
+API docs: http://localhost:8000/docs
 
-## Default Accounts
+### 2. Install the JavaScript workspaces (once)
 
-| Username    | Password  | Role        |
-|-------------|-----------|-------------|
-| admin       | admin123  | Admin       |
-| coordinator | coord123  | Coordinator |
-| teacher1    | teach123  | Teacher     |
-| principal   | prin123   | Admin       |
+```powershell
+npm install
+```
 
-## Features
+### 3. Web app
 
-### 🎯 Dashboard
-- Summary stats: Pending, Submitted, Missing tasks
-- Task Manager quick list
-- My Tasks overview
-- Pending Approval events
-- Interactive calendar with task deadlines
+```powershell
+npm run web        # http://localhost:5173
+```
 
-### 📋 Task Manager (Admin/Coordinator)
-- Create, edit, disable, delete tasks
-- Assign tasks to multiple teachers
-- View submission count per task
-- Attach links, files, Google Drive, YouTube
-- Context menu (⋮) for quick actions
+The API address comes from `web/.env` (`VITE_API_BASE`, default `http://localhost:8000`).
 
-### 📝 Task Detail (Admin/Coordinator)
-- Full task description with instructions
-- Points system display
-- View all submissions per task
-- See submitted files (PDF, links, images)
-- Add public/private comments
+### 4. Mobile app
 
-### ✅ My Tasks (Teacher)
-- View assigned tasks grouped by subject
-- Filter by subject and status
-- Submit files and links
-- See points earned (early/on-time/late)
-- Public class comments + private comments
+```powershell
+npm run mobile     # starts Expo; scan the QR code with Expo Go, or press a / i / w
+```
 
-### 🔐 RBAC
-- **Admin**: Full access, manage users, all tasks
-- **Coordinator**: Create/manage tasks, view submissions
-- **Teacher**: View assigned tasks, submit work
+On a phone, `localhost` is the phone itself. Before starting, copy
+`mobile/.env.example` to `mobile/.env` and set `EXPO_PUBLIC_API_BASE` to your
+computer's LAN address, for example `http://192.168.1.20:8000`. See
+[mobile/README.md](mobile/README.md).
 
-## API Endpoints
+### Checks
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/login` | Login |
-| GET | `/api/auth/me` | Current user |
-| GET | `/api/users` | List users |
-| POST | `/api/users` | Create user |
-| GET | `/api/tasks` | List tasks |
-| POST | `/api/tasks` | Create task |
-| GET | `/api/tasks/{id}` | Task detail |
-| PUT | `/api/tasks/{id}` | Update task |
-| DELETE | `/api/tasks/{id}` | Delete task |
-| POST | `/api/tasks/{id}/submit` | Submit task |
-| POST | `/api/tasks/{id}/comments` | Add comment |
-| GET | `/api/dashboard` | Dashboard data |
+```powershell
+npm run typecheck              # shared, web and mobile
+npm run build:web              # production build of the web app
+```
 
-Full API docs: http://localhost:8000/docs
+## Demo accounts (fresh database)
 
-## Points System
-- **Early Submission** (>24h before deadline): +100 pts
-- **On Time**: +100 pts
-- **Late (within 24h)**: +50 pts
-- **Late (after 24h)**: 0 pts
+| Username | Password | Role |
+|----------|----------|------|
+| admin | admin123 | Admin |
+| principal | prin123 | Principal |
+| coordinator1 | coord123 | Coordinator |
+| teacher1 | teach123 | Teacher |
+| registrar | reg123 | Registrar |
