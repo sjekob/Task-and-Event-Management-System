@@ -14,7 +14,8 @@ import re
 from datetime import date, datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+import audit
 from pydantic import BaseModel, Field
 
 from database import get_db
@@ -206,7 +207,7 @@ def _feedback_text(results: List[IndicatorResult], comments: Optional[str]) -> s
 
 
 @router.post("/events/{event_id}/evaluate", status_code=201)
-def submit_public_evaluation(event_id: int, body: PublicEvalBody,
+def submit_public_evaluation(event_id: int, body: PublicEvalBody, request: Request,
                               db=Depends(get_db)):
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     if not row:
@@ -258,5 +259,9 @@ def submit_public_evaluation(event_id: int, body: PublicEvalBody,
         (event_id, None, name, email, role, body.sex, body.age_group, affiliation,
          score, score, score, score, score, score, feedback)
     )
+    # No account behind a QR evaluation: the entry has no actor, only the role
+    # the evaluator said they hold.
+    audit.record(db, None, "event.public_evaluation", "event", event_id,
+                 f"Public evaluation received for {row['title']} (from a {role})", request=request)
     db.commit()
     return {"message": "Thank you for your feedback!"}

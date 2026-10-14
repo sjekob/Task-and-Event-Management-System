@@ -640,6 +640,8 @@ def _build_and_seed():
     # Tag a task as 'common' or 'special' — used by the appraisal module to tell
     # the two kinds apart.
     _ensure_column(c, "tasks", "task_category", "TEXT DEFAULT 'common'")
+    # Special tasks generated from an approved event's committees point back at it.
+    _ensure_column(c, "tasks", "source_event_id", "INTEGER")
     # Which role-identity an assignment targets (a person may hold several roles).
     # NULL = legacy/any, shown regardless of the assignee's active role.
     _ensure_column(c, "task_assignments", "target_role", "TEXT")

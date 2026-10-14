@@ -33,8 +33,14 @@ echo.
 echo   Default accounts:
 echo    admin        / admin123   (Admin)
 echo    principal    / prin123    (Principal)
-echo    coordinator  / coord123   (Coordinator)
+echo    coordinator1 / coord123   (Coordinator)
+echo    coordinator2 / coord456   (Coordinator)
+echo    registrar    / reg123     (Registrar)
+echo    dean1        / dean123    (Dean)
+echo    dean2        / dean456    (Dean)
 echo    teacher1     / teach123   (Teacher)
+echo    teacher2     / teach456   (Teacher)
+echo    teacher3     / teach789   (Teacher)
 echo.
 echo   Press Ctrl+C to stop
 echo  ===================================================

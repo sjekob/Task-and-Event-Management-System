@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+import audit
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
@@ -267,7 +268,7 @@ def list_special_tasks(db=Depends(get_db), user=Depends(require_appraisal_view),
 
 
 @router.post("/special-tasks", status_code=201)
-def create_special_task(body: SpecialTaskBody, db=Depends(get_db),
+def create_special_task(body: SpecialTaskBody, request: Request, db=Depends(get_db),
                         user=Depends(require_appraisal_access)):
     """Create a special task = a `tasks` row tagged 'special' + an assignment."""
     uid = int(user["sub"])
@@ -282,14 +283,18 @@ def create_special_task(body: SpecialTaskBody, db=Depends(get_db),
             "INSERT OR IGNORE INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?)",
             (task_id, body.assignee_id, uid)
         )
+    audit.record(db, user, "task.create", "task", task_id,
+                 f"Created special task {body.title}"
+                 + (f" for {audit.user_label(db, body.assignee_id)}" if body.assignee_id else ""),
+                 changes={"due": [None, body.due_date]}, request=request)
     db.commit()
     return _special_task_row(_special_task_or_404(db, task_id), db)
 
 
 @router.post("/special-tasks/{task_id}/evaluate")
-def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody,
+def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody, request: Request,
                           db=Depends(get_db), user=Depends(require_appraisal_access)):
-    _special_task_or_404(db, task_id)
+    task = _special_task_or_404(db, task_id)
     scores = [body.completion_quality_score, body.timeliness_score,
               body.initiative_score, body.coordination_score]
     weights = [0.40, 0.30, 0.30, 0.00]
@@ -312,6 +317,9 @@ def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody,
         (task_id, uid, body.completion_quality_score, body.timeliness_score,
          body.initiative_score, body.coordination_score, weighted_avg, body.remarks)
     )
+    audit.record(db, user, "task.evaluate", "task", task_id,
+                 f"Evaluated special task {task['title']}",
+                 changes={"weighted_average": [None, round(weighted_avg, 2)]}, request=request)
     db.commit()
     return _special_task_row(_special_task_or_404(db, task_id), db)
 
@@ -356,7 +364,7 @@ def get_event_for_evaluation(event_id: int, db=Depends(get_db),
 
 
 @router.post("/events/{event_id}/evaluate", status_code=201)
-def evaluate_event(event_id: int, body: EventEvalBody, db=Depends(get_db),
+def evaluate_event(event_id: int, body: EventEvalBody, request: Request, db=Depends(get_db),
                    user=Depends(require_appraisal_access)):
     """Submit a supervisor evaluation rubric for an event."""
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
@@ -385,6 +393,8 @@ def evaluate_event(event_id: int, body: EventEvalBody, db=Depends(get_db),
          body.time_mgmt_score, body.engagement_score, body.resource_score,
          body.feedback_comments.strip() if body.feedback_comments else None)
     )
+    audit.record(db, user, "event.evaluate", "event", event_id,
+                 f"Evaluated event {row['title']}", request=request)
     db.commit()
     return _event_evaluation_row(
         db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone(), db

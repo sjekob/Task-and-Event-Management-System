@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+import audit
 from pydantic import BaseModel
 from typing import Optional
 from routes.tasks import require_task_access
@@ -15,7 +16,7 @@ class CommentRequest(BaseModel):
 
 
 @router.post("/api/tasks/{task_id}/comments")
-def add_comment(task_id: int, req: CommentRequest, user=Depends(get_current_user)):
+def add_comment(task_id: int, req: CommentRequest, request: Request, user=Depends(get_current_user)):
     db = connect_db()
     uid = int(user["sub"])
     try:
@@ -34,6 +35,9 @@ def add_comment(task_id: int, req: CommentRequest, user=Depends(get_current_user
         "INSERT INTO comments (task_id, user_id, report_id, comment_type, content) VALUES (?,?,?,?,?)",
         (task_id, uid, req.report_id, req.comment_type, req.content)
     )
+    # The comment's text is not copied into the trail (private ones stay private).
+    audit.record(db, user, "comment.add", "task", task_id,
+                 f"Added a {req.comment_type} comment", request=request)
     db.commit()
     db.close()
     return {"message": "Comment added"}
@@ -44,10 +48,12 @@ class CommentUpdateRequest(BaseModel):
 
 
 @router.put("/api/comments/{comment_id}")
-def edit_comment(comment_id: int, req: CommentUpdateRequest, user=Depends(get_current_user)):
+def edit_comment(comment_id: int, req: CommentUpdateRequest, request: Request,
+                 user=Depends(get_current_user)):
     db = connect_db()
     uid = int(user["sub"])
-    row = db.execute("SELECT user_id FROM comments WHERE id=?", (comment_id,)).fetchone()
+    row = db.execute("SELECT user_id, task_id, comment_type FROM comments WHERE id=?",
+                     (comment_id,)).fetchone()
     if not row:
         db.close()
         raise HTTPException(404, "Comment not found")
@@ -55,16 +61,19 @@ def edit_comment(comment_id: int, req: CommentUpdateRequest, user=Depends(get_cu
         db.close()
         raise HTTPException(403, "Cannot edit another user's comment")
     db.execute("UPDATE comments SET content=? WHERE id=?", (req.content, comment_id))
+    audit.record(db, user, "comment.edit", "task", row["task_id"],
+                 f"Edited a {row['comment_type']} comment", request=request)
     db.commit()
     db.close()
     return {"message": "Comment updated"}
 
 
 @router.delete("/api/comments/{comment_id}")
-def delete_comment(comment_id: int, user=Depends(get_current_user)):
+def delete_comment(comment_id: int, request: Request, user=Depends(get_current_user)):
     db = connect_db()
     uid = int(user["sub"])
-    row = db.execute("SELECT user_id FROM comments WHERE id=?", (comment_id,)).fetchone()
+    row = db.execute("SELECT user_id, task_id, comment_type FROM comments WHERE id=?",
+                     (comment_id,)).fetchone()
     if not row:
         db.close()
         raise HTTPException(404, "Comment not found")
@@ -72,6 +81,8 @@ def delete_comment(comment_id: int, user=Depends(get_current_user)):
         db.close()
         raise HTTPException(403, "Cannot delete another user's comment")
     db.execute("DELETE FROM comments WHERE id=?", (comment_id,))
+    audit.record(db, user, "comment.delete", "task", row["task_id"],
+                 f"Deleted a {row['comment_type']} comment", request=request)
     db.commit()
     db.close()
     return {"message": "Comment deleted"}

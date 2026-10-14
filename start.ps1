@@ -2,7 +2,8 @@
 # Run from project root: .\start.ps1
 #
 # Starts all backend microservices plus the API gateway.
-# The frontend still points to http://localhost:8000 (gateway).
+# The React Native frontend (frontend/) points to http://localhost:8000 (gateway).
+# Start it separately:  npm --prefix frontend run web
 #
 # Service map:
 #   :8000  gateway    — API Gateway (all traffic enters here)
@@ -82,10 +83,16 @@ Write-Host "   Events     http://localhost:8004/docs" -ForegroundColor Gray
 Write-Host "   Appraisal  http://localhost:8005/docs" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Default accounts:" -ForegroundColor White
-Write-Host "   admin        / admin123" -ForegroundColor Gray
-Write-Host "   principal    / prin123" -ForegroundColor Gray
-Write-Host "   coordinator  / coord123" -ForegroundColor Gray
-Write-Host "   teacher1     / teach123" -ForegroundColor Gray
+Write-Host "   admin        / admin123  (Admin)" -ForegroundColor Gray
+Write-Host "   principal    / prin123   (Principal)" -ForegroundColor Gray
+Write-Host "   coordinator1 / coord123  (Coordinator)" -ForegroundColor Gray
+Write-Host "   coordinator2 / coord456  (Coordinator)" -ForegroundColor Gray
+Write-Host "   registrar    / reg123    (Registrar)" -ForegroundColor Gray
+Write-Host "   dean1        / dean123   (Dean)" -ForegroundColor Gray
+Write-Host "   dean2        / dean456   (Dean)" -ForegroundColor Gray
+Write-Host "   teacher1     / teach123  (Teacher)" -ForegroundColor Gray
+Write-Host "   teacher2     / teach456  (Teacher)" -ForegroundColor Gray
+Write-Host "   teacher3     / teach789  (Teacher)" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Close individual service windows to stop them." -ForegroundColor Yellow
 Write-Host " ===================================================" -ForegroundColor Green

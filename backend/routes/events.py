@@ -1,3 +1,5 @@
+import json
+import re
 from datetime import date
 from fastapi import APIRouter, HTTPException, Depends, Request
 import audit
@@ -146,7 +148,7 @@ def list_events(db=Depends(get_db), user=Depends(get_current_user),
 
 
 @router.post("", status_code=201)
-def create_event(body: EventCreateBody, db=Depends(get_db),
+def create_event(body: EventCreateBody, request: Request, db=Depends(get_db),
                  user=Depends(require_event_manager)):
     uid = int(user["sub"])
     status = body.status or 'pending_approval'
@@ -175,6 +177,10 @@ def create_event(body: EventCreateBody, db=Depends(get_db),
     db.commit()
     row = db.execute("SELECT * FROM events ORDER BY id DESC LIMIT 1").fetchone()
     event_id = row["id"]
+    audit.record(db, user, "event.create", "event", event_id,
+                 ("Saved draft event " if status == "draft" else "Submitted event proposal ") + body.title,
+                 changes={"status": [None, status]}, request=request)
+    db.commit()
     # Notify all active users when an event is submitted for approval
     if status == "pending_approval":
         try:
@@ -195,10 +201,11 @@ def create_event(body: EventCreateBody, db=Depends(get_db),
 
 
 @router.put("/{event_id}")
-def update_event(event_id: int, body: EventCreateBody, db=Depends(get_db),
+def update_event(event_id: int, body: EventCreateBody, request: Request, db=Depends(get_db),
                  user=Depends(require_event_manager)):
     uid = int(user["sub"])
     role = user["role"]
+    before = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     row = db.execute("SELECT created_by FROM events WHERE id=?", (event_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Event not found")
@@ -242,8 +249,16 @@ def update_event(event_id: int, body: EventCreateBody, db=Depends(get_db),
              body.twg_groups, body.monitoring_criteria, body.indicators,
              body.comments, event_id)
         )
-    db.commit()
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+    # Which sections changed (the long proposal text itself is not copied in).
+    changed = audit.diff(dict(before), dict(row))
+    if changed:
+        short = {k: v for k, v in changed.items()
+                 if k in ("title", "status", "target_date", "venue", "nature", "proposed_budget")}
+        audit.record(db, user, "event.update", "event", event_id,
+                     f"Edited event {row['title']} ({', '.join(sorted(changed))})",
+                     changes=short, request=request)
+    db.commit()
     return _event_row(row, db)
 
 
@@ -255,8 +270,123 @@ def approve_event(event_id: int, request: Request, db=Depends(get_db),
         raise HTTPException(404, "Event not found")
     db.execute("UPDATE events SET status='approved' WHERE id=?", (event_id,))
     _audit_status(db, user, request, event_id, ev, "approved", "Approved event")
+    created, unmatched = _create_committee_tasks(db, event_id, int(user["sub"]))
     db.commit()
-    return {"message": "Event approved"}
+    return {"message": "Event approved",
+            "special_tasks_created": created,
+            "unmatched_members": unmatched}
+
+
+# ── Committee → special tasks ─────────────────────────────────────────────────
+
+def _name_key(text) -> str:
+    """Lower-case words only, so 'Liza  RAMOS.' and 'liza ramos' compare equal."""
+    return " ".join(re.findall(r"[a-z0-9]+", str(text or "").lower()))
+
+
+def _committee_members(row) -> list:
+    """Everyone named in the proposal's executive committee and technical
+    working groups, as dicts: name, role, group, tor, output."""
+    def load(raw):
+        try:
+            data = json.loads(raw) if raw else []
+        except (ValueError, TypeError):
+            return []
+        return data if isinstance(data, list) else []
+
+    members = []
+    for m in load(row["exec_committee"]):
+        if isinstance(m, dict) and str(m.get("name") or "").strip():
+            members.append({"name": str(m["name"]).strip(),
+                            "role": str(m.get("position") or "").strip(),
+                            "group": "Executive Committee", "tor": "", "output": ""})
+    for g in load(row["twg_groups"]):
+        if not isinstance(g, dict):
+            continue
+        group = str(g.get("title") or "").strip() or "Technical Working Group"
+        for m in g.get("members") or []:
+            if isinstance(m, dict) and str(m.get("name") or "").strip():
+                members.append({"name": str(m["name"]).strip(),
+                                "role": str(m.get("designation") or "").strip(),
+                                "group": group,
+                                "tor": str(m.get("tor") or "").strip(),
+                                "output": str(m.get("output") or "").strip()})
+    return members
+
+
+def _match_user(users, name: str):
+    """The one active user a committee name refers to, or None when nobody (or
+    more than one person) fits. Tries an exact full-name / username match first,
+    then 'every word typed appears in the person's name' (so 'Liza Ramos' or
+    just 'Ramos' finds 'Liza M. Ramos' when that is unambiguous)."""
+    key = _name_key(name)
+    if not key:
+        return None
+    exact = [u for u in users
+             if key in (_name_key(u["full_name"]), _name_key(u["username"]),
+                        _name_key(f"{u['first_name'] or ''} {u['last_name'] or ''}"))]
+    if len(exact) == 1:
+        return exact[0]
+    if exact:
+        return None
+    words = set(key.split())
+    loose = [u for u in users
+             if words <= set(_name_key(f"{u['full_name']} {u['username']}").split())]
+    return loose[0] if len(loose) == 1 else None
+
+
+def _create_committee_tasks(db, event_id: int, approver_id: int):
+    """Give each committee member of a newly approved event a special task for
+    their role. Members are typed as free text in the proposal, so each name is
+    matched to a user account; names that match nobody are returned so the
+    approver can assign those by hand. Safe to call again: a person who already
+    has a task for this event and committee is skipped."""
+    row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+    users = db.execute(
+        "SELECT id, username, full_name, first_name, last_name FROM users WHERE is_active=1"
+    ).fetchall()
+    event_date = parse_event_date(row["target_date"])
+    due = event_date.isoformat() if event_date else None
+
+    created, unmatched = [], []
+    for m in _committee_members(row):
+        u = _match_user(users, m["name"])
+        if u is None:
+            unmatched.append(m["name"])
+            continue
+        title = f"{row['title']} — {m['role'] or m['group']}"
+        exists = db.execute(
+            """SELECT 1 FROM tasks t JOIN task_assignments ta ON ta.task_id = t.id
+               WHERE t.source_event_id=? AND t.title=? AND ta.user_id=?""",
+            (event_id, title, u["id"])).fetchone()
+        if exists:
+            continue
+        lines = [f"Committee assignment for the event \"{row['title']}\".",
+                 f"Committee: {m['group']}"]
+        if m["role"]:
+            lines.append(f"Role: {m['role']}")
+        if m["tor"]:
+            lines.append(f"Terms of reference: {m['tor']}")
+        if m["output"]:
+            lines.append(f"Expected output: {m['output']}")
+        if row["target_date"]:
+            lines.append(f"Event date: {row['target_date']}")
+        if row["venue"]:
+            lines.append(f"Venue: {row['venue']}")
+        db.execute(
+            """INSERT INTO tasks (title, instructions, task_category, end_date,
+                                  created_by, source_event_id)
+               VALUES (?,?, 'special', ?, ?, ?)""",
+            (title, "\n".join(lines), due, approver_id, event_id))
+        task_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        db.execute(
+            "INSERT OR IGNORE INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?)",
+            (task_id, u["id"], approver_id))
+        create_notification(db, u["id"], "task", f"New special task: {title}",
+                            f"You are on the {m['group']} for {row['title']}."[:120], task_id)
+        created.append({"task_id": task_id, "title": title,
+                        "assignee_id": u["id"], "assignee": u["full_name"]})
+    return created, unmatched
 
 
 def _require_event_control(db, event_id: int, user: dict):

@@ -362,8 +362,26 @@ def _assign_users(db, task_id: int, uid: int, role: str, user_ids, target_role,
     return added, skipped
 
 
+_ATTACHMENT_TYPES = ("file", "link", "gdrive", "youtube")
+
+
+def _add_attachments(db, task_id: int, attachments) -> None:
+    """Store the links/files attached to a task. The app sends the kind as
+    `attachment_type`; older clients sent `type`."""
+    for att in (attachments or []):
+        kind = att.get("attachment_type") or att.get("type")
+        if kind not in _ATTACHMENT_TYPES:
+            kind = "link"
+        if not att.get("url"):
+            continue
+        db.execute(
+            "INSERT INTO task_attachments (task_id, attachment_type, name, url) VALUES (?,?,?,?)",
+            (task_id, kind, att.get("name"), att.get("url"))
+        )
+
+
 @router.post("/api/tasks")
-def create_task(req: CreateTaskRequest, user=Depends(require_task_creator)):
+def create_task(req: CreateTaskRequest, request: Request, user=Depends(require_task_creator)):
     db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
@@ -385,12 +403,13 @@ def create_task(req: CreateTaskRequest, user=Depends(require_task_creator)):
     _assign_users(db, task_id, uid, role, req.assigned_user_ids, target_role,
                   req.title, req.instructions or "")
 
-    for att in (req.attachments or []):
-        db.execute(
-            "INSERT INTO task_attachments (task_id, attachment_type, name, url) VALUES (?,?,?,?)",
-            (task_id, att.get("type"), att.get("name"), att.get("url"))
-        )
+    _add_attachments(db, task_id, req.attachments)
 
+    audit.record(db, user, "task.create", "task", task_id,
+                 f"Created {'special task' if category == 'special' else 'task'} {req.title}",
+                 changes={"assigned": [None, len(req.assigned_user_ids or [])],
+                          "due": [None, req.end_date]},
+                 request=request)
     db.commit()
     db.close()
     return {"id": task_id, "message": "Task created"}
@@ -405,10 +424,13 @@ class UpdateTaskRequest(BaseModel):
     due_time: Optional[str] = None
     instructions: Optional[str] = None
     status: Optional[str] = None
+    # Attachments added while editing (existing ones are kept).
+    attachments: Optional[List[dict]] = None
 
 
 @router.put("/api/tasks/{task_id}")
-def update_task(task_id: int, req: UpdateTaskRequest, user=Depends(require_task_creator)):
+def update_task(task_id: int, req: UpdateTaskRequest, request: Request,
+                user=Depends(require_task_creator)):
     db = connect_db()
     try:
         require_task_owner(db, task_id, user)
@@ -427,8 +449,23 @@ def update_task(task_id: int, req: UpdateTaskRequest, user=Depends(require_task_
             fields.append(f"{f}=?")
             vals.append(v)
     if fields:
+        before = dict(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
         vals.append(task_id)
         db.execute(f"UPDATE tasks SET {','.join(fields)} WHERE id=?", vals)
+        after = dict(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
+        changes = audit.diff(before, after)
+        if changes:
+            status_only = set(changes) == {"status"}
+            audit.record(db, user,
+                         f"task.{after['status']}" if status_only and after["status"] == "disabled"
+                         else "task.update", "task", task_id,
+                         ("Disabled task " if status_only and after["status"] == "disabled"
+                          else "Re-enabled task " if status_only else "Edited task ") + after["title"],
+                         changes=changes, request=request)
+    if req.attachments:
+        _add_attachments(db, task_id, req.attachments)
+        audit.record(db, user, "task.update", "task", task_id,
+                     f"Added {len(req.attachments)} attachment(s)", request=request)
     db.commit()
     db.close()
     return {"message": "Updated"}

@@ -41,6 +41,7 @@ ROUTE_MAP: list[tuple[str, str]] = [
     ("/api/task-types",  AUTH_URL),
     ("/api/personnel",   PERSONNEL_URL),
     ("/api/templates",   TASKS_URL),
+    ("/api/upload",      TASKS_URL),   # task attachment files
     ("/api/reports",     TASKS_URL),
     ("/api/comments",    TASKS_URL),
     ("/api/tasks",       TASKS_URL),
@@ -129,7 +130,7 @@ async def health():
 
 @app.api_route(
     "/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
 async def proxy(request: Request, path: str):
     url_path = request.url.path

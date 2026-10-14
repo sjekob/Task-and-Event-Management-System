@@ -207,7 +207,7 @@ _PROFILE_COLUMNS = {
 
 
 @router.put("/api/users/me/profile")
-def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user)):
+def update_my_profile(req: UpdateProfileRequest, request: Request, user=Depends(get_current_user)):
     db = connect_db()
     try:
         try:
@@ -249,6 +249,11 @@ def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user))
         # (/api/certificates), so they can be checked and verified.
         if req.education is not None:
             set_education(db, uid, req.education.dict())
+        # Which parts were sent, not their values (personal details stay out of the trail).
+        sent = sorted(k for k, v in req.dict(exclude_unset=True).items() if v is not None)
+        audit.record(db, user, "account.profile", "user", uid,
+                     "Updated own profile" + (f" ({', '.join(sent)})" if sent else ""),
+                     request=request)
         db.commit()
         return {"message": "Profile updated"}
     finally:
