@@ -158,7 +158,7 @@ def _id(db, table: str, column: str, name: str) -> Optional[int]:
 
 def _get_or_create(db, table: str, column: str, name: str) -> int:
     # Name columns are COLLATE NOCASE, so "first aid" reuses "First Aid".
-    db.execute(f"INSERT OR IGNORE INTO {table} ({column}) VALUES (?)", (name,))
+    db.execute(f"INSERT INTO {table} ({column}) VALUES (?) ON CONFLICT DO NOTHING", (name,))
     return _id(db, table, column, name)
 
 
@@ -171,7 +171,7 @@ def _set_keywords(db, table: str, owner_id: int, keywords,
     for kw in have - wanted:
         db.execute(f"DELETE FROM {table} WHERE {owner_col}=? AND keyword=?", (owner_id, kw))
     for kw in wanted - have:
-        db.execute(f"INSERT OR IGNORE INTO {table} ({owner_col}, keyword) VALUES (?,?)",
+        db.execute(f"INSERT INTO {table} ({owner_col}, keyword) VALUES (?,?) ON CONFLICT DO NOTHING",
                    (owner_id, kw))
 
 
@@ -185,27 +185,28 @@ def seed_taxonomy(db):
         _set_keywords(db, "skill_category_keywords",
                       _id(db, "skill_categories", "category_name", name), kws)
     for name, kws in dp.CERTIFICATION_CATEGORIES.items():
-        db.execute("INSERT OR IGNORE INTO certification_categories (category_name) VALUES (?)",
+        db.execute("INSERT INTO certification_categories (category_name) VALUES (?) "
+                   "ON CONFLICT DO NOTHING",
                    (name,))
         _set_keywords(db, "certification_category_keywords",
                       _id(db, "certification_categories", "category_name", name), kws)
     for name, acronym in dp.CERTIFICATION_ISSUERS:
         db.execute("""INSERT INTO certification_issuers (issuer_name, acronym) VALUES (?,?)
                       ON CONFLICT(issuer_name) DO UPDATE
-                      SET acronym=COALESCE(acronym, excluded.acronym)""", (name, acronym))
+                      SET acronym=COALESCE(certification_issuers.acronym, excluded.acronym)""", (name, acronym))
 
     for cat, (_d, _k, skills) in dp.SKILL_CATEGORIES.items():
         cat_id = _id(db, "skill_categories", "category_name", cat)
         for s in skills:
             db.execute("""INSERT INTO skills (skill_name, category_id) VALUES (?,?)
                           ON CONFLICT(skill_name) DO UPDATE
-                          SET category_id=COALESCE(category_id, excluded.category_id)""",
+                          SET category_id=COALESCE(skills.category_id, excluded.category_id)""",
                        (s, cat_id))
     for name, cat, issuer in dp.CERTIFICATIONS:
         db.execute("""INSERT INTO certifications (cert_name, category_id, issuer_id) VALUES (?,?,?)
                       ON CONFLICT(cert_name) DO UPDATE
-                      SET category_id=COALESCE(category_id, excluded.category_id),
-                          issuer_id=COALESCE(issuer_id, excluded.issuer_id)""",
+                      SET category_id=COALESCE(certifications.category_id, excluded.category_id),
+                          issuer_id=COALESCE(certifications.issuer_id, excluded.issuer_id)""",
                    (name, _id(db, "certification_categories", "category_name", cat),
                     _id(db, "certification_issuers", "issuer_name", issuer)))
 
@@ -220,34 +221,6 @@ def seed_taxonomy(db):
             _set_keywords(db, "certification_keywords", cid, kws, owner_col="certification_id")
 
 
-def migrate_legacy_catalog(db):
-    """Earlier builds kept a free-text skills.category and
-    certifications.issuing_body; map them onto the taxonomy tables, then drop
-    the old columns. Caller owns the commit."""
-    skill_cols = [r[1] for r in db.execute("PRAGMA table_info(skills)")]
-    cert_cols = [r[1] for r in db.execute("PRAGMA table_info(certifications)")]
-    if "category" not in skill_cols and "issuing_body" not in cert_cols:
-        return
-    seed_taxonomy(db)
-    if "category" in skill_cols:
-        for sid, old in db.execute(
-                "SELECT id, category FROM skills WHERE category IS NOT NULL").fetchall():
-            new = dp.LEGACY_SKILL_CATEGORY.get(old, old)
-            db.execute("UPDATE skills SET category_id=COALESCE(category_id, ?) WHERE id=?",
-                       (_get_or_create(db, "skill_categories", "category_name", new), sid))
-        db.execute("ALTER TABLE skills DROP COLUMN category")
-    if "issuing_body" in cert_cols:
-        for cid, body in db.execute(
-                "SELECT id, issuing_body FROM certifications WHERE issuing_body IS NOT NULL"
-        ).fetchall():
-            body = dp.LEGACY_ISSUER_ALIASES.get(body, body)
-            row = db.execute("SELECT id FROM certification_issuers "
-                             "WHERE issuer_name=? OR acronym=?", (body, body)).fetchone()
-            iid = row[0] if row else _get_or_create(db, "certification_issuers",
-                                                    "issuer_name", body)
-            db.execute("UPDATE certifications SET issuer_id=COALESCE(issuer_id, ?) WHERE id=?",
-                       (iid, cid))
-        db.execute("ALTER TABLE certifications DROP COLUMN issuing_body")
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
@@ -334,7 +307,8 @@ def set_skills(db, uid: int, skills: Iterable[str]):
     for s in clean_list(skills):
         sid = _id(db, "skills", "skill_name", s)
         if sid is not None:
-            db.execute("INSERT OR IGNORE INTO user_skills (user_id, skill_id) VALUES (?,?)",
+            db.execute("INSERT INTO user_skills (user_id, skill_id) VALUES (?,?) "
+                       "ON CONFLICT DO NOTHING",
                        (uid, sid))
 
 
@@ -371,7 +345,8 @@ def set_education(db, uid: int, education: dict):
         attainment = row[0] if row else None
     if attainment not in dp.HIGHEST_ATTAINMENT[1:]:
         vals["postgraduate_focus"] = None
-    db.execute("INSERT OR IGNORE INTO education_background (user_id) VALUES (?)", (uid,))
+    db.execute("INSERT INTO education_background (user_id) VALUES (?) ON CONFLICT DO NOTHING",
+               (uid,))
     db.execute(
         f"UPDATE education_background SET {', '.join(f'{k}=?' for k in vals)}, "
         "updated_at=CURRENT_TIMESTAMP WHERE user_id=?", list(vals.values()) + [uid])

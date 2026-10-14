@@ -174,7 +174,7 @@ def list_tasks(user=Depends(get_current_user), search: str = "",
     # Column prefix differs between the joined queries (alias t) and the plain ones.
     pref = "t." if "task_assignments" in q else ""
     if search:
-        q += f" AND {pref}title LIKE ?"
+        q += f" AND {pref}title ILIKE ?"
         params.append(f"%{search}%")
     if category:
         q += f" AND {pref}task_category=?"
@@ -369,7 +369,7 @@ def create_task(req: CreateTaskRequest, user=Depends(require_task_creator)):
     role = user["role"]
 
     category = req.task_category if req.task_category in ('common', 'special') else 'common'
-    db.execute(
+    task_id = db.execute(
         """INSERT INTO tasks
            (title, subject, task_category, task_type_id, start_date, end_date, due_time,
             instructions, created_by, points_early, points_ontime, points_late24, points_after24)
@@ -377,8 +377,7 @@ def create_task(req: CreateTaskRequest, user=Depends(require_task_creator)):
         (req.title, req.subject, category, req.task_type_id, req.start_date, req.end_date,
          req.due_time, req.instructions, uid,
          req.points_early, req.points_ontime, req.points_late24, req.points_after24)
-    )
-    task_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    ).lastrowid
 
     # Which identity these assignees receive the task as (see _assign_users).
     target_role = req.target_role if req.target_role and can_assign(role, req.target_role) else None

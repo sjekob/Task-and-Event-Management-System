@@ -47,15 +47,15 @@ def list_audit(entity_type: Optional[str] = None, entity_id: Optional[int] = Non
     if actor_id is not None:
         where.append("a.actor_id=?"); args.append(actor_id)
     if action:
-        where.append("a.action LIKE ?"); args.append(action.replace("%", "") + "%")
+        where.append("a.action ILIKE ?"); args.append(action.replace("%", "") + "%")
     if q:
         like = f"%{q.strip()}%"
-        where.append(f"(a.summary LIKE ? OR u.full_name LIKE ? OR ({_LABEL_SQL}) LIKE ?)")
+        where.append(f"(a.summary ILIKE ? OR u.full_name ILIKE ? OR ({_LABEL_SQL}) ILIKE ?)")
         args += [like, like, like]
     if date_from:
         where.append("a.created_at >= ?"); args.append(date_from[:10])
     if date_to:
-        where.append("a.created_at < date(?, '+1 day')"); args.append(date_to[:10])
+        where.append("a.created_at < to_char(?::date + 1, 'YYYY-MM-DD')"); args.append(date_to[:10])
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     base = "FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id"
     total = db.execute(f"SELECT COUNT(*) {base} {clause}", args).fetchone()[0]

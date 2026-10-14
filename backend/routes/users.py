@@ -131,13 +131,12 @@ def create_user(req: CreateUserRequest, request: Request,
         raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
     db = connect_db()
     try:
-        db.execute(
+        new_id = db.execute(
             "INSERT INTO users (username,password_hash,first_name,last_name,role,grade_level_id) "
             "VALUES (?,?,?,?,?,?)",
             (req.username, hash_password(req.password), req.first_name.strip(),
              req.last_name.strip(), req.role, req.grade_level_id)
-        )
-        new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        ).lastrowid
         audit.record(db, user, "account.create", "user", new_id,
                      f"Created account {req.username} as {req.role}",
                      changes={"role": [None, req.role]}, request=request)
@@ -282,9 +281,9 @@ class GradeLevelRequest(BaseModel):
 def create_grade_level(req: GradeLevelRequest, user=Depends(require_admin)):
     db = connect_db()
     try:
-        db.execute("INSERT INTO grade_levels (grade_level) VALUES (?)", (req.grade_level,))
+        new_id = db.execute("INSERT INTO grade_levels (grade_level) VALUES (?)",
+                            (req.grade_level,)).lastrowid
         db.commit()
-        new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         db.close()
         return {"id": new_id}
     except Exception as e:

@@ -28,15 +28,16 @@ x-backend-common: &backend-common
     # Signs login tokens. No default on purpose: a known key would let anyone
     # forge a token for any account/role. Set it in .env (see .env.example).
     JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env - see .env.example}
-    # Data layer. Defaults to the shared sqlite file during the SQLAlchemy
-    # migration. Final cutover = set DATABASE_URL to the Postgres URL below:
-    #   postgresql+psycopg2://tasknet:tasknet@postgres:5432/tasknet
-    DATABASE_URL: ${DATABASE_URL:-sqlite:///./tasknet.db}
+    # Shared PostgreSQL database (the `postgres` service below).
+    DATABASE_URL: ${DATABASE_URL:-postgresql://tasknet:tasknet@postgres:5432/tasknet}
+  depends_on:
+    postgres:
+      condition: service_healthy
   restart: unless-stopped
 
 services:
 
-  # ── PostgreSQL (migration target) ──────────────────────────────────────────────
+  # ── PostgreSQL ──────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: tasknet_postgres
@@ -70,7 +71,8 @@ services:
       - appraisal
     environment:
       SECRET_KEY: ${SECRET_KEY:-tasknet-dev-secret-change-in-prod}
-      DATABASE_URL: ${DATABASE_URL:-sqlite:///./tasknet.db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env - see .env.example}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://tasknet:tasknet@postgres:5432/tasknet}
       AUTH_SERVICE_URL:      http://auth:8001
       PERSONNEL_SERVICE_URL: http://personnel:8002
       TASKS_SERVICE_URL:     http://tasks:8003

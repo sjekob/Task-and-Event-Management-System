@@ -1,4 +1,4 @@
-# TaskNet — Microservices Startup Script (PowerShell)
+﻿# TaskNet — Microservices Startup Script (PowerShell)
 # Run from project root: .\start.ps1
 #
 # Starts all backend microservices plus the API gateway.
@@ -33,6 +33,24 @@ if (-not (Test-Path (Join-Path $Venv "Scripts\pip.exe"))) {
 # ── Install / update dependencies ─────────────────────────────────────────────
 Write-Host " [setup] Installing dependencies..." -ForegroundColor Yellow
 & (Join-Path $Venv "Scripts\pip.exe") install -r (Join-Path $BackendDir "requirements.txt") -q
+
+# ── Database: PostgreSQL ──────────────────────────────────────────────────────
+# Uses $env:DATABASE_URL when set; otherwise runs Postgres in Docker on :5432.
+if (-not $env:DATABASE_URL) {
+    Write-Host " [setup] Starting PostgreSQL (Docker)..." -ForegroundColor Yellow
+    docker start tasknet_postgres 2>$null | Out-Null
+    if (-not $?) {
+        docker run -d --name tasknet_postgres `
+            -e POSTGRES_USER=tasknet -e POSTGRES_PASSWORD=tasknet -e POSTGRES_DB=tasknet `
+            -p 5432:5432 -v tasknet_pgdata:/var/lib/postgresql/data postgres:16-alpine | Out-Null
+    }
+    for ($i = 0; $i -lt 30; $i++) {
+        docker exec tasknet_postgres pg_isready -U tasknet 2>$null | Out-Null
+        if ($?) { break }
+        Start-Sleep -Seconds 1
+    }
+    $env:DATABASE_URL = "postgresql://tasknet:tasknet@localhost:5432/tasknet"
+}
 
 # ── Helper: launch a service in a new window ─────────────────────────────────
 function Start-Service {

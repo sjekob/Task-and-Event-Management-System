@@ -271,15 +271,15 @@ def create_special_task(body: SpecialTaskBody, db=Depends(get_db),
                         user=Depends(require_appraisal_access)):
     """Create a special task = a `tasks` row tagged 'special' + an assignment."""
     uid = int(user["sub"])
-    db.execute(
+    task_id = db.execute(
         """INSERT INTO tasks (title, instructions, task_category, end_date, created_by)
            VALUES (?,?, 'special', ?, ?)""",
         (body.title, body.description, body.due_date, uid)
-    )
-    task_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    ).lastrowid
     if body.assignee_id:
         db.execute(
-            "INSERT OR IGNORE INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?)",
+            "INSERT INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?) "
+            "ON CONFLICT DO NOTHING",
             (task_id, body.assignee_id, uid)
         )
     db.commit()
@@ -410,7 +410,7 @@ def _person_submissions(db, uid: int, window) -> list:
            JOIN reports r ON r.id = sl.report_id
            JOIN tasks t ON t.id = r.task_id
            WHERE sl.sender_personnel_id=?
-           GROUP BY r.task_id""", (uid,)).fetchall()
+           GROUP BY r.task_id, t.end_date, t.due_time""", (uid,)).fetchall()
     out = []
     for r in rows:
         if not in_window(window, r["end_date"], r["submitted_at"]):
@@ -566,7 +566,7 @@ def _person_submissions(db, uid: int, window) -> list:
            JOIN reports r ON r.id = sl.report_id
            JOIN tasks t ON t.id = r.task_id
            WHERE sl.sender_personnel_id=?
-           GROUP BY r.task_id""", (uid,)).fetchall()
+           GROUP BY r.task_id, t.end_date, t.due_time""", (uid,)).fetchall()
     out = []
     for r in rows:
         if not in_window(window, r["end_date"], r["submitted_at"]):

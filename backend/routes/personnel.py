@@ -89,15 +89,15 @@ def list_personnel(search: str = "", limit: int = 0, offset: int = 0,
                    db=Depends(get_db), user=Depends(get_current_user)):
     q = f"%{search}%"
     where = ("FROM users u WHERE u.role != 'admin' "
-             "AND (u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ? "
+             "AND (u.full_name ILIKE ? OR u.username ILIKE ? OR u.email ILIKE ? "
              "OR EXISTS (SELECT 1 FROM user_skills us JOIN skills s ON s.id=us.skill_id "
-             "WHERE us.user_id=u.id AND s.skill_name LIKE ?) "
+             "WHERE us.user_id=u.id AND s.skill_name ILIKE ?) "
              "OR EXISTS (SELECT 1 FROM certificate_files cf "
              "JOIN certifications c ON c.id=cf.certification_id "
              "WHERE cf.user_id=u.id AND cf.status IN ('submitted','verified') "
-             "AND c.cert_name LIKE ?) "
+             "AND c.cert_name ILIKE ?) "
              "OR EXISTS (SELECT 1 FROM education_background eb "
-             "WHERE eb.user_id=u.id AND eb.specialization LIKE ?))")
+             "WHERE eb.user_id=u.id AND eb.specialization ILIKE ?))")
     params = [q, q, q, q, q, q]
     order = " ORDER BY u.role, u.full_name"
     if limit and limit > 0:
@@ -178,7 +178,8 @@ def create_department(body: DepartmentBody, request: Request, db=Depends(get_db)
     name = body.department_name.strip()
     if not name:
         raise HTTPException(400, "Department name is required")
-    cur = db.execute("INSERT OR IGNORE INTO departments (department_name) VALUES (?)", (name,))
+    cur = db.execute("INSERT INTO departments (department_name) VALUES (?) ON CONFLICT DO NOTHING",
+                     (name,))
     if cur.rowcount:
         audit.record(db, user, "department.create", "department", cur.lastrowid,
                      f"Created department {name}", request=request)
@@ -309,8 +310,9 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
         if body.also_teaching is not None and primary_role != "teacher":
             if body.also_teaching:
                 db.execute(
-                    """INSERT OR IGNORE INTO user_roles (user_id, role_id)
-                       SELECT ?, id FROM roles WHERE roles='teacher'""", (uid,))
+                    """INSERT INTO user_roles (user_id, role_id)
+                       SELECT ?, id FROM roles WHERE roles='teacher'
+                       ON CONFLICT DO NOTHING""", (uid,))
             else:
                 db.execute(
                     """DELETE FROM user_roles WHERE user_id=?
@@ -356,8 +358,8 @@ def update_personnel_subjects(uid: int, body: SubjectsUpdateBody, request: Reque
     for s in body.subjects:
         if s.subject.strip():
             db.execute(
-                "INSERT OR IGNORE INTO user_subjects (user_id, subject_id, grade_level_id) "
-                "VALUES (?,?,?)", (uid, known[s.subject.strip()], s.grade_level_id))
+                "INSERT INTO user_subjects (user_id, subject_id, grade_level_id) "
+                "VALUES (?,?,?) ON CONFLICT DO NOTHING", (uid, known[s.subject.strip()], s.grade_level_id))
     changes = audit.diff(before, _delegation(db, uid))
     if changes:
         audit.record(db, user, "personnel.subjects", "user", uid, "Changed subject-grade assignments",

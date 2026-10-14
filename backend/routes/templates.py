@@ -25,15 +25,14 @@ class TemplateCreate(BaseModel):
 def create_template(req: TemplateCreate, user=Depends(require_admin_or_principal)):
     db = connect_db()
     uid = int(user["sub"])
-    db.execute(
+    template_id = db.execute(
         """INSERT INTO task_templates
            (title, instructions, start_date, end_date, due_time,
             points_early, points_ontime, points_late24, points_after24, created_by)
            VALUES (?,?,?,?,?,?,?,?,?,?)""",
         (req.title, req.instructions, req.start_date, req.end_date, req.due_time,
          req.points_early, req.points_ontime, req.points_late24, req.points_after24, uid)
-    )
-    template_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    ).lastrowid
     db.commit()
     db.close()
     return {"id": template_id, "message": "Template created"}
