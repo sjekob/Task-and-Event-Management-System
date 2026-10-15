@@ -5,7 +5,7 @@ import audit
 from pydantic import BaseModel
 from typing import Optional
 from database import connect_db
-from auth import get_current_user, require_admin_or_principal
+from auth import get_current_user, require_admin_or_principal, require_permission
 from files import save_upload
 import task_scanner
 
@@ -54,6 +54,26 @@ async def scan_task_file(file: UploadFile, user=Depends(get_current_user)):
         return await run_in_threadpool(task_scanner.scan, data, file.filename or "")
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+require_calendar_manager = require_permission(
+    "manage_school_years", "Only the Principal or Admin can scan the school calendar into tasks")
+
+
+@router.post("/api/tasks/scan-calendar")
+async def scan_school_calendar(file: UploadFile, user=Depends(require_calendar_manager)):
+    """Read a school calendar (PDF, Word, text or photo) and propose the tasks
+    it implies, one per dated row plus suggested follow-ups. Nothing is
+    created here; the principal reviews the list and posts the ones they want."""
+    data = await file.read(task_scanner.MAX_BYTES + 1)
+    try:
+        result = await run_in_threadpool(task_scanner.scan, data, file.filename or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not result["items"]:
+        raise HTTPException(400, "No dated schedule was found in that file. Upload a school calendar "
+                                 "that lists dates with what happens on each.")
+    return {"title": result["title"], "tasks": task_scanner.plan_calendar_tasks(result["items"])}
 
 
 @router.get("/api/templates")

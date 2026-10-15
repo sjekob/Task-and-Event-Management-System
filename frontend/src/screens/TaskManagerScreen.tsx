@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { CalendarScanIcon, scanSchoolCalendar } from '../components/CalendarScanDialog';
 import { SchoolYearPicker } from '../components/SchoolYearPicker';
 import { AppBanner } from '../components/commonWidgets';
 import { TaskManagerSkeleton } from '../components/skeletonWidgets';
 import { Icon, IconName } from '../components/ui/Icon';
 import { ElevatedButton, InkWell, OutlinedButton, Tap, TextButton } from '../components/ui/buttons';
 import { TextField } from '../components/ui/inputs';
-import { LinearProgressIndicator, PopupMenuButton, useIsMobile } from '../components/ui/misc';
+import { CircularProgressIndicator, LinearProgressIndicator, PopupMenuButton, useIsMobile } from '../components/ui/misc';
 import { pushPage } from '../components/ui/navigator';
 import { Dialog, showDialog, showSnackBar } from '../components/ui/overlay';
 import { SchoolYearFilter, Task, currentSchoolYear, sameSchoolYearFilter } from '../models/models';
@@ -43,6 +44,7 @@ export default function TaskManagerScreen({ onSelectTask, category = 'common' }:
   const [scope, setScope] = useState('mine');
   // Current school year by default; earlier years are archived.
   const [filter, setFilter] = useState<SchoolYearFilter>(currentSchoolYear);
+  const [scanning, setScanning] = useState(false);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -149,6 +151,29 @@ export default function TaskManagerScreen({ onSelectTask, category = 'common' }:
           </>
         )}
         <SchoolYearPicker value={filter} onChanged={setFilter} />
+        {/* Principal/admin: turn the school calendar into tasks. */}
+        {category === 'common' && app.can('manage_school_years') && (
+          <OutlinedButton
+            onPress={
+              scanning
+                ? null
+                : async () => {
+                    const posted = await scanSchoolCalendar((busy) => mounted.current && setScanning(busy));
+                    if (posted > 0 && mounted.current) load();
+                  }
+            }
+            icon={scanning ? <CircularProgressIndicator size={14} strokeWidth={2} /> : <CalendarScanIcon />}
+            foregroundColor={AppTheme.accentBlue}
+            backgroundColor="#FFFFFF"
+            side={{ color: AppTheme.accentBlue }}
+            padding={[14, 10]}
+            radius={8}
+            textStyle={tsPlain({ size: 13, weight: 600 })}
+            tooltip="Read a school calendar (PDF, Word or photo) and post the tasks it lists"
+          >
+            {scanning ? 'Reading calendar…' : 'Scan school calendar'}
+          </OutlinedButton>
+        )}
       </View>
       <View style={{ height: 16 }} />
 

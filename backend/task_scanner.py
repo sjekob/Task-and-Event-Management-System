@@ -11,7 +11,7 @@ form before saving.
 import io
 import re
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 from xml.etree import ElementTree
 
@@ -535,3 +535,114 @@ def scan(data: bytes, filename: str) -> dict:
     result["method"] = read["method"]
     result["characters_read"] = len(read["text"].strip())
     return result
+
+
+# ── School calendar → tasks ───────────────────────────────────────────────────
+
+_HOLIDAY = re.compile(
+    r"holiday|christmas|new year|all saints|all souls|rizal day|bonifacio day|independence day|"
+    r"labou?r day|eid|heroes day|araw ng kagitingan|holy (?:week|thursday|friday)|no classes|"
+    r"feast of|immaculate concepcion|ninoy aquino|edsa|all saints|undas", re.I)
+_TASKLIKE = re.compile(
+    r"submi(?:t|ssion)|deadline|test|exam|assessment|quiz|grade|report card|meeting|conference|"
+    r"inset|training|seminar|workshop|activit|program|celebration|contest|competition|enrol|"
+    r"registration|brigada|distribution|checking|encoding|evaluation|review|preparation|"
+    r"orientation|drill|festival|fair|recognition|graduation|moving up|parade|clean-?up", re.I)
+_MARKER = re.compile(r"\bbreak\b|vacation|start of|end of|opening of|first day|last day|\bblock\b", re.I)
+_EXAM = re.compile(r"examination|\bexams?\b", re.I)
+_END_OF_TERM = re.compile(r"end of (?:the )?(?:\w+\s+)?(?:term|quarter|semester|grading period|school year)", re.I)
+_REPORT_CARDS = re.compile(r"distribution of report cards|report cards?", re.I)
+_PERIOD = re.compile(r"\b((?:term|quarter|semester|grading period)\s*\d+|(?:first|second|third|fourth|1st|2nd|3rd|4th)\s+"
+                     r"(?:term|quarter|semester|grading period))\b", re.I)
+
+
+def _when(start: str, end: str) -> str:
+    s, e = date.fromisoformat(start), date.fromisoformat(end)
+    one = lambda d: f"{d.strftime('%B')} {d.day}, {d.year}"
+    return one(s) if s == e else f"{one(s)} to {one(e)}"
+
+
+def _instructions(title: str, start: str, end: str) -> str:
+    when, low = _when(start, end), title.lower()
+    by = _when(end, end)
+    m = re.match(r"(?:submission|submitting) of (?:the )?(.+)", title, re.I)
+    if m:
+        return f"Submit the {m.group(1)} on or before {by}."
+    m = re.match(r"preparation of (?:the )?(.+)", title, re.I)
+    if m:
+        return f"Prepare the {m.group(1)}, finishing by {by}."
+    if re.search(r"submi(?:t|ssion)|deadline|grade", low):
+        return f"Complete and submit the {title} on or before {by}."
+    if _EXAM.search(low) or re.search(r"\btest\b|assessment|quiz", low):
+        return (f"Prepare the materials for the {title}, administer it on {when}, "
+                "then check the papers and submit the results.")
+    if re.search(r"report card", low):
+        return f"Prepare the report cards and take part in the {title} on {when}."
+    if re.search(r"meeting|conference|orientation", low):
+        return f"Prepare for and attend the {title} on {when}."
+    if re.search(r"inset|training|seminar|workshop", low):
+        return f"Attend the {title} on {when} and submit your attendance and output."
+    return f"Carry out the {title} on {when}, as set in the school calendar."
+
+
+def plan_calendar_tasks(items: list) -> list:
+    """Turn a scanned school calendar's dated rows into proposed tasks.
+
+    Each row gets a `kind`: 'task' (something staff do — tests, meetings,
+    submissions), 'holiday', or 'marker' (term starts/ends, breaks); only
+    tasks are pre-selected. Two follow-up tasks a calendar implies but rarely
+    lists are added as 'suggested': submitting grades after a term
+    examination, and preparing report cards before they are distributed."""
+    plan = []
+    for it in items:
+        title = it["title"]
+        if _HOLIDAY.search(title):
+            kind = "holiday"
+        elif _TASKLIKE.search(title):
+            kind = "task"
+        elif _MARKER.search(title):
+            kind = "marker"
+        else:
+            kind = "other"
+        plan.append({**it, "kind": kind, "selected": kind == "task",
+                     "instructions": _instructions(title, it["start_date"], it["end_date"])})
+
+    have = " ".join(p["title"].lower() for p in plan)
+    suggestions = []
+    if "submission of grades" not in have and "grade submission" not in have:
+        for p in plan:
+            if not _EXAM.search(p["title"]):
+                continue
+            exam_end = date.fromisoformat(p["end_date"])
+            # Grades are due before report cards are prepared (a week before
+            # they are distributed); failing that, by the end of the term;
+            # failing that, a week after the exam.
+            cards = sorted(date.fromisoformat(q["start_date"]) - timedelta(days=8) for q in plan
+                           if _REPORT_CARDS.search(q["title"])
+                           and date.fromisoformat(q["start_date"]) - timedelta(days=8) > exam_end)
+            ends = sorted(date.fromisoformat(q["end_date"]) for q in plan
+                          if _END_OF_TERM.search(q["title"]) and date.fromisoformat(q["end_date"]) > exam_end)
+            due = cards[0] if cards else ends[0] if ends else exam_end + timedelta(days=7)
+            period = _PERIOD.search(p["title"])
+            title = f"Submission of {period.group(1).title()} Grades" if period else "Submission of Grades"
+            start = min(exam_end + timedelta(days=1), due)
+            suggestions.append({"title": title, "start_date": start.isoformat(), "end_date": due.isoformat()})
+    if "preparation of report cards" not in have:
+        for p in plan:
+            if not re.search(r"distribution of report cards", p["title"], re.I):
+                continue
+            day = date.fromisoformat(p["start_date"])
+            due = day - timedelta(days=1)
+            suggestions.append({"title": "Preparation of Report Cards",
+                                "start_date": (due - timedelta(days=6)).isoformat(), "end_date": due.isoformat()})
+    for sg in suggestions:
+        plan.append({**sg, "kind": "suggested", "selected": True,
+                     "instructions": _instructions(sg["title"], sg["start_date"], sg["end_date"])})
+    # Dates already behind us are listed for completeness but not pre-selected.
+    today = date.today().isoformat()
+    for p in plan:
+        p["past"] = p["end_date"] < today
+        if p["past"]:
+            p["selected"] = False
+    plan.sort(key=lambda p: (p["end_date"], p["start_date"]))
+    return plan

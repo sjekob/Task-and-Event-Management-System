@@ -31,6 +31,20 @@ import {
 
 /// A file chosen with the document picker, ready to upload. On web [file] is
 /// the browser File; on native the upload reads from [uri].
+/// A task proposed from a scanned school calendar. `kind` is 'task',
+/// 'suggested' (implied by the calendar, e.g. submitting grades after an
+/// exam), 'holiday', 'marker' (term starts/ends, breaks) or 'other'.
+export interface CalendarTaskProposal {
+  title: string;
+  startDate: string;
+  endDate: string;
+  kind: string;
+  selected: boolean;
+  instructions: string;
+  /// The date has already passed (listed, but not pre-selected).
+  past: boolean;
+}
+
 /// One dated row of a scanned schedule ("Dec 3-4, 2026 — Term 2 Examination").
 export interface ScannedItem {
   title: string;
@@ -560,6 +574,23 @@ export class ApiService {
           }))
         : [],
     };
+  }
+
+  /// Principal/admin: read a school calendar and propose the tasks it implies.
+  static async scanSchoolCalendar(file: PickedFile): Promise<CalendarTaskProposal[]> {
+    const res = await this.multipart('/api/tasks/scan-calendar', file);
+    const body = await res.text();
+    if (res.status !== 200) throw new Error(this.errorDetail(body, 'The calendar could not be read'));
+    const json = JSON.parse(body) as Json;
+    return ((json.tasks as Json[] | null) ?? []).map((t) => ({
+      title: String(t.title ?? ''),
+      startDate: String(t.start_date),
+      endDate: String(t.end_date),
+      kind: String(t.kind ?? 'other'),
+      selected: t.selected === true,
+      instructions: String(t.instructions ?? ''),
+      past: t.past === true,
+    }));
   }
 
   static async getTemplates(): Promise<TaskTemplate[]> {
