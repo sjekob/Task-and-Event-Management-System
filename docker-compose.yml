@@ -1,0 +1,126 @@
+version: "3.9"
+
+# TaskNet — Microservices
+#
+# Run from project root:
+#   docker compose up --build
+#
+# Services:
+#   gateway    :8000  — API Gateway (routes to all services)
+#   auth       :8001  — Auth, users, grade-levels
+#   personnel  :8002  — Personnel management
+#   tasks      :8003  — Tasks, templates, reports, comments
+#   events     :8004  — Event calendar
+#   appraisal  :8005  — Appraisal & dashboard
+
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  volumes:
+    - ./backend:/app
+    - tasknet_uploads:/app/uploads
+  environment:
+    SECRET_KEY: ${SECRET_KEY:-tasknet-dev-secret-change-in-prod}
+    # MUST be shared by every service — each one validates JWTs with this key.
+    # If unset, each service generates its own random key and rejects tokens
+    # issued by the auth service (401 on every non-auth endpoint).
+    # Signs login tokens. No default on purpose: a known key would let anyone
+    # forge a token for any account/role. Set it in .env (see .env.example).
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env - see .env.example}
+    # Data layer. Defaults to the shared sqlite file during the SQLAlchemy
+    # migration. Final cutover = set DATABASE_URL to the Postgres URL below:
+    #   postgresql+psycopg2://tasknet:tasknet@postgres:5432/tasknet
+    DATABASE_URL: ${DATABASE_URL:-sqlite:///./tasknet.db}
+  restart: unless-stopped
+
+services:
+
+  # ── PostgreSQL (migration target) ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: tasknet_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tasknet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tasknet}
+      POSTGRES_DB: ${POSTGRES_DB:-tasknet}
+    ports:
+      - "5432:5432"
+    volumes:
+      - tasknet_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tasknet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── API Gateway ──────────────────────────────────────────────────────────────
+  gateway:
+    <<: *backend-common
+    container_name: tasknet_gateway
+    command: uvicorn gateway.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth
+      - personnel
+      - tasks
+      - events
+      - appraisal
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-tasknet-dev-secret-change-in-prod}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./tasknet.db}
+      AUTH_SERVICE_URL:      http://auth:8001
+      PERSONNEL_SERVICE_URL: http://personnel:8002
+      TASKS_SERVICE_URL:     http://tasks:8003
+      EVENTS_SERVICE_URL:    http://events:8004
+      APPRAISAL_SERVICE_URL: http://appraisal:8005
+
+  # Internal services below publish NO host ports — they are private and only
+  # reachable by the gateway over the internal Docker network (service DNS).
+  # The gateway (8000) is the single public entry point.
+
+  # ── Auth Service ─────────────────────────────────────────────────────────────
+  auth:
+    <<: *backend-common
+    container_name: tasknet_auth
+    command: uvicorn services.auth.main:app --host 0.0.0.0 --port 8001
+    expose:
+      - "8001"
+
+  # ── Personnel Service ────────────────────────────────────────────────────────
+  personnel:
+    <<: *backend-common
+    container_name: tasknet_personnel
+    command: uvicorn services.personnel.main:app --host 0.0.0.0 --port 8002
+    expose:
+      - "8002"
+
+  # ── Tasks Service ────────────────────────────────────────────────────────────
+  tasks:
+    <<: *backend-common
+    container_name: tasknet_tasks
+    command: uvicorn services.tasks.main:app --host 0.0.0.0 --port 8003
+    expose:
+      - "8003"
+
+  # ── Events Service ───────────────────────────────────────────────────────────
+  events:
+    <<: *backend-common
+    container_name: tasknet_events
+    command: uvicorn services.events.main:app --host 0.0.0.0 --port 8004
+    expose:
+      - "8004"
+
+  # ── Appraisal Service ────────────────────────────────────────────────────────
+  appraisal:
+    <<: *backend-common
+    container_name: tasknet_appraisal
+    command: uvicorn services.appraisal.main:app --host 0.0.0.0 --port 8005
+    expose:
+      - "8005"
+
+volumes:
+  tasknet_uploads:
+  tasknet_pgdata:

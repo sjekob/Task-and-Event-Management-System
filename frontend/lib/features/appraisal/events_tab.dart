@@ -1,10 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/theme.dart';
-import '../../core/api_service.dart';
-
 import 'models/appraisal_models.dart';
 
 // ── Rubric meta ───────────────────────────────────────────────────────────────
@@ -34,9 +30,7 @@ class EventsTab extends StatefulWidget {
   final String username;
   final String role;
   final Map<String, List<AttendeeRating>> newRatings;
-  final List<SchoolEvent> backendEvents;
   final void Function(String id, AttendeeRating rating) onSubmitRating;
-  final Future<void> Function()? onRefresh;
 
   const EventsTab({
     super.key,
@@ -44,9 +38,7 @@ class EventsTab extends StatefulWidget {
     required this.username,
     required this.role,
     required this.newRatings,
-    this.backendEvents = const [],
     required this.onSubmitRating,
-    this.onRefresh,
   });
 
   @override
@@ -56,7 +48,6 @@ class EventsTab extends StatefulWidget {
 class _EventsTabState extends State<EventsTab> {
   String _filterMode = 'all';
   String? _selectedEvent;
-
   @override
   void initState() {
     super.initState();
@@ -74,22 +65,19 @@ class _EventsTabState extends State<EventsTab> {
   List<SchoolEvent> _eventsWithNewRatings(List<SchoolEvent> base) {
     return base.map((e) {
       final extra = widget.newRatings[e.id] ?? [];
-      if (extra.isEmpty) return e;
-      final newRatings = [...e.ratings, ...extra];
-      final newStatus = EventStatus.rated;
+      if (extra.isEmpty) { return e; }
       return SchoolEvent(
         id: e.id, name: e.name, date: e.date,
         organizer: e.organizer, department: e.department,
         attendees: e.attendees,
-        ratings: newRatings,
-        status: newStatus,
+        ratings: [...e.ratings, ...extra],
+        status: extra.isNotEmpty ? EventStatus.rated : e.status,
       );
     }).toList();
   }
 
   List<SchoolEvent> get _filtered {
-    final baseEvents = widget.backendEvents.isNotEmpty ? widget.backendEvents : sampleEvents;
-    final all = _eventsWithNewRatings(baseEvents);
+    final all = _eventsWithNewRatings(sampleEvents);
     if (_filterMode == 'event' && _selectedEvent != null) {
       return all.where((e) => e.name == _selectedEvent).toList();
     }
@@ -97,128 +85,15 @@ class _EventsTabState extends State<EventsTab> {
   }
 
   int get _pendingCount  => _filtered.where((e) => e.status == EventStatus.awaitingRatings).length;
-  int get _ratedCount    => _filtered.where((e) => e.status == EventStatus.rated || e.status == EventStatus.flagged).length;
-
-
-  String get _avgEvidencyRate {
+  int get _ratedCount    => _filtered.where((e) => e.status == EventStatus.rated).length;
+  int get _lowCount      => _filtered.where((e) => e.avgRating != null && e.avgRating! < 3.0).length;
+  String get _avgRating {
     final s = _filtered.where((e) => e.avgRating != null).map((e) => e.avgRating!);
     if (s.isEmpty) return '—';
-    final avgScore = s.reduce((a, b) => a + b) / s.length;
-    final rate = ((avgScore - 1) / 4.0).clamp(0.0, 1.0) * 100.0;
-    return '${rate.toStringAsFixed(0)}%';
+    return '${(s.reduce((a, b) => a + b) / s.length).toStringAsFixed(1)}/5';
   }
 
-  Color get _avgEvidencyColor {
-    final s = _filtered.where((e) => e.avgRating != null).map((e) => e.avgRating!);
-    if (s.isEmpty) return AppColors.textPrimary;
-    final avgScore = s.reduce((a, b) => a + b) / s.length;
-    final rate = ((avgScore - 1) / 4.0).clamp(0.0, 1.0) * 100.0;
-    if (rate >= 80.0) return const Color(0xFF16A34A);
-    if (rate >= 50.0) return const Color(0xFFEA580C);
-    return const Color(0xFFEF4444);
-  }
-
-  List<String> get _eventNames {
-    final baseEvents = widget.backendEvents.isNotEmpty ? widget.backendEvents : sampleEvents;
-    return baseEvents.map((e) => e.name).toSet().toList()..sort();
-  }
-
-  Widget _buildEvaluationInfoCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC), // Neutral clean background
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.info_outline_rounded, color: Color(0xFF64748B), size: 18),
-              const SizedBox(width: 8),
-              const Text(
-                'Evidency Rate Legend',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF334155),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final bool isMobile = constraints.maxWidth < 600;
-              if (isMobile) {
-                return Column(
-                  children: [
-                    _buildColorInfoBadge(const Color(0xFF16A34A), 'Green', 'High (≥ 80%)'),
-                    const SizedBox(height: 8),
-                    _buildColorInfoBadge(const Color(0xFFEA580C), 'Yellow', 'Mid (50% - 79%)'),
-                    const SizedBox(height: 8),
-                    _buildColorInfoBadge(const Color(0xFFEF4444), 'Red', 'Low (< 50%)'),
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: _buildColorInfoBadge(const Color(0xFF16A34A), 'Green', 'High (≥ 80%)')),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildColorInfoBadge(const Color(0xFFEA580C), 'Yellow', 'Mid (50% - 79%)')),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildColorInfoBadge(const Color(0xFFEF4444), 'Red', 'Low (< 50%)')),
-                ],
-              );
-            }
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildColorInfoBadge(Color color, String label, String description) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 0.8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 3),
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563), height: 1.3, fontFamily: 'Inter'),
-                children: [
-                  TextSpan(
-                    text: '$label: ',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: color),
-                  ),
-                  TextSpan(text: description),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  List<String> get _eventNames => sampleEvents.map((e) => e.name).toSet().toList()..sort();
 
   void _openViewResults(BuildContext ctx, SchoolEvent event) {
     showDialog<void>(
@@ -230,35 +105,19 @@ class _EventsTabState extends State<EventsTab> {
   void _openRateEvent(BuildContext ctx, SchoolEvent event) {
     showDialog<AttendeeRating?>(
       context: ctx,
-      builder: (_) => _ObservationToolDialog(event: event, username: widget.username, role: widget.role),
+      builder: (_) => _EventRateDialog(event: event, username: widget.username, role: widget.role),
     ).then((rating) {
       if (rating != null) {
         widget.onSubmitRating(event.id, rating);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(ctx).showSnackBar(
           const SnackBar(
-            content: Text('Evaluation submitted successfully'),
+            content: Text('Rating submitted successfully'),
             backgroundColor: Color(0xFF10B981),
           ),
         );
       }
     });
-  }
-
-  void _openEvaluationOptions(BuildContext ctx, SchoolEvent event) {
-    showDialog<void>(
-      context: ctx,
-      builder: (_) => _EventEvaluationMethodDialog(
-        event: event,
-        username: widget.username,
-        role: widget.role,
-        onRefresh: widget.onRefresh,
-        onSubmitRating: (id, rating) {
-          widget.onSubmitRating(id, rating);
-          setState(() {});
-        },
-      ),
-    );
   }
 
   @override
@@ -279,75 +138,63 @@ class _EventsTabState extends State<EventsTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Stat cards ──────────────────────────────────────────────
-                 // ── Stat cards ──────────────────────────────────────────────
-                Builder(
-                  builder: (context) {
-                    final bool isMobile = MediaQuery.of(context).size.width < 640;
-                    if (isMobile) {
-                      return Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(child: _StatCard(
-                                label: 'Total Events',
-                                value: '${_filtered.length}',
-                                valueColor: AppColors.textPrimary,
-                                icon: Icons.event_note,
-                                iconColor: AppColors.textSecondary,
-                                subtitle: '${_filtered.length} total · $_pendingCount awaiting ratings',
-                              )),
-                              const SizedBox(width: 12),
-                              Expanded(child: _StatCard(
-                                label: 'Rated Events', 
-                                value: '$_ratedCount',
-                                valueColor: AppColors.success, 
-                                icon: Icons.assignment_turned_in_outlined, 
-                                iconColor: AppColors.success,
-                              )),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          _StatCard(
-                            label: 'Avg Evidency Rate', 
-                            value: _avgEvidencyRate,
-                            valueColor: _avgEvidencyColor, 
-                            icon: Icons.percent_rounded, 
-                            iconColor: _avgEvidencyColor,
-                          ),
-                        ],
-                      );
-                    }
-                    return Row(children: [
-                      Expanded(child: _StatCard(
-                        label: 'Total Events',
-                        value: '${_filtered.length}',
-                        valueColor: AppColors.textPrimary,
-                        icon: Icons.event_note,
-                        iconColor: AppColors.textSecondary,
-                        subtitle: '${_filtered.length} total · $_pendingCount awaiting ratings',
-                      )),
-                      const SizedBox(width: 14),
-                      Expanded(child: _StatCard(
-                        label: 'Rated Events', 
-                        value: '$_ratedCount',
-                        valueColor: AppColors.success, 
-                        icon: Icons.assignment_turned_in_outlined, 
-                        iconColor: AppColors.success,
-                      )),
-                      const SizedBox(width: 14),
-                      Expanded(child: _StatCard(
-                        label: 'Avg Evidency Rate', 
-                        value: _avgEvidencyRate,
-                        valueColor: _avgEvidencyColor, 
-                        icon: Icons.percent_rounded, 
-                        iconColor: _avgEvidencyColor,
-                      )),
-                    ]);
-                  }
-                ),
+                Row(children: [
+                  Expanded(child: _StatCard(label: 'Pending Review', value: '$_pendingCount',
+                      valueColor: AppColors.warning, icon: Icons.assignment_outlined, iconColor: AppColors.warning)),
+                  const SizedBox(width: 14),
+                  Expanded(child: _StatCard(label: 'Evaluated', value: '$_ratedCount',
+                      valueColor: AppColors.success, icon: Icons.star_border_outlined, iconColor: AppColors.success)),
+                  const SizedBox(width: 14),
+                  Expanded(child: _StatCard(label: 'Low Rating', value: '$_lowCount',
+                      valueColor: AppColors.danger, icon: Icons.warning_amber_outlined, iconColor: AppColors.danger)),
+                  const SizedBox(width: 14),
+                  Expanded(child: _StatCard(label: 'Avg Rating', value: _avgRating,
+                      valueColor: AppColors.amber, icon: Icons.star_border_outlined, iconColor: AppColors.amber)),
+                ]),
 
                 const SizedBox(height: 18),
-                _buildEvaluationInfoCard(),
+
+                // ── Rubric card ──────────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBg,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.cardBorder, width: 0.8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Event Evaluation Rubric (5-Point Scale)', style: AppTextStyles.sectionTitle),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 20,
+                        runSpacing: 12,
+                        children: _kCriteria.map((c) => _RubricItem(criterion: c)).toList(),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: AppColors.infoBannerBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppColors.infoBannerBdr, width: 0.8),
+                        ),
+                        child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Icon(Icons.info_outline, color: AppColors.infoBannerIcon, size: 15),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Events are rated by attendees (faculty and students) through a standardized rubric form. Ratings below 3.0/5 are automatically flagged for review.',
+                              style: TextStyle(color: AppColors.infoBannerFg, fontSize: 12, height: 1.5),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ],
+                  ),
+                ),
+
                 const SizedBox(height: 18),
 
                 // ── Table card ───────────────────────────────────────────────
@@ -363,66 +210,29 @@ class _EventsTabState extends State<EventsTab> {
                       // Header row
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
-                        child: Builder(
-                          builder: (context) {
-                            final isMobile = MediaQuery.of(context).size.width < 640;
-                            if (isMobile) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Event Evaluations', style: AppTextStyles.sectionTitle),
-                                  const SizedBox(height: 12),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    crossAxisAlignment: WrapCrossAlignment.center,
-                                    children: [
-                                      _StyledDropdown(
-                                        value: _filterMode,
-                                        leadingIcon: Icons.tune_rounded,
-                                        items: const [
-                                          _DropItem(value: 'all',   label: 'Show All'),
-                                          _DropItem(value: 'event', label: 'By Event'),
-                                        ],
-                                        onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
-                                      ),
-                                      if (_filterMode == 'event')
-                                        _StyledDropdown(
-                                          value: _selectedEvent,
-                                          hint: 'All Events',
-                                          items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
-                                          onChanged: (v) => setState(() => _selectedEvent = v),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              );
-                            }
-                            return Row(
-                              children: [
-                                const Text('Event Evaluations', style: AppTextStyles.sectionTitle),
-                                const Spacer(),
-                                _StyledDropdown(
-                                  value: _filterMode,
-                                  leadingIcon: Icons.tune_rounded,
-                                  items: const [
-                                    _DropItem(value: 'all',   label: 'Show All'),
-                                    _DropItem(value: 'event', label: 'By Event'),
-                                  ],
-                                  onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
-                                ),
-                                if (_filterMode == 'event') ...[
-                                  const SizedBox(width: 8),
-                                  _StyledDropdown(
-                                    value: _selectedEvent,
-                                    hint: 'All Events',
-                                    items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
-                                    onChanged: (v) => setState(() => _selectedEvent = v),
-                                  ),
-                                ],
+                        child: Row(
+                          children: [
+                            const Text('Event Evaluations', style: AppTextStyles.sectionTitle),
+                            const Spacer(),
+                            _StyledDropdown(
+                              value: _filterMode,
+                              leadingIcon: Icons.tune_rounded,
+                              items: const [
+                                _DropItem(value: 'all',   label: 'Show All'),
+                                _DropItem(value: 'event', label: 'By Event'),
                               ],
-                            );
-                          }
+                              onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
+                            ),
+                            if (_filterMode == 'event') ...[
+                              const SizedBox(width: 8),
+                              _StyledDropdown(
+                                value: _selectedEvent,
+                                hint: 'All Events',
+                                items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
+                                onChanged: (v) => setState(() => _selectedEvent = v),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -431,7 +241,6 @@ class _EventsTabState extends State<EventsTab> {
                         role: widget.role,
                         onViewResults: (e) => _openViewResults(context, e),
                         onRateEvent:   (e) => _openRateEvent(context, e),
-                        onShowQr:      (e) => _openEvaluationOptions(context, e),
                       ),
                       const SizedBox(height: 8),
                     ],
@@ -456,73 +265,19 @@ class _EventsTabState extends State<EventsTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Stat cards
-              Builder(
-                builder: (context) {
-                  final bool isMobile = MediaQuery.of(context).size.width < 640;
-                  if (isMobile) {
-                    return Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(child: _CoordinatorStatCard(
-                              label: 'Total Events',
-                              value: '${_filtered.length}',
-                              valueColor: const Color(0xFF475569),
-                              icon: Icons.event_note,
-                              iconColor: const Color(0xFF94A3B8),
-                              subtitle: '${_filtered.length} total · $_pendingCount awaiting ratings',
-                            )),
-                            const SizedBox(width: 12),
-                            Expanded(child: _CoordinatorStatCard(
-                              label: 'Rated Events', 
-                              value: '$_ratedCount', 
-                              valueColor: const Color(0xFF10B981), 
-                              icon: Icons.assignment_turned_in_outlined, 
-                              iconColor: const Color(0xFF10B981),
-                            )),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        _CoordinatorStatCard(
-                          label: 'Avg Evidency Rate', 
-                          value: _avgEvidencyRate, 
-                          valueColor: _avgEvidencyColor, 
-                          icon: Icons.percent_rounded, 
-                          iconColor: _avgEvidencyColor,
-                        ),
-                      ],
-                    );
-                  }
-                  return Row(children: [
-                    Expanded(child: _CoordinatorStatCard(
-                      label: 'Total Events',
-                      value: '${_filtered.length}',
-                      valueColor: const Color(0xFF475569),
-                      icon: Icons.event_note,
-                      iconColor: const Color(0xFF94A3B8),
-                      subtitle: '${_filtered.length} total · $_pendingCount awaiting ratings',
-                    )),
-                    const SizedBox(width: 14),
-                    Expanded(child: _CoordinatorStatCard(
-                      label: 'Rated Events', 
-                      value: '$_ratedCount', 
-                      valueColor: const Color(0xFF10B981), 
-                      icon: Icons.assignment_turned_in_outlined, 
-                      iconColor: const Color(0xFF10B981),
-                    )),
-                    const SizedBox(width: 14),
-                    Expanded(child: _CoordinatorStatCard(
-                      label: 'Avg Evidency Rate', 
-                      value: _avgEvidencyRate, 
-                      valueColor: _avgEvidencyColor, 
-                      icon: Icons.percent_rounded, 
-                      iconColor: _avgEvidencyColor,
-                    )),
-                  ]);
-                }
-              ),
+              Row(children: [
+                Expanded(child: _CoordinatorStatCard(label: 'Pending Review', value: '1', valueColor: const Color(0xFFF59E0B), icon: Icons.calendar_today_outlined, iconColor: const Color(0xFFF59E0B))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'Evaluated', value: '2', valueColor: const Color(0xFF10B981), icon: Icons.star_border_outlined, iconColor: const Color(0xFF10B981))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'Flagged Alerts', value: '1', valueColor: const Color(0xFFEF4444), icon: Icons.error_outline, iconColor: const Color(0xFFEF4444))),
+                const SizedBox(width: 14),
+                Expanded(child: _CoordinatorStatCard(label: 'Avg Rating', value: '3.5/5', valueColor: const Color(0xFF475569), icon: Icons.star_border_outlined, iconColor: const Color(0xFF94A3B8))),
+              ]),
               const SizedBox(height: 18),
-              _buildEvaluationInfoCard(),
+              
+              // Rubric breakdown card
+              _buildEventRubricCard(),
               const SizedBox(height: 18),
               
               // School-wide events table
@@ -534,7 +289,137 @@ class _EventsTabState extends State<EventsTab> {
     );
   }
 
+  Widget _buildEventRubricCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Event Evaluation Rubric (5-Point Scale)',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.calendar_today_outlined,
+                iconColor: const Color(0xFF10B981),
+                title: 'Organization',
+                weight: '20%',
+              )),
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.group_outlined,
+                iconColor: const Color(0xFFF59E0B),
+                title: 'Engagement',
+                weight: '25%',
+              )),
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.check_circle_outline,
+                iconColor: const Color(0xFF8B5CF6),
+                title: 'Content Quality',
+                weight: '30%',
+              )),
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.schedule_outlined,
+                iconColor: const Color(0xFFEC4899),
+                title: 'Time Management',
+                weight: '15%',
+              )),
+              Expanded(child: _buildRubricMetricItem(
+                icon: Icons.sentiment_satisfied_alt_outlined,
+                iconColor: const Color(0xFF3B82F6),
+                title: 'Overall Experience',
+                weight: '10%',
+              )),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Blue banner below
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(8),
+              border: const Border(
+                left: BorderSide(color: Color(0xFF3B82F6), width: 4),
+                top: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
+                right: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
+                bottom: BorderSide(color: Color(0xFFDBEAFE), width: 0.8),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.info_outline, color: Color(0xFF3B82F6), size: 18),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Events are rated by attendees (faculty and students) through a standardized rubric form. Ratings below 3.0/5 are automatically flagged for review.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1E40AF),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
+  Widget _buildRubricMetricItem({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String weight,
+  }) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: iconColor, size: 24),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          weight,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: iconColor,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildSchoolWideEventsTable(BuildContext context) {
     return Container(
@@ -545,7 +430,7 @@ class _EventsTabState extends State<EventsTab> {
         border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -554,142 +439,37 @@ class _EventsTabState extends State<EventsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 16, 0),
-            child: Builder(
-              builder: (context) {
-                final isMobile = MediaQuery.of(context).size.width < 640;
-                if (isMobile) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'School-Wide Events',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          _StyledDropdown(
-                            value: _filterMode,
-                            leadingIcon: Icons.tune_rounded,
-                            items: const [
-                              _DropItem(value: 'all',   label: 'Show All'),
-                              _DropItem(value: 'event', label: 'By Event'),
-                            ],
-                            onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
-                          ),
-                          if (_filterMode == 'event')
-                            _StyledDropdown(
-                              value: _selectedEvent,
-                              hint: 'All Events',
-                              items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
-                              onChanged: (v) => setState(() => _selectedEvent = v),
-                            ),
-                        ],
-                      ),
-                    ],
-                  );
-                }
-                return Row(
-                  children: [
-                    const Text(
-                      'School-Wide Events',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
-                    ),
-                    const Spacer(),
-                    _StyledDropdown(
-                      value: _filterMode,
-                      leadingIcon: Icons.tune_rounded,
-                      items: const [
-                        _DropItem(value: 'all',   label: 'Show All'),
-                        _DropItem(value: 'event', label: 'By Event'),
-                      ],
-                      onChanged: (v) => setState(() { _filterMode = v!; _selectedEvent = null; }),
-                    ),
-                    if (_filterMode == 'event') ...[
-                      const SizedBox(width: 8),
-                      _StyledDropdown(
-                        value: _selectedEvent,
-                        hint: 'All Events',
-                        items: _eventNames.map((n) => _DropItem(value: n, label: n)).toList(),
-                        onChanged: (v) => setState(() => _selectedEvent = v),
-                      ),
-                    ],
-                  ],
-                );
-              }
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Text(
+              'School-Wide Events',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
             ),
           ),
-          const SizedBox(height: 14),
           const Divider(height: 1),
-          // Table Columns Header + Rows inside horizontal scroll view
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final double tableWidth = constraints.maxWidth > 1000 ? constraints.maxWidth : 1000;
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: tableWidth,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Table Columns Header
-                      Container(
-                        color: const Color(0xFFF8FAFC),
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                        child: const Row(
-                          children: [
-                            Expanded(flex: 3, child: Text('EVENT NAME', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                            Expanded(flex: 2, child: Text('DATE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                            Expanded(flex: 2, child: Text('DEPARTMENT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                            Expanded(flex: 2, child: Text('ORGANIZER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                            Expanded(flex: 2, child: Text('RESPONSES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                            Expanded(flex: 2, child: Text('EVIDENCY RATE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                            Expanded(flex: 2, child: Text('STATUS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                            Expanded(flex: 2, child: Text('EVALUATION', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                            Expanded(flex: 2, child: Text('ACTION', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
-                          ],
-                        ),
-                      ),
-                      // Rows
-                      ..._filtered.map((e) {
-                        final avg = e.avgRating;
-                        final rate = avg != null ? ((avg - 1) / 4.0).clamp(0.0, 1.0) * 100.0 : null;
-                        final String rateStr = rate != null ? '${rate.toStringAsFixed(0)}%' : '—';
-                        final String responsesStr = '${e.responses} / ${e.attendees}';
-                        
-                        String statusStr = 'Awaiting Ratings';
-                        Color statusColor = const Color(0xFFF59E0B);
-                        Color statusBg = const Color(0xFFFEF3C7);
-                        
-                        if (e.status == EventStatus.rated || e.status == EventStatus.flagged) {
-                          statusStr = 'Completed';
-                          statusColor = const Color(0xFF16A34A);
-                          statusBg = const Color(0xFFDCFCE7);
-                        }
-                        
-                        final bool hasData = e.responses > 0;
-                        return _buildEventTableRow(
-                          context,
-                          e,
-                          responsesStr,
-                          rateStr,
-                          statusStr,
-                          statusColor,
-                          statusBg,
-                          hasData,
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              );
-            }
+          // Table Columns Header
+          Container(
+            color: const Color(0xFFF8FAFC),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: const Row(
+              children: [
+                Expanded(flex: 3, child: Text('EVENT NAME', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('DATE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('DEPARTMENT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('ORGANIZER', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('RESPONSES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('AVG RATING', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('STATUS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+                Expanded(flex: 2, child: Text('ACTION', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+              ],
+            ),
           ),
+          const Divider(height: 1),
+          // Rows
+          _buildEventTableRow(context, 'Science Fair 2025', '4/20/2025', 'Sciences', 'Dr. Santos', '210 / 250', '★ 4.5/5', 'Completed', const Color(0xFF16A34A), const Color(0xFFDCFCE7), true),
+          _buildEventTableRow(context, 'Faculty Development Workshop', '4/15/2025', 'Business', 'Dr. Cruz', '38 / 45', '★ 3.8/5', 'Completed', const Color(0xFF16A34A), const Color(0xFFDCFCE7), true),
+          _buildEventTableRow(context, 'Research Symposium', '4/5/2025', 'Humanities', 'Dr. Reyes', '12 / 80', '★ 2.3/5', 'Flagged', const Color(0xFFEF4444), const Color(0xFFFEE2E2), true),
+          _buildEventTableRow(context, 'Community Outreach Program', '4/25/2025', 'Arts', 'Dr. Lopez', '0 / 150', '—', 'Pending', const Color(0xFFF59E0B), const Color(0xFFFEF3C7), false),
         ],
       ),
     );
@@ -697,7 +477,10 @@ class _EventsTabState extends State<EventsTab> {
 
   Widget _buildEventTableRow(
     BuildContext context,
-    SchoolEvent event,
+    String name,
+    String date,
+    String dept,
+    String organizer,
     String responses,
     String rating,
     String status,
@@ -712,29 +495,26 @@ class _EventsTabState extends State<EventsTab> {
       ),
       child: Row(
         children: [
-          Expanded(flex: 3, child: Text(event.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)))),
-          Expanded(flex: 2, child: Text(event.date, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
-          Expanded(flex: 2, child: Text(event.department, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
-          Expanded(flex: 2, child: Text(event.organizer, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
+          Expanded(flex: 3, child: Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)))),
+          Expanded(flex: 2, child: Text(date, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
+          Expanded(flex: 2, child: Text(dept, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
+          Expanded(flex: 2, child: Text(organizer, style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)))),
           Expanded(flex: 2, child: Text(responses, style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E293B), fontWeight: FontWeight.w500))),
           Expanded(
             flex: 2,
-            child: Builder(
-              builder: (context) {
-                if (rating == '—') return const Text('—', style: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)));
-                final rateVal = double.tryParse(rating.replaceAll('%', '')) ?? 0.0;
-                final Color color = rateVal >= 80.0 
-                    ? const Color(0xFF16A34A) 
-                    : (rateVal >= 50.0 ? const Color(0xFFEA580C) : const Color(0xFFEF4444));
-                return Text(
+            child: Row(
+              children: [
+                if (rating != '—') const Icon(Icons.star_rounded, color: Color(0xFFF59E0B), size: 14),
+                const SizedBox(width: 2),
+                Text(
                   rating,
                   style: TextStyle(
                     fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: color,
+                    fontWeight: FontWeight.w600,
+                    color: rating.contains('2.3') ? const Color(0xFFEF4444) : const Color(0xFF1E293B),
                   ),
-                );
-              }
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -754,50 +534,11 @@ class _EventsTabState extends State<EventsTab> {
           Expanded(
             flex: 2,
             child: Center(
-              child: Builder(
-                builder: (context) {
-                  final bool isAvailable = _isEventDayOrLater(event.date);
-                  return IconButton(
-                    icon: Icon(
-                      Icons.assignment_outlined,
-                      color: isAvailable ? const Color(0xFF3B82F6) : Colors.grey.shade400,
-                    ),
-                    tooltip: isAvailable ? 'Evaluation Options' : 'Locked until ${event.date}',
-                    onPressed: () {
-                      if (!isAvailable) {
-                        _showLockedQrDialog(context, event);
-                      } else {
-                        showDialog<void>(
-                          context: context,
-                          builder: (_) => _EventEvaluationMethodDialog(
-                            event: event,
-                            username: widget.username,
-                            role: widget.role,
-                            onRefresh: widget.onRefresh,
-                            onSubmitRating: (id, rating) {
-                              widget.onSubmitRating(id, rating);
-                              setState(() {});
-                            },
-                          ),
-                        );
-                      }
-                    },
-                  );
-                }
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Center(
               child: ElevatedButton(
                 onPressed: !hasData
                     ? null
                     : () {
-                        showDialog<void>(
-                          context: context,
-                          builder: (_) => _EventViewResultsDialog(event: event),
-                        );
+                        _showEventDetailDialog(context, name, date, dept, organizer, responses, rating, status);
                       },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF3B82F6),
@@ -820,12 +561,77 @@ class _EventsTabState extends State<EventsTab> {
       ),
     );
   }
+
+  void _showEventDetailDialog(
+    BuildContext context,
+    String name,
+    String date,
+    String dept,
+    String organizer,
+    String responses,
+    String rating,
+    String status,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            Text('Organizer: $organizer · $dept · $date', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(),
+            const SizedBox(height: 8),
+            _dialogRow('Rater Responses', responses),
+            _dialogRow('Average Rating', rating),
+            _dialogRow('Event Status', status),
+            const SizedBox(height: 12),
+            const Text(
+              'Attendee Feedback Highlights:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              status == 'Flagged'
+                  ? 'Attendance check-in had high delay rates and some segments felt disorganized. Recommended action: Follow up with coordinator on scheduling.'
+                  : 'Highly rated! Attendees praised the clear delivery, excellent time management, and interactive activities.',
+              style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dialogRow(String label, String val) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B))),
+          Text(val, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+        ],
+      ),
+    );
+  }
 }
 
 class _CoordinatorStatCard extends StatelessWidget {
   final String label;
   final String value;
-  final String? subtitle;
   final Color valueColor;
   final IconData icon;
   final Color iconColor;
@@ -833,7 +639,6 @@ class _CoordinatorStatCard extends StatelessWidget {
   const _CoordinatorStatCard({
     required this.label,
     required this.value,
-    this.subtitle,
     required this.valueColor,
     required this.icon,
     required this.iconColor,
@@ -848,7 +653,7 @@ class _CoordinatorStatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -880,56 +685,13 @@ class _CoordinatorStatCard extends StatelessWidget {
                     color: Color(0xFF64748B),
                   ),
                 ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 4),
-                  Builder(
-                    builder: (context) {
-                      if (subtitle!.contains('awaiting ratings')) {
-                        final parts = subtitle!.split(' · ');
-                        if (parts.length == 2) {
-                          final totalPart = parts[0];
-                          final awaitingPart = parts[1];
-                          final hasPending = !awaitingPart.startsWith('0');
-                          return RichText(
-                            text: TextSpan(
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF94A3B8),
-                                fontFamily: 'Inter',
-                              ),
-                              children: [
-                                TextSpan(text: '$totalPart · '),
-                                TextSpan(
-                                  text: awaitingPart,
-                                  style: TextStyle(
-                                    color: hasPending ? const Color(0xFFEA580C) : const Color(0xFF94A3B8),
-                                    fontWeight: hasPending ? FontWeight.w700 : FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-                      }
-                      return Text(
-                        subtitle!,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF94A3B8),
-                        ),
-                      );
-                    }
-                  ),
-                ],
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.1),
+              color: iconColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: iconColor, size: 24),
@@ -941,758 +703,179 @@ class _CoordinatorStatCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Parsed Evaluation Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-class ParsedIndicator {
-  final String name;
-  final String result; // 'Evident', 'Mid', 'Not Evident'
-  final String remarks;
-
-  ParsedIndicator({required this.name, required this.result, required this.remarks});
-}
-
-class ParsedEvaluation {
-  final List<ParsedIndicator> indicators;
-  final String? generalComments;
-
-  ParsedEvaluation({required this.indicators, this.generalComments});
-
-  static ParsedEvaluation parse(String? commentsStr) {
-    if (commentsStr == null || commentsStr.isEmpty) {
-      return ParsedEvaluation(indicators: []);
-    }
-
-    final List<ParsedIndicator> indicators = [];
-    String? generalComments;
-
-    // Split by ' | '
-    final parts = commentsStr.split(' | ');
-    for (final part in parts) {
-      if (part.startsWith('Comments:')) {
-        generalComments = part.substring('Comments:'.length).trim();
-        continue;
-      }
-
-      // Check if it matches the indicator pattern: "X. Name: Result (Remarks)" or "X. Name: Result"
-      final colonIdx = part.indexOf(': ');
-      if (colonIdx != -1) {
-        final name = part.substring(0, colonIdx).trim();
-        final rest = part.substring(colonIdx + 2).trim();
-
-        // Extract result and remarks from rest
-        String result = 'Not Evident';
-        String remarks = '';
-
-        if (rest.startsWith('Evident')) {
-          result = 'Evident';
-          if (rest.contains('(') && rest.endsWith(')')) {
-            remarks = rest.substring(rest.indexOf('(') + 1, rest.length - 1);
-          }
-        } else if (rest.startsWith('Mid')) {
-          result = 'Mid';
-          if (rest.contains('(') && rest.endsWith(')')) {
-            remarks = rest.substring(rest.indexOf('(') + 1, rest.length - 1);
-          }
-        } else if (rest.startsWith('Not Evident')) {
-          result = 'Not Evident';
-          if (rest.contains('(') && rest.endsWith(')')) {
-            remarks = rest.substring(rest.indexOf('(') + 1, rest.length - 1);
-          }
-        } else {
-          result = rest;
-        }
-
-        indicators.add(ParsedIndicator(name: name, result: result, remarks: remarks));
-      } else {
-        if (generalComments == null) {
-          generalComments = part;
-        } else {
-          generalComments += ' | $part';
-        }
-      }
-    }
-
-    return ParsedEvaluation(indicators: indicators, generalComments: generalComments);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // View Results Dialog  (Image 2)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _EventViewResultsDialog extends StatefulWidget {
+class _EventViewResultsDialog extends StatelessWidget {
   final SchoolEvent event;
   const _EventViewResultsDialog({required this.event});
 
   @override
-  State<_EventViewResultsDialog> createState() => _EventViewResultsDialogState();
-}
-
-class _EventViewResultsDialogState extends State<_EventViewResultsDialog> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  String _selectedRoleFilter = 'All';
-
-  // State to track which indicator's remarks are expanded
-  final Set<String> _expandedIndicatorRemarks = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final avg = widget.event.avgRating ?? 0;
-    final totalRaters = widget.event.responses;
-
-    // 1. Process and aggregate indicator statistics
-    // Map of: Indicator Name -> { 'Evident': count, 'Mid': count, 'Not Evident': count, 'remarks': List<String> }
-    final Map<String, Map<String, dynamic>> indicatorAggregates = {};
-    final List<String> generalComments = [];
-
-    for (final r in widget.event.ratings) {
-      final parsed = ParsedEvaluation.parse(r.comments);
-      
-      // Collect general comments
-      if (parsed.generalComments != null && parsed.generalComments!.isNotEmpty) {
-        generalComments.add('${r.name} (${r.role.label}): ${parsed.generalComments}');
-      }
-
-      // Aggregate indicators
-      for (final ind in parsed.indicators) {
-        // Clean indicator name to group them correctly (remove leading numbers/spaces if needed, or keep exact)
-        final String key = ind.name;
-        if (!indicatorAggregates.containsKey(key)) {
-          indicatorAggregates[key] = {
-            'Evident': 0,
-            'Mid': 0,
-            'Not Evident': 0,
-            'remarks': <String>[],
-          };
-        }
-
-        final stats = indicatorAggregates[key]!;
-        if (ind.result == 'Evident') {
-          stats['Evident'] = (stats['Evident'] as int) + 1;
-        } else if (ind.result == 'Mid') {
-          stats['Mid'] = (stats['Mid'] as int) + 1;
-        } else if (ind.result == 'Not Evident') {
-          stats['Not Evident'] = (stats['Not Evident'] as int) + 1;
-        }
-
-        if (ind.remarks.isNotEmpty) {
-          (stats['remarks'] as List<String>).add('${r.name} (${r.role.label}): ${ind.remarks}');
-        }
-      }
-    }
-
-    // Filtered ratings for Tab 2
-    final filteredRatings = widget.event.ratings.where((r) {
-      if (_selectedRoleFilter == 'All') return true;
-      return r.role.label == _selectedRoleFilter;
-    }).toList();
+    final agg = event.aggregatedScores;
+    final avg = event.avgRating ?? 0;
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
       child: SizedBox(
-        width: 750,
-        height: 680,
+        width: 620,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Header Section ───────────────────────────────────────────────
+            // ── Dialog header ────────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 20, 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.event.name,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Organizer: ${widget.event.organizer} · ${widget.event.department} · ${widget.event.date}',
-                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded, size: 22, color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Tab Bar ──────────────────────────────────────────────────────
-            TabBar(
-              controller: _tabController,
-              labelColor: AppColors.tabActive,
-              unselectedLabelColor: AppColors.textSecondary,
-              indicatorColor: AppColors.tabActive,
-              indicatorSize: TabBarIndicatorSize.tab,
-              tabs: const [
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.analytics_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Text('Aggregate Summary', style: TextStyle(fontWeight: FontWeight.w600)),
-                    ],
-                  ),
+              padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+              child: Row(children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(event.name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                    const SizedBox(height: 4),
+                    Text('${event.organizer} · ${event.department}',
+                        style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                  ]),
                 ),
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.people_outline_rounded, size: 18),
-                      SizedBox(width: 8),
-                      Text('Individual Responses', style: TextStyle(fontWeight: FontWeight.w600)),
-                    ],
-                  ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded, size: 20, color: AppColors.textSecondary),
                 ),
-              ],
+              ]),
             ),
 
-            // ── Tab Views ────────────────────────────────────────────────────
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  // TAB 1: OVERVIEW & AGGREGATE STATS
-                  _buildOverviewTab(avg, totalRaters, indicatorAggregates, generalComments),
-
-                  // TAB 2: INDIVIDUAL RESPONSES
-                  _buildIndividualResponsesTab(filteredRatings),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOverviewTab(
-    double avg,
-    int totalRaters,
-    Map<String, Map<String, dynamic>> indicatorAggregates,
-    List<String> generalComments,
-  ) {
-    final rate = avg > 0 ? ((avg - 1) / 4.0).clamp(0.0, 1.0) * 100.0 : 0.0;
-    final color = rate >= 80.0 
-        ? const Color(0xFF16A34A) 
-        : (rate >= 50.0 ? const Color(0xFFEA580C) : const Color(0xFFEF4444));
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Metrics Row ────────────────────────────────────────────────────
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricCard(
-                  'Overall Evidency Rate',
-                  totalRaters > 0 ? '${rate.toStringAsFixed(0)}%' : '—',
-                  totalRaters > 0 
-                      ? (rate >= 80.0 ? 'High Evidency' : (rate >= 50.0 ? 'Mid Evidency' : 'Low Evidency'))
-                      : 'Awaiting ratings',
-                  color,
-                  Icons.percent_rounded,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildMetricCard(
-                  'Total Responses',
-                  '$totalRaters',
-                  'Evaluations submitted',
-                  AppColors.tabActive,
-                  Icons.people_alt_rounded,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // ── Indicator Breakdown Section ────────────────────────────────────
-          const Text('Indicator-by-Indicator Performance', style: AppTextStyles.sectionTitle),
-          const SizedBox(height: 6),
-          Text(
-            'Distribution of ratings and remarks across all $totalRaters responses.',
-            style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 16),
-
-          if (indicatorAggregates.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 32),
-                child: Text('No indicator evaluations available.', style: TextStyle(color: AppColors.textSecondary)),
-              ),
-            )
-          else
-            ...indicatorAggregates.entries.map((entry) {
-              final String indicatorName = entry.key;
-              final stats = entry.value;
-              final int evident = stats['Evident'] as int;
-              final int mid = stats['Mid'] as int;
-              final int notEvident = stats['Not Evident'] as int;
-              final int total = evident + mid + notEvident;
-              final remarks = stats['remarks'] as List<String>;
-
-              return _buildIndicatorAggregateRow(indicatorName, evident, mid, notEvident, total, remarks);
-            }),
-
-          const SizedBox(height: 24),
-
-          // ── General Comments Section ───────────────────────────────────────
-          const Text('General Comments & Recommendations', style: AppTextStyles.sectionTitle),
-          const SizedBox(height: 12),
-          if (generalComments.isEmpty)
-            const Text('No general comments submitted.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13))
-          else
-            Container(
-              constraints: const BoxConstraints(maxHeight: 200),
-              decoration: BoxDecoration(
-                color: AppColors.pageBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.cardBorder, width: 0.8),
-              ),
-              child: ListView.separated(
-                shrinkWrap: true,
-                padding: const EdgeInsets.all(12),
-                itemCount: generalComments.length,
-                separatorBuilder: (_, __) => const Divider(height: 16, thickness: 0.5),
-                itemBuilder: (context, index) {
-                  return Text(
-                    generalComments[index],
-                    style: const TextStyle(fontSize: 12.5, color: Color(0xFF334155), height: 1.4),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMetricCard(String label, String value, String subtitle, Color valColor, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.cardBorder, width: 0.8),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: valColor.withOpacity(0.08), shape: BoxShape.circle),
-            child: Icon(icon, color: valColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textSecondary)),
-                const SizedBox(height: 4),
-                Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: valColor)),
-                const SizedBox(height: 2),
-                Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIndicatorAggregateRow(
-    String name,
-    int evident,
-    int mid,
-    int notEvident,
-    int total,
-    List<String> remarks,
-  ) {
-    final double pctEvident = total > 0 ? evident / total : 0;
-    final double pctMid = total > 0 ? mid / total : 0;
-    final double pctNotEvident = total > 0 ? notEvident / total : 0;
-
-    final isRemarksExpanded = _expandedIndicatorRemarks.contains(name);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.cardBorder, width: 0.8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-          const SizedBox(height: 10),
-          
-          // Stacked Progress Bar
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              height: 10,
-              width: double.infinity,
-              child: Row(
-                children: [
-                  if (evident > 0)
-                    Expanded(
-                      flex: (pctEvident * 100).round(),
-                      child: Container(color: const Color(0xFF16A34A)),
-                    ),
-                  if (mid > 0)
-                    Expanded(
-                      flex: (pctMid * 100).round(),
-                      child: Container(color: const Color(0xFFEA580C)),
-                    ),
-                  if (notEvident > 0)
-                    Expanded(
-                      flex: (pctNotEvident * 100).round(),
-                      child: Container(color: const Color(0xFFEF4444)),
-                    ),
-                  if (total == 0)
-                    Expanded(child: Container(color: const Color(0xFFE2E8F0))),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Legend and details
-          Row(
-            children: [
-              _progressBarLegendItem('Evident', evident, pctEvident, const Color(0xFF16A34A)),
-              const SizedBox(width: 12),
-              _progressBarLegendItem('Mid', mid, pctMid, const Color(0xFFEA580C)),
-              const SizedBox(width: 12),
-              _progressBarLegendItem('Not Evident', notEvident, pctNotEvident, const Color(0xFFEF4444)),
-              const Spacer(),
-              if (remarks.isNotEmpty)
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      if (isRemarksExpanded) {
-                        _expandedIndicatorRemarks.remove(name);
-                      } else {
-                        _expandedIndicatorRemarks.add(name);
-                      }
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: Row(
-                      children: [
-                        Text(
-                          '${remarks.length} Remarks',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.tabActive),
-                        ),
-                        const SizedBox(width: 2),
-                        Icon(
-                          isRemarksExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                          size: 14,
-                          color: AppColors.tabActive,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-
-          // Expanded Remarks list
-          if (isRemarksExpanded && remarks.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1, thickness: 0.5),
-            const SizedBox(height: 8),
-            ...remarks.map((rem) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('• ', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
-                      Expanded(
-                        child: Text(
-                          rem,
-                          style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF475569)),
-                        ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Aggregated scores card ──────────────────────────────
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardBg,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.cardBorder, width: 0.8),
                       ),
-                    ],
-                  ),
-                )),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Text('Aggregated Scores (${event.responses} raters)',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                            const Spacer(),
+                            const Icon(Icons.star_rounded, color: AppColors.amber, size: 18),
+                            const SizedBox(width: 4),
+                            Text('${avg.toStringAsFixed(2)}/5',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                          ]),
+                          const SizedBox(height: 20),
+
+                          // Radar chart
+                          Center(
+                            child: _RadarChart(
+                              values: agg.asList,
+                              size: 200,
+                              color: AppColors.tabActive,
+                              labels: const ['Event Planning', 'Achievement of', 'Personnel Performance', 'Time Management', 'Participant Engagement', 'Resource Management'],
+                            ),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // Criterion score grid (2 columns)
+                          _criterionGrid(agg),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // ── Attendee ratings ────────────────────────────────────
+                    const Text('Attendee Ratings', style: AppTextStyles.sectionTitle),
+                    const SizedBox(height: 12),
+                    if (event.ratings.isEmpty)
+                      const Text('No ratings submitted yet.',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 13))
+                    else
+                      ...event.ratings.map((r) => _AttendeeRow(rating: r)),
+                  ],
+                ),
+              ),
+            ),
           ],
-        ],
+        ),
       ),
     );
   }
 
-  Widget _progressBarLegendItem(String label, int count, double pct, Color color) {
-    return Row(
-      children: [
-        Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 4),
-        Text(
-          '$label: $count (${(pct * 100).toStringAsFixed(0)}%)',
-          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildIndividualResponsesTab(List<AttendeeRating> filteredRatings) {
-    return Column(
-      children: [
-        // Filter Controls Row
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
-          child: Row(
-            children: [
-              Text(
-                'Showing ${filteredRatings.length} responses',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-              ),
-              const Spacer(),
-              const Text('Filter by Role:  ', style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary)),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                height: 32,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.cardBorder),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedRoleFilter,
-                    style: const TextStyle(fontSize: 12.5, color: AppColors.textPrimary, fontWeight: FontWeight.w500),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _selectedRoleFilter = val);
-                      }
-                    },
-                    items: ['All', 'Teacher', 'Student', 'Coordinator', 'Dean', 'Principal', 'Registrar', 'Parent', 'Others']
-                        .map((role) => DropdownMenuItem(value: role, child: Text(role)))
-                        .toList(),
-                  ),
-                ),
-              ),
-            ],
+  Widget _criterionGrid(EventRubricScores agg) {
+    final scores = [agg.planning, agg.objectives, agg.personnel, agg.timeMgmt, agg.engagement, agg.resource];
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2, mainAxisExtent: 40, crossAxisSpacing: 12, mainAxisSpacing: 8,
+      ),
+      itemCount: 6,
+      itemBuilder: (_, i) {
+        final c = _kCriteria[i];
+        return Row(children: [
+          Container(
+            width: 28, height: 28,
+            decoration: BoxDecoration(color: c.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+            child: Icon(c.icon, color: c.color, size: 14),
           ),
-        ),
-
-        const Divider(height: 1, thickness: 0.8),
-
-        // Scrollable List
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(24),
-            itemCount: filteredRatings.length,
-            itemBuilder: (context, index) {
-              return _AttendeeRow(rating: filteredRatings[index]);
-            },
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(c.label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                overflow: TextOverflow.ellipsis),
           ),
-        ),
-      ],
+          const SizedBox(width: 8),
+          _MiniStars(value: scores[i]),
+        ]);
+      },
     );
   }
 }
 
-class _AttendeeRow extends StatefulWidget {
+class _AttendeeRow extends StatelessWidget {
   final AttendeeRating rating;
   const _AttendeeRow({required this.rating});
 
   @override
-  State<_AttendeeRow> createState() => _AttendeeRowState();
-}
-
-class _AttendeeRowState extends State<_AttendeeRow> {
-  bool _isExpanded = false;
-
-  @override
   Widget build(BuildContext context) {
-    final initials = widget.rating.name.trim().split(' ')
+    final initials = rating.name.trim().split(' ')
         .map((p) => p.isNotEmpty ? p[0] : '')
         .take(2).join().toUpperCase();
 
-    final rate = ((widget.rating.overallScore - 1) / 4.0).clamp(0.0, 1.0) * 100.0;
-    final color = rate >= 80.0 
-        ? const Color(0xFF16A34A) 
-        : (rate >= 50.0 ? const Color(0xFFEA580C) : const Color(0xFFEF4444));
-
-    final parsed = ParsedEvaluation.parse(widget.rating.comments);
-
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: AppColors.pageBg,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.cardBorder, width: 0.8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header (Click to Toggle)
-          InkWell(
-            onTap: () {
-              setState(() {
-                _isExpanded = !_isExpanded;
-              });
-            },
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              child: Row(children: [
-                Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(color: AppColors.tabActive, shape: BoxShape.circle),
-                  child: Center(child: Text(initials,
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600))),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(widget.rating.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    Text(widget.rating.role.label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                  ]),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${rate.toStringAsFixed(0)}%',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color),
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Text(
-                          _isExpanded ? 'Hide details' : 'View details',
-                          style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
-                        ),
-                        Icon(
-                          _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                          size: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ]),
-            ),
-          ),
-
-          // Detail Section
-          if (_isExpanded) ...[
-            const Divider(height: 1, thickness: 0.8, color: AppColors.cardBorder),
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (parsed.indicators.isNotEmpty) ...[
-                    const Text(
-                      'Observation Rubric Breakdown:',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                    const SizedBox(height: 8),
-                    ...parsed.indicators.map((ind) {
-                      Color badgeColor = const Color(0xFFEF4444);
-                      if (ind.result == 'Evident') badgeColor = const Color(0xFF16A34A);
-                      if (ind.result == 'Mid') badgeColor = const Color(0xFFEA580C);
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: AppColors.cardBorder.withOpacity(0.5), width: 0.6),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    ind.name,
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textPrimary),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: badgeColor.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: badgeColor.withOpacity(0.3), width: 0.8),
-                                  ),
-                                  child: Text(
-                                    ind.result,
-                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (ind.remarks.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                'Remarks: ${ind.remarks}',
-                                style: const TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: AppColors.textSecondary),
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-                    }),
-                    const SizedBox(height: 10),
-                  ],
-                  // General comments
-                  const Text(
-                    'General Comments & Recommendations:',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    (parsed.generalComments != null && parsed.generalComments!.isNotEmpty)
-                        ? parsed.generalComments!
-                        : 'No additional comments provided.',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF475569), height: 1.4),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+      child: Row(children: [
+        Container(
+          width: 36, height: 36,
+          decoration: BoxDecoration(color: AppColors.tabActive, shape: BoxShape.circle),
+          child: Center(child: Text(initials,
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(rating.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            Text(rating.role.label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          ]),
+        ),
+        const Icon(Icons.star_rounded, color: AppColors.amber, size: 15),
+        const SizedBox(width: 4),
+        Text(rating.overallScore.toStringAsFixed(1),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const Text('/5', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+      ]),
     );
   }
 }
@@ -1744,14 +927,11 @@ class _EventRateDialogState extends State<_EventRateDialog> {
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.username);
-    if (widget.role == 'teacher') _role = EvaluatorRole.teacher;
-    else if (widget.role == 'dean') _role = EvaluatorRole.dean;
-    else if (widget.role == 'coordinator') _role = EvaluatorRole.coordinator;
-    else if (widget.role == 'principal') _role = EvaluatorRole.principal;
-    else if (widget.role == 'registrar') _role = EvaluatorRole.registrar;
-    else if (widget.role == 'parent') _role = EvaluatorRole.parent;
-    else if (widget.role == 'other' || widget.role == 'others') _role = EvaluatorRole.other;
-    else _role = EvaluatorRole.student;
+    if (widget.role == 'teacher') { _role = EvaluatorRole.teacher; }
+    else if (widget.role == 'dean') { _role = EvaluatorRole.dean; }
+    else if (widget.role == 'coordinator') { _role = EvaluatorRole.coordinator; }
+    else if (widget.role == 'principal') { _role = EvaluatorRole.principal; }
+    else { _role = EvaluatorRole.student; }
   }
 
   bool get _canSubmit =>
@@ -1974,7 +1154,7 @@ class _CriterionRatingRow extends StatelessWidget {
       child: Row(children: [
         Container(
           width: 30, height: 30,
-          decoration: BoxDecoration(color: criterion.color.withOpacity(0.12), borderRadius: BorderRadius.circular(7)),
+          decoration: BoxDecoration(color: criterion.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(7)),
           child: Icon(criterion.icon, color: criterion.color, size: 15),
         ),
         const SizedBox(width: 10),
@@ -2076,7 +1256,7 @@ class _RadarPainter extends CustomPainter {
 
     // Filled data polygon
     final fillPaint = Paint()
-      ..color = color.withOpacity(0.18)
+      ..color = color.withValues(alpha: 0.18)
       ..style = PaintingStyle.fill;
     final strokePaint = Paint()
       ..color = color
@@ -2130,15 +1310,8 @@ class _EventsTable extends StatelessWidget {
   final String role;
   final void Function(SchoolEvent) onViewResults;
   final void Function(SchoolEvent) onRateEvent;
-  final void Function(SchoolEvent) onShowQr;
 
-  const _EventsTable({
-    required this.events,
-    required this.role,
-    required this.onViewResults,
-    required this.onRateEvent,
-    required this.onShowQr,
-  });
+  const _EventsTable({required this.events, required this.role, required this.onViewResults, required this.onRateEvent});
 
   @override
   Widget build(BuildContext context) {
@@ -2151,7 +1324,7 @@ class _EventsTable extends StatelessWidget {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double tableWidth = constraints.maxWidth > 1100 ? constraints.maxWidth : 1100;
+        final double tableWidth = constraints.maxWidth > 1000 ? constraints.maxWidth : 1000;
         return SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: SizedBox(
@@ -2162,7 +1335,6 @@ class _EventsTable extends StatelessWidget {
               ...events.asMap().entries.map((e) => _EventRow(
                 event: e.value, index: e.key, role: role,
                 onViewResults: onViewResults, onRateEvent: onRateEvent,
-                onShowQr: onShowQr,
               )),
             ]),
           ),
@@ -2185,9 +1357,8 @@ class _TableHeader extends StatelessWidget {
         SizedBox(width: 120, child: _Th('ORGANIZER')),
         SizedBox(width: 90,  child: _Th('ATTENDEES')),
         SizedBox(width: 110, child: _Th('RESPONSES')),
-        SizedBox(width: 110, child: _Th('EVIDENCY RATE')),
+        SizedBox(width: 110, child: _Th('AVG RATING')),
         SizedBox(width: 115, child: _Th('STATUS')),
-        SizedBox(width: 80,  child: _Th('EVALUATION')),
         SizedBox(width: 130, child: _Th('ACTION')),
       ]),
     );
@@ -2208,16 +1379,8 @@ class _EventRow extends StatelessWidget {
   final String role;
   final void Function(SchoolEvent) onViewResults;
   final void Function(SchoolEvent) onRateEvent;
-  final void Function(SchoolEvent) onShowQr;
 
-  const _EventRow({
-    required this.event,
-    required this.index,
-    required this.role,
-    required this.onViewResults,
-    required this.onRateEvent,
-    required this.onShowQr,
-  });
+  const _EventRow({required this.event, required this.index, required this.role, required this.onViewResults, required this.onRateEvent});
 
   @override
   Widget build(BuildContext context) {
@@ -2225,24 +1388,18 @@ class _EventRow extends StatelessWidget {
     final int pct = event.attendees > 0
         ? ((event.responses / event.attendees) * 100).round() : 0;
 
-    // Rating widget (Evidency Rate, color-coded, no stars)
-    Widget ratingWidget;
-    if (avg != null) {
-      final rate = ((avg - 1) / 4.0).clamp(0.0, 1.0) * 100.0;
-      final color = rate >= 80.0 
-          ? const Color(0xFF16A34A) 
-          : (rate >= 50.0 ? const Color(0xFFEA580C) : const Color(0xFFEF4444));
-      ratingWidget = Text(
-        '${rate.toStringAsFixed(0)}%',
-        style: TextStyle(
-          fontSize: 13, 
-          fontWeight: FontWeight.bold,
-          color: color,
-        ),
-      );
-    } else {
-      ratingWidget = const Text('—', style: TextStyle(fontSize: 14, color: AppColors.textHint));
-    }
+    // Rating widget
+    Widget ratingWidget = avg != null
+        ? Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.star_rounded, color: AppColors.amber, size: 14),
+            const SizedBox(width: 4),
+            Text('${avg.toStringAsFixed(1)}/5',
+                style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600,
+                  color: avg < 3.0 ? AppColors.danger : AppColors.textPrimary,
+                )),
+          ])
+        : const Text('—', style: TextStyle(fontSize: 14, color: AppColors.textHint));
 
     // Status + action based on role
     Widget statusChip;
@@ -2251,7 +1408,7 @@ class _EventRow extends StatelessWidget {
 
     switch (event.status) {
       case EventStatus.awaitingRatings:
-        statusChip  = _pill('Awaiting Ratings', AppColors.statusAmberBg, AppColors.statusAmberFg);
+        statusChip  = _pill('Pending', AppColors.statusAmberBg, AppColors.statusAmberFg);
         if (role == 'principal') {
           // Principals can only view, never rate
           actionLabel = 'View Results';
@@ -2265,8 +1422,11 @@ class _EventRow extends StatelessWidget {
           onAction    = () => onViewResults(event);
         }
       case EventStatus.rated:
-      case EventStatus.flagged:
         statusChip  = _pill('Completed', AppColors.statusGreenBg, AppColors.statusGreenFg);
+        actionLabel = 'View Results';
+        onAction    = () => onViewResults(event);
+      case EventStatus.flagged:
+        statusChip  = _pill('Flagged', AppColors.statusRedBg, AppColors.statusRedFg);
         actionLabel = 'View Results';
         onAction    = () => onViewResults(event);
     }
@@ -2287,30 +1447,6 @@ class _EventRow extends StatelessWidget {
         SizedBox(width: 110, child: Text('${event.responses} ($pct%)', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
         SizedBox(width: 110, child: ratingWidget),
         SizedBox(width: 115, child: statusChip),
-        SizedBox(
-          width: 80,
-          child: Center(
-            child: Builder(
-              builder: (context) {
-                final bool isAvailable = _isEventDayOrLater(event.date);
-                return IconButton(
-                  icon: Icon(
-                    Icons.assignment_outlined,
-                    color: isAvailable ? AppColors.textSecondary : Colors.grey.shade300,
-                  ),
-                  tooltip: isAvailable ? 'Evaluation Options' : 'Locked until ${event.date}',
-                  onPressed: () {
-                    if (!isAvailable) {
-                      _showLockedQrDialog(context, event);
-                    } else {
-                      onShowQr(event);
-                    }
-                  },
-                );
-              }
-            ),
-          ),
-        ),
         SizedBox(
           width: 130,
           child: ElevatedButton(
@@ -2341,10 +1477,9 @@ class _EventRow extends StatelessWidget {
 
 class _StatCard extends StatelessWidget {
   final String label, value;
-  final String? subtitle;
   final Color valueColor, iconColor;
   final IconData icon;
-  const _StatCard({required this.label, required this.value, required this.valueColor, required this.icon, required this.iconColor, this.subtitle});
+  const _StatCard({required this.label, required this.value, required this.valueColor, required this.icon, required this.iconColor});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -2355,49 +1490,6 @@ class _StatCard extends StatelessWidget {
         Text(label, style: AppTextStyles.statLabel),
         const SizedBox(height: 10),
         Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: valueColor, letterSpacing: -0.3)),
-        if (subtitle != null) ...[
-          const SizedBox(height: 4),
-          Builder(
-            builder: (context) {
-              if (subtitle!.contains('awaiting ratings')) {
-                final parts = subtitle!.split(' · ');
-                if (parts.length == 2) {
-                  final totalPart = parts[0];
-                  final awaitingPart = parts[1];
-                  final hasPending = !awaitingPart.startsWith('0');
-                  return RichText(
-                    text: TextSpan(
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
-                        fontFamily: 'Inter',
-                      ),
-                      children: [
-                        TextSpan(text: '$totalPart · '),
-                        TextSpan(
-                          text: awaitingPart,
-                          style: TextStyle(
-                            color: hasPending ? const Color(0xFFEA580C) : AppColors.textSecondary,
-                            fontWeight: hasPending ? FontWeight.w700 : FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-              }
-              return Text(
-                subtitle!,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-              );
-            }
-          ),
-        ],
       ])),
       Icon(icon, color: iconColor, size: 22),
     ]),
@@ -2412,7 +1504,7 @@ class _RubricItem extends StatelessWidget {
   Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
     Container(
       width: 30, height: 30,
-      decoration: BoxDecoration(color: criterion.color.withOpacity(0.12), borderRadius: BorderRadius.circular(7)),
+      decoration: BoxDecoration(color: criterion.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(7)),
       child: Icon(criterion.icon, color: criterion.color, size: 15),
     ),
     const SizedBox(width: 8),
@@ -2441,1037 +1533,38 @@ class _StyledDropdown extends StatelessWidget {
     final Color bg = isDark ? AppColors.tabActive : Colors.white;
     final Color fg = isDark ? Colors.white : AppColors.textPrimary;
     final Color border = isDark ? AppColors.tabActive : AppColors.cardBorder;
-    final Color ic = isDark ? Colors.white.withOpacity(0.8) : AppColors.textSecondary;
+    final Color ic = isDark ? Colors.white.withValues(alpha: 0.8) : AppColors.textSecondary;
     String display = hint ?? 'Select…';
     if (value != null) {
       final m = items.where((i) => i.value == value);
-      if (m.isNotEmpty) display = m.first.label;
+      if (m.isNotEmpty) { display = m.first.label; }
     }
-    return GestureDetector(
-      onTap: () {
-        final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
-        if (renderBox == null) return;
-
-        final size = renderBox.size;
-        final position = renderBox.localToGlobal(Offset.zero);
-
-        const double menuWidth = 200;
-        final double x = position.dx + (size.width - menuWidth) / 2;
-        final double y = position.dy + size.height + 4;
- 
-        showMenu<String?>(
-          context: context,
-          position: RelativeRect.fromLTRB(x, y, x + menuWidth, y + 300),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: AppColors.cardBorder.withOpacity(0.8), width: 0.8),
-          ),
-          color: Colors.white,
-          elevation: 8,
-          shadowColor: Colors.black.withOpacity(0.08),
-          constraints: const BoxConstraints(minWidth: menuWidth, maxWidth: 340),
-          items: items.map((item) => PopupMenuItem<String?>(
-            value: item.value,
-            height: 38,
-            child: Row(children: [
-              if (item.value == value) ...[
-                const Icon(Icons.check_rounded, size: 14, color: AppColors.tabActive),
-                const SizedBox(width: 6),
-              ] else
-                const SizedBox(width: 20),
-              Expanded(
-                child: Text(
-                  item.label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: item.value == value ? AppColors.tabActive : AppColors.textPrimary,
-                    fontWeight: item.value == value ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ),
-            ]),
-          )).toList(),
-        ).then((selectedValue) {
-          if (selectedValue != null) {
-            onChanged(selectedValue);
-          }
-        });
-      },
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: border, width: 1),
-            boxShadow: isDark
-                ? [BoxShadow(color: AppColors.tabActive.withOpacity(0.15), blurRadius: 6, offset: const Offset(0, 2))]
-                : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (leadingIcon != null) ...[
-                Icon(leadingIcon, size: 14, color: ic),
-                const SizedBox(width: 6),
-              ],
-              Text(display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: fg)),
-              const SizedBox(width: 6),
-              Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: ic),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Event Evaluation QR Code Dialog & Painter
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _EventQrCodeDialog extends StatefulWidget {
-  final SchoolEvent event;
-  final String username;
-  final String role;
-  final void Function(String id, AttendeeRating rating) onSubmitRating;
-  final Future<void> Function()? onRefresh;
-
-  const _EventQrCodeDialog({
-    required this.event,
-    required this.username,
-    required this.role,
-    required this.onSubmitRating,
-    this.onRefresh,
-  });
-
-  @override
-  State<_EventQrCodeDialog> createState() => _EventQrCodeDialogState();
-}
-
-class _EventQrCodeDialogState extends State<_EventQrCodeDialog> {
-  late String _currentUrl;
-
-  @override
-  void initState() {
-    super.initState();
-    final origin = Uri.base.origin;
-    _currentUrl = '$origin/?eval=${widget.event.id}';
-    _autoDetectIp();
-  }
-
-  Future<void> _autoDetectIp() async {
-    final origin = Uri.base.origin;
-    final isLocalhost = origin.contains('localhost') || origin.contains('127.0.0.1');
-    if (isLocalhost) {
-      final localIp = await EventsApi().getServerIp();
-      if (localIp != '127.0.0.1') {
-        setState(() {
-          final port = Uri.base.port;
-          _currentUrl = 'http://$localIp:$port/?eval=${widget.event.id}';
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return PopupMenuButton<String?>(
+      onSelected: onChanged,
+      offset: const Offset(0, 42),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.cardBorder.withValues(alpha: 0.8), width: 0.8)),
+      color: Colors.white, elevation: 8,
+      constraints: const BoxConstraints(minWidth: 180, maxWidth: 280),
+      itemBuilder: (_) => items.map((item) => PopupMenuItem<String?>(
+        value: item.value, height: 38,
+        child: Row(children: [
+          if (item.value == value) ...[
+            const Icon(Icons.check_rounded, size: 14, color: AppColors.tabActive),
+            const SizedBox(width: 6),
+          ] else const SizedBox(width: 20),
+          Text(item.label, style: TextStyle(fontSize: 13, color: item.value == value ? AppColors.tabActive : AppColors.textPrimary, fontWeight: item.value == value ? FontWeight.w600 : FontWeight.w400)),
+        ]),
+      )).toList(),
       child: Container(
-        width: 360,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Event Evaluation QR Code',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                ),
-              ],
-            ),
-            const Divider(),
-            const SizedBox(height: 16),
-
-            // Event Details
-            Text(
-              widget.event.name,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Organizer: ${widget.event.organizer} · ${widget.event.department}',
-              style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-
-            // QR Code Container
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: QrImageView(
-                data: _currentUrl,
-                version: QrVersions.auto,
-                size: 200.0,
-                gapless: false,
-                errorStateBuilder: (cxt, err) {
-                  return const Center(
-                    child: Text(
-                      'Could not load QR Code',
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Event ID: ${widget.event.id}',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF64748B),
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: SelectableText(
-                _currentUrl,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  color: Color(0xFF2563EB),
-                  decoration: TextDecoration.underline,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: border, width: 1)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (leadingIcon != null) ...[Icon(leadingIcon, size: 14, color: ic), const SizedBox(width: 6)],
+          Text(display, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: fg)),
+          const SizedBox(width: 6),
+          Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: ic),
+        ]),
       ),
     );
   }
 }
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// QR Code lock helpers & custom DepEd Observation Tool
-// ─────────────────────────────────────────────────────────────────────────────
-
-bool _isEventDayOrLater(String dateStr) {
-  try {
-    DateTime? eventDate;
-    if (dateStr.contains('-')) {
-      eventDate = DateTime.tryParse(dateStr);
-    } else if (dateStr.contains('/')) {
-      final parts = dateStr.split('/');
-      if (parts.length == 3) {
-        int? month = int.tryParse(parts[0]);
-        int? day = int.tryParse(parts[1]);
-        int? year = int.tryParse(parts[2]);
-        if (month != null && day != null && year != null) {
-          if (year < 100) year += 2000;
-          eventDate = DateTime(year, month, day);
-        }
-      }
-    }
-    if (eventDate == null) return false;
-    
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final eventDay = DateTime(eventDate.year, eventDate.month, eventDate.day);
-    
-    return today.isAtSameMomentAs(eventDay) || today.isAfter(eventDay);
-  } catch (_) {
-    return false;
-  }
-}
-
-void _showLockedQrDialog(BuildContext context, SchoolEvent event) {
-  showDialog<void>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.lock_outline_rounded, color: Color(0xFFEA580C)),
-          SizedBox(width: 8),
-          Text('QR Code Locked'),
-        ],
-      ),
-      content: Text(
-        'The QR code for "${event.name}" is locked. '
-        'It will be automatically generated and available on the day of the event: ${event.date}.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Close'),
-        ),
-      ],
-    ),
-  );
-}
-
-class _ObservationToolDialog extends StatefulWidget {
-  final SchoolEvent event;
-  final String username;
-  final String role;
-
-  const _ObservationToolDialog({
-    required this.event,
-    required this.username,
-    required this.role,
-  });
-
-  @override
-  State<_ObservationToolDialog> createState() => _ObservationToolDialogState();
-}
-
-class _DialogIndicatorItem {
-  final String name;
-  String? result; // 'Evident', 'Mid', 'Not Evident'
-  final TextEditingController remarksController;
-
-  _DialogIndicatorItem({
-    required this.name,
-    this.result,
-    required this.remarksController,
-  });
-}
-
-class _ObservationToolDialogState extends State<_ObservationToolDialog> {
-  late final TextEditingController _nameCtrl;
-  final _commentsCtrl = TextEditingController();
-
-  final List<_DialogIndicatorItem> _indicators = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _nameCtrl = TextEditingController(text: widget.username);
-    _indicators.add(_DialogIndicatorItem(name: '1. The special program has an approved proposal.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '2. The training matrix was observed or was completely delivered.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '3. The number of days were maximized as stated in the training design.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '4. The objectives of the special program were met.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '5. The monitoring and evaluation tools were utilized.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '6. Participants were able to submit the required output.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '7. Attendance was systematically monitored.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '8. The venue was conducive.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '9. The Session started and ended on time.', remarksController: TextEditingController()));
-    _indicators.add(_DialogIndicatorItem(name: '10. The trainers/facilitators used appropriate resource package (Pretest and post-tests, power point, video presentation, etc.)', remarksController: TextEditingController()));
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _commentsCtrl.dispose();
-    for (final ind in _indicators) {
-      ind.remarksController.dispose();
-    }
-    super.dispose();
-  }
-
-  bool get _canSubmit => _indicators.every((i) => i.result != null);
-
-  void _addCustomIndicator() {
-    final nameCtrl = TextEditingController();
-    showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add Custom Indicator'),
-        content: TextField(
-          controller: nameCtrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Enter indicator description...',
-            labelText: 'Indicator Name',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(nameCtrl.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    ).then((val) {
-      nameCtrl.dispose();
-      if (val != null && val.isNotEmpty) {
-        setState(() {
-          final nextNum = _indicators.length + 1;
-          _indicators.add(_DialogIndicatorItem(
-            name: "$nextNum. $val",
-            remarksController: TextEditingController(),
-          ));
-        });
-      }
-    });
-  }
-
-  void _submit() {
-    if (!_canSubmit) return;
-
-    double totalScore = 0;
-    for (final ind in _indicators) {
-      if (ind.result == 'Evident') {
-        totalScore += 5.0;
-      } else if (ind.result == 'Mid') {
-        totalScore += 3.0;
-      } else {
-        totalScore += 1.0;
-      }
-    }
-    final double avgScore = _indicators.isEmpty ? 3.0 : totalScore / _indicators.length;
-
-    final scores = EventRubricScores(
-      planning: avgScore,
-      objectives: avgScore,
-      personnel: avgScore,
-      timeMgmt: avgScore,
-      engagement: avgScore,
-      resource: avgScore,
-    );
-
-    final List<String> feedbackParts = [];
-    for (final ind in _indicators) {
-      final status = ind.result!;
-      final remarks = ind.remarksController.text.trim();
-      feedbackParts.add('${ind.name}: $status${remarks.isNotEmpty ? " ($remarks)" : ""}');
-    }
-
-    if (_commentsCtrl.text.trim().isNotEmpty) {
-      feedbackParts.add('Comments: ${_commentsCtrl.text.trim()}');
-    }
-    
-    final commentsStr = feedbackParts.join(' | ');
-    final now = DateTime.now();
-    
-    EvaluatorRole evalRole;
-    if (widget.role == 'teacher') evalRole = EvaluatorRole.teacher;
-    else if (widget.role == 'dean') evalRole = EvaluatorRole.dean;
-    else if (widget.role == 'coordinator') evalRole = EvaluatorRole.coordinator;
-    else if (widget.role == 'principal') evalRole = EvaluatorRole.principal;
-    else if (widget.role == 'registrar') evalRole = EvaluatorRole.registrar;
-    else if (widget.role == 'parent') evalRole = EvaluatorRole.parent;
-    else if (widget.role == 'other' || widget.role == 'others') evalRole = EvaluatorRole.other;
-    else evalRole = EvaluatorRole.student;
-
-    final rating = AttendeeRating(
-      name: _nameCtrl.text.trim().isEmpty ? 'Anonymous' : _nameCtrl.text.trim(),
-      role: evalRole,
-      scores: scores,
-      comments: commentsStr.isEmpty ? null : commentsStr,
-      dateSubmitted:
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
-          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}',
-    );
-
-    Navigator.of(context).pop(rating);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: SizedBox(
-        width: 760,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Close button overlay
-            Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 8, right: 8),
-                child: IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded, size: 20, color: Colors.grey),
-                ),
-              ),
-            ),
-            
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(32, 0, 32, 24),
-                child: Column(
-                  children: [
-                    // Official Seal & Header
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFF0F2C59),
-                          ),
-                          child: const Icon(Icons.account_balance, color: Colors.white, size: 28),
-                        ),
-                        const SizedBox(width: 16),
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Republika ng Pilipinas',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: Color(0xFF334155)),
-                            ),
-                            Text(
-                              'Kagawaran ng Edukasyon',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A), fontFamily: 'Georgia'),
-                            ),
-                            Text(
-                              'REHIYON V - BICOL',
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-                            ),
-                            Text(
-                              'TANGGAPANG PANSANGAY NG MGA PAARALAN NG LUNGSOD NAGA',
-                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-                            ),
-                            Text(
-                              'NAGA CENTRAL SCHOOL II',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0F2C59)),
-                            ),
-                            Text(
-                              'JACOB ST., PEÑAFRANCIA, NAGA CITY',
-                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
-                            ),
-                          ],
-                        )
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    const Divider(color: Color(0xFF0F172A), thickness: 2),
-                    const SizedBox(height: 12),
-                    
-                    const Text(
-                      'OBSERVATION TOOL',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: 0.5),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Event Details Card
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.event.name,
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.event.date,
-                            style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Evaluator Metadata Form
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Name (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: _nameCtrl,
-                          decoration: _fieldDecor('Enter name...'),
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Directions
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Directions: Please assess the effectiveness of the project/program according to the indicators below. Put a check (✓) under the appropriate column.',
-                        style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF475569)),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Observation Tool Table
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Table(
-                          columnWidths: const {
-                            0: FlexColumnWidth(4),
-                            1: FixedColumnWidth(75),
-                            2: FixedColumnWidth(75),
-                            3: FixedColumnWidth(95),
-                            4: FlexColumnWidth(3),
-                          },
-                          border: TableBorder.all(color: const Color(0xFFCBD5E1), width: 0.8),
-                          children: [
-                            // Table Header Row
-                            const TableRow(
-                              decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
-                              children: [
-                                Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Text('INDICATORS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                                ),
-                                Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Center(child: Text('Evident', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)))),
-                                ),
-                                Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Center(child: Text('Mid', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)))),
-                                ),
-                                Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Center(child: Text('Not Evident', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)))),
-                                ),
-                                Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Text('Remarks', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-                                ),
-                              ],
-                            ),
-                            // Rows mapped dynamically
-                            ..._indicators.map((ind) {
-                              return TableRow(
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                                    child: Text(ind.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
-                                  ),
-                                  Center(
-                                    child: Radio<String>(
-                                      value: 'Evident',
-                                      groupValue: ind.result,
-                                      activeColor: const Color(0xFF0F2C59),
-                                      onChanged: (val) => setState(() => ind.result = val),
-                                    ),
-                                  ),
-                                  Center(
-                                    child: Radio<String>(
-                                      value: 'Mid',
-                                      groupValue: ind.result,
-                                      activeColor: const Color(0xFF0F2C59),
-                                      onChanged: (val) => setState(() => ind.result = val),
-                                    ),
-                                  ),
-                                  Center(
-                                    child: Radio<String>(
-                                      value: 'Not Evident',
-                                      groupValue: ind.result,
-                                      activeColor: const Color(0xFF0F2C59),
-                                      onChanged: (val) => setState(() => ind.result = val),
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.all(8),
-                                    child: TextField(
-                                      controller: ind.remarksController,
-                                      decoration: _tableFieldDecor(),
-                                      style: const TextStyle(fontSize: 12.5),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            }),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Add Indicator Button (Only visible to authorized personnel)
-                    if (widget.role != 'student')
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _addCustomIndicator,
-                          icon: const Icon(Icons.add_rounded, color: Color(0xFF0F2C59)),
-                          label: const Text(
-                            'Add Custom Indicator',
-                            style: TextStyle(color: Color(0xFF0F2C59), fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 20),
-
-                    // Comments and Recommendations Section
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('COMMENTS AND RECOMMENDATIONS:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _commentsCtrl,
-                      maxLines: 4,
-                      decoration: _fieldDecor('Write comments or recommendations...'),
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Dialog Actions Footer
-            Container(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFE2E8F0), width: 0.8)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text('Cancel', style: TextStyle(color: Color(0xFF475569), fontSize: 13)),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: _canSubmit ? _submit : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0F2C59),
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text('Submit Evaluation', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  InputDecoration _fieldDecor(String hint) => InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 0.8),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 0.8),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF0F2C59), width: 1.5),
-        ),
-      );
-
-  InputDecoration _tableFieldDecor() => const InputDecoration(
-        hintText: 'Enter remarks...',
-        hintStyle: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        border: InputBorder.none,
-      );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Event Evaluation Method Selection Dialog
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _EventEvaluationMethodDialog extends StatelessWidget {
-  final SchoolEvent event;
-  final String username;
-  final String role;
-  final void Function(String id, AttendeeRating rating) onSubmitRating;
-  final Future<void> Function()? onRefresh;
-
-  const _EventEvaluationMethodDialog({
-    required this.event,
-    required this.username,
-    required this.role,
-    required this.onSubmitRating,
-    this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 360,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Evaluation Options',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Divider(),
-            const SizedBox(height: 16),
-            Text(
-              event.name,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Organizer: ${event.organizer} · ${event.department}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            // Option 1: QR Code
-            _buildOptionCard(
-              context: context,
-              icon: Icons.qr_code_2_rounded,
-              title: 'Show QR Code',
-              subtitle: 'Generate a QR code for attendees to scan on their devices.',
-              onTap: () {
-                Navigator.of(context).pop();
-                showDialog<void>(
-                  context: context,
-                  builder: (_) => _EventQrCodeDialog(
-                    event: event,
-                    username: username,
-                    role: role,
-                    onSubmitRating: onSubmitRating,
-                    onRefresh: onRefresh,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-            // Option 2: Copy Link
-            _buildOptionCard(
-              context: context,
-              icon: Icons.link_rounded,
-              title: 'Get Evaluation Link',
-              subtitle: 'Copy the direct URL link to the evaluation web page.',
-              onTap: () {
-                Navigator.of(context).pop();
-                _showEvaluationLinkDialog(context, event);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOptionCard({
-    required BuildContext context,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: const Color(0xFF3B82F6), size: 24),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8), size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showEvaluationLinkDialog(BuildContext context, SchoolEvent event) {
-    final origin = Uri.base.origin;
-    final link = '$origin/?eval=${event.id}';
-    bool copied = false;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            title: const Text('Evaluation Link', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Direct evaluation form link for "${event.name}":', style: const TextStyle(fontSize: 13, color: Color(0xFF475569))),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: copied ? const Color(0xFF10B981) : const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: SelectableText(
-                          link,
-                          style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Color(0xFF1E293B)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () async {
-                          await Clipboard.setData(ClipboardData(text: link));
-                          setS(() => copied = true);
-                          await Future<void>.delayed(const Duration(seconds: 2));
-                          if (ctx.mounted) setS(() => copied = false);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: copied ? const Color(0xFF10B981) : const Color(0xFF3B82F6),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                copied ? Icons.check_rounded : Icons.copy_rounded,
-                                size: 14,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                copied ? 'Copied!' : 'Copy',
-                                style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Close', style: TextStyle(color: Color(0xFF64748B))),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}

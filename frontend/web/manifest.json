@@ -1,6 +1,6 @@
 {
-    "name": "personnel_appraisal",
-    "short_name": "personnel_appraisal",
+    "name": "new_frontend",
+    "short_name": "new_frontend",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

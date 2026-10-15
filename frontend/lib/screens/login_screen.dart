@@ -1,0 +1,326 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
+import '../services/app_state.dart';
+import '../widgets/common_widgets.dart';
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _userCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  final _userFocus = FocusNode();
+  final _passFocus = FocusNode();
+  bool _obscure = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _userCtrl.dispose();
+    _passCtrl.dispose();
+    _userFocus.dispose();
+    _passFocus.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    setState(() => _error = null);
+    final state = context.read<AppState>();
+    try {
+      final roles = await state.login(_userCtrl.text.trim(), _passCtrl.text);
+      // Single-role accounts log in directly (roles == null). Multi-role accounts
+      // return their available roles — prompt for which identity to log in as.
+      if (roles != null && roles.isNotEmpty) {
+        if (!mounted) return;
+        final chosen = await _pickRole(roles);
+        if (chosen == null) return; // cancelled
+        await state.login(_userCtrl.text.trim(), _passCtrl.text, role: chosen);
+      }
+      // GoRouter's refreshListenable redirects to /dashboard automatically
+    } catch (e) {
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      setState(() => _error = msg);
+    }
+  }
+
+  String _roleLabel(String r) {
+    switch (r) {
+      case 'admin': return 'Administrator';
+      case 'principal': return 'Principal';
+      case 'coordinator': return 'Coordinator';
+      case 'dean': return 'Dean';
+      case 'teacher': return 'Teacher';
+      case 'registrar': return 'Registrar';
+      default: return r;
+    }
+  }
+
+  Future<String?> _pickRole(List<String> roles) {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: 320,
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Log in as',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            const SizedBox(height: 4),
+            const Text('This account has more than one role. Choose which to use.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+            const SizedBox(height: 16),
+            ...roles.map((r) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: InkWell(
+                onTap: () => Navigator.pop(ctx, r),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.badge_outlined, size: 18, color: Color(0xFF1A1A2E)),
+                    const SizedBox(width: 12),
+                    Text(_roleLabel(r),
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A2E))),
+                    const Spacer(),
+                    const Icon(Icons.chevron_right, size: 18, color: Color(0xFF94A3B8)),
+                  ]),
+                ),
+              ),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFC8D5EA),
+              Color(0xFFA8BCD6),
+              Color(0xFFD4E0F0),
+            ],
+          ),
+        ),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Container(
+              width: 400,
+              padding: const EdgeInsets.all(36),
+              decoration: BoxDecoration(
+                color: AppTheme.bgColor,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: AppTheme.shadowLg,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Logo row
+                  Row(
+                    children: [
+                      const TaskNetLogo(size: 36),
+                      const SizedBox(width: 10),
+                      Text('TaskNet',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textPrimary)),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+
+                  // Title
+                  Text('Sign in',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textPrimary)),
+                  const SizedBox(height: 28),
+
+                  // Session-expired notice (your work was auto-saved as a draft)
+                  if (context.watch<AppState>().sessionExpired) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.amberBg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(children: [
+                        const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Your session expired. Any in-progress event was saved as a draft.',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12, color: const Color(0xFFB45309)),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Username
+                  _InputBox(
+                    controller: _userCtrl,
+                    focusNode: _userFocus,
+                    placeholder: 'Username',
+                    onSubmit: () => _passFocus.requestFocus(),
+                    suffix: const Icon(Icons.person_outline,
+                        size: 20, color: AppTheme.textLight),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Password
+                  _InputBox(
+                    controller: _passCtrl,
+                    focusNode: _passFocus,
+                    placeholder: 'Password',
+                    obscure: _obscure,
+                    onSubmit: _login,
+                    suffix: GestureDetector(
+                      onTap: () => setState(() => _obscure = !_obscure),
+                      child: Icon(
+                        _obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 20,
+                        color: AppTheme.textLight,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Error
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(_error!,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13, color: AppTheme.redColor)),
+                    ),
+
+                  // Login Button
+                  Consumer<AppState>(
+                    builder: (_, state, __) => ElevatedButton(
+                      onPressed: state.isLoading ? null : _login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.darkBanner,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: state.isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : Text('Log In',
+                              style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 16, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Forgot password
+                  GestureDetector(
+                    onTap: () {},
+                    child: Text('Forgot password?',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13, color: AppTheme.textMuted)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InputBox extends StatelessWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String placeholder;
+  final bool obscure;
+  final Widget? suffix;
+  final VoidCallback? onSubmit;
+
+  const _InputBox({
+    required this.controller,
+    required this.focusNode,
+    required this.placeholder,
+    this.obscure = false,
+    this.suffix,
+    this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              obscureText: obscure,
+              style: GoogleFonts.plusJakartaSans(fontSize: 15),
+              textInputAction:
+                  onSubmit != null ? TextInputAction.next : TextInputAction.done,
+              onSubmitted: (_) => onSubmit?.call(),
+              decoration: InputDecoration(
+                hintText: placeholder,
+                hintStyle: GoogleFonts.plusJakartaSans(
+                    fontSize: 15, color: AppTheme.textLight),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                filled: false,
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+          if (suffix != null) suffix!,
+        ],
+      ),
+    );
+  }
+}

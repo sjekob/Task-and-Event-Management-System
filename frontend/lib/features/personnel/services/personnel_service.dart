@@ -1,0 +1,170 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../../services/api_service.dart';
+import '../../../models/models.dart';
+
+class PersonnelService {
+  static String get _base => ApiService.baseUrl;
+
+  static Future<Map<String, String>> get _h async {
+    final token = await ApiService.token;
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  static Future<List<User>> list({String search = ''}) async {
+    final q = Uri.encodeQueryComponent(search);
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel?search=$q'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return (jsonDecode(res.body) as List)
+          .map((e) => User.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    throw Exception('Failed to load personnel');
+  }
+
+  /// One page of personnel (infinite scroll).
+  static Future<PageResult<User>> listPage(
+      {String search = '', int limit = 30, int offset = 0}) async {
+    final q = Uri.encodeQueryComponent(search);
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel?search=$q&limit=$limit&offset=$offset'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return PageResult.fromJson(
+          jsonDecode(res.body) as Map<String, dynamic>,
+          (m) => User.fromJson(m));
+    }
+    throw Exception('Failed to load personnel');
+  }
+
+  static Future<User> create(Map<String, dynamic> data) async {
+    final res = await http.post(
+      Uri.parse('$_base/api/personnel'),
+      headers: await _h,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 201) return User.fromJson(jsonDecode(res.body));
+    throw Exception(
+        (jsonDecode(res.body) as Map)['detail'] ?? 'Failed to create');
+  }
+
+  static Future<User> update(int id, Map<String, dynamic> data) async {
+    final res = await http.put(
+      Uri.parse('$_base/api/personnel/$id'),
+      headers: await _h,
+      body: jsonEncode(data),
+    );
+    if (res.statusCode == 200) return User.fromJson(jsonDecode(res.body));
+    throw Exception(
+        (jsonDecode(res.body) as Map)['detail'] ?? 'Failed to update');
+  }
+
+  static Future<void> updateSubjects(
+      int id, List<Map<String, dynamic>> subjects) async {
+    final res = await http.put(
+      Uri.parse('$_base/api/personnel/$id/subjects'),
+      headers: await _h,
+      body: jsonEncode({'subjects': subjects}),
+    );
+    if (res.statusCode != 200) {
+      throw Exception(
+          (jsonDecode(res.body) as Map)['detail'] ?? 'Failed to update subjects');
+    }
+  }
+
+  static Future<void> toggleStatus(int id) async {
+    final res = await http.patch(
+      Uri.parse('$_base/api/personnel/$id/status'),
+      headers: await _h,
+    );
+    if (res.statusCode != 200) throw Exception('Failed to update status');
+  }
+
+  static Future<List<Map<String, dynamic>>> gradeLevelsMeta() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/grade-levels'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  static Future<List<Map<String, dynamic>>> subjectsMeta() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/subjects'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  /// Skill catalog: [{id, skill_name, category_name}].
+  static Future<List<Map<String, dynamic>>> skillsMeta() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/skills'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  /// Certification catalog: [{id, cert_name, category_name, issuer_name, acronym}].
+  static Future<List<Map<String, dynamic>>> certificationsMeta() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/certifications'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  /// DepEd dropdown options: {highest_attainment, undergraduate_degree, specialization}.
+  static Future<Map<String, List<String>>> educationOptions() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/education-options'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      final m = jsonDecode(res.body) as Map<String, dynamic>;
+      return m.map((k, v) =>
+          MapEntry(k, (v as List).map((e) => e.toString()).toList()));
+    }
+    return {};
+  }
+
+  static Future<List<Map<String, dynamic>>> departmentsMeta() async {
+    final res = await http.get(
+      Uri.parse('$_base/api/personnel/meta/departments'),
+      headers: await _h,
+    );
+    if (res.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+    }
+    return [];
+  }
+
+  static Future<Map<String, dynamic>?> createDepartment(String name) async {
+    final res = await http.post(
+      Uri.parse('$_base/api/personnel/departments'),
+      headers: await _h,
+      body: jsonEncode({'department_name': name}),
+    );
+    if (res.statusCode == 201) return jsonDecode(res.body) as Map<String, dynamic>;
+    return null;
+  }
+}

@@ -1,39 +1,89 @@
-<<<<<<< HEAD
-# Personnel-Appraisal
-=======
-# Task and Event Management System
+# TaskNet — Task Management System
 
-## Project Description
-The administrative operations at Naga Central School II currently face challenges with fragmented, paper-based processes and inefficient digital tool usage. This system addresses these issues by centralizing procedures into a single, dependable digital platform to eliminate miscommunication and document loss.
-
-## Core Modules
-* **Task Management:** Real-time assignment and tracking with centralized document organization.
-* **Personnel Appraisal:** Performance monitoring and event-based evaluations.
-* **Event Management:** Approval workflows, built-in document editing, and committee task automation.
-* **Personnel Management:** Staff records, secure authentication (RBAC), and delegation management.
+A full-stack task management system for educational institutions.
 
 ## Tech Stack
-* **Frontend:** Flutter (Dart)
-* **Backend:** FastAPI (Python)
-* **Database:** PostgreSQL
+- **Frontend**: HTML/CSS/JS (Flutter-inspired UI)  
+- **Backend**: FastAPI (Python)
+- **Database**: SQLite
 
-### Installation Guide
-1. **Clone the repository:**
-   `git clone https://github.com/sjekob/Task-and-Event-Management-System.git`
+## Quick Start
 
-2. **Backend Setup:**
-   - `cd backend`
-   - `pip install -r requirements.txt`
-   - `uvicorn main:app --reload`
+```bash
+chmod +x start.sh
+./start.sh
+```
 
-3. **Frontend Setup:**
-   - `cd frontend`
-   - `flutter pub get`
-   - `flutter run`
+Then open `frontend/index.html` in your browser.
 
-## Contributors
-* **Marc Jacob Cariño** - Project Lead 
-* **Dhenz Mark Alden**
-* **Louis Neo Lok**
-*  **John Michael Mamiit**
->>>>>>> upstream/main
+> **Note**: The frontend connects to `http://localhost:8000` by default.  
+> If deploying, update the `API` constant in `frontend/index.html`.
+
+## Default Accounts
+
+| Username    | Password  | Role        |
+|-------------|-----------|-------------|
+| admin       | admin123  | Admin       |
+| coordinator | coord123  | Coordinator |
+| teacher1    | teach123  | Teacher     |
+| principal   | prin123   | Admin       |
+
+## Features
+
+### 🎯 Dashboard
+- Summary stats: Pending, Submitted, Missing tasks
+- Task Manager quick list
+- My Tasks overview
+- Pending Approval events
+- Interactive calendar with task deadlines
+
+### 📋 Task Manager (Admin/Coordinator)
+- Create, edit, disable, delete tasks
+- Assign tasks to multiple teachers
+- View submission count per task
+- Attach links, files, Google Drive, YouTube
+- Context menu (⋮) for quick actions
+
+### 📝 Task Detail (Admin/Coordinator)
+- Full task description with instructions
+- Points system display
+- View all submissions per task
+- See submitted files (PDF, links, images)
+- Add public/private comments
+
+### ✅ My Tasks (Teacher)
+- View assigned tasks grouped by subject
+- Filter by subject and status
+- Submit files and links
+- See points earned (early/on-time/late)
+- Public class comments + private comments
+
+### 🔐 RBAC
+- **Admin**: Full access, manage users, all tasks
+- **Coordinator**: Create/manage tasks, view submissions
+- **Teacher**: View assigned tasks, submit work
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/login` | Login |
+| GET | `/api/auth/me` | Current user |
+| GET | `/api/users` | List users |
+| POST | `/api/users` | Create user |
+| GET | `/api/tasks` | List tasks |
+| POST | `/api/tasks` | Create task |
+| GET | `/api/tasks/{id}` | Task detail |
+| PUT | `/api/tasks/{id}` | Update task |
+| DELETE | `/api/tasks/{id}` | Delete task |
+| POST | `/api/tasks/{id}/submit` | Submit task |
+| POST | `/api/tasks/{id}/comments` | Add comment |
+| GET | `/api/dashboard` | Dashboard data |
+
+Full API docs: http://localhost:8000/docs
+
+## Points System
+- **Early Submission** (>24h before deadline): +100 pts
+- **On Time**: +100 pts
+- **Late (within 24h)**: +50 pts
+- **Late (after 24h)**: 0 pts

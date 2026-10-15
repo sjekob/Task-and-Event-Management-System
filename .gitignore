@@ -1,143 +1,97 @@
-# ==============================================================================
-#                 Personnel Appraisal System — Root .gitignore
-# ==============================================================================
-
-# ── 1. Security Keys & Local Credentials ─────────────────────────────────────
-# Exclude sensitive RSA keys used for RS256 token generation and validation
-*.pem
-private_key.pem
-public_key.pem
-backend/app/private_key.pem
-backend/app/public_key.pem
-*.key
-
-# ── 2. Local Databases & Sensitive Configs ────────────────────────────────────
-# Exclude SQLite databases, environment variables, and local configurations
-*.db
-*.sqlite
-*.sqlite3
-dev.db
-backend/dev.db
-.env
-backend/.env
-*.env.local
-*.env.development.local
-*.env.test.local
-*.env.production.local
-
-# ── 3. Python Caches & Virtual Environments ───────────────────────────────────
-# Exclude Python environments and precompiled bytecode caches
+# ── Python Virtual Environments ───────────────────────────────────────────────
 venv/
 backend/venv/
 .venv/
 env/
-ENV/
+
+# ── Databases & Sensitive Local Data ──────────────────────────────────────────
+dev.db
+backend/dev.db
+*.db
+*.sqlite
+.env
+backend/.env
+# Uploaded certificates (personal documents) — never commit.
+backend/private/
+*.env.local
+
+# ── Python Build & Cache Artifacts ────────────────────────────────────────────
 __pycache__/
+backend/__pycache__/
 backend/app/__pycache__/
-admin_side/backend/__pycache__/
 *.pyc
 *.pyo
 *.pyd
-.pytest_cache/
-.ipynb_checkpoints/
 
-# ── 4. Flutter & Dart Build Outputs ──────────────────────────────────────────
-# Exclude Flutter/Dart project dependencies and build artifacts
-.dart_tool/
-frontend/.dart_tool/
-build/
-frontend/build/
-.pub-cache/
-.pub/
-.packages
-.flutter-plugins
-.flutter-plugins-dependencies
-.metadata
-linked_*.ds
-unlinked.ds
-unlinked_spec.ds
-frontend/analyze_output.txt
-
-# ── 5. Android & iOS Platform Build Artifacts ────────────────────────────────
-# Exclude Gradle settings, local keys, Xcode outputs, and platform caches
-.gradle/
-**/android/.gradle/
-**/android/local.properties
-**/android/**/gradle-wrapper.jar
-**/android/captures/
-**/android/gradlew
-**/android/gradlew.bat
-**/android/**/GeneratedPluginRegistrant.java
-**/android/key.properties
-*.jks
-*.keystore
-
-# iOS / Xcode
-**/ios/**/*.mode1v3
-**/ios/**/*.mode2v3
-**/ios/**/*.moved-aside
-**/ios/**/*.pbxuser
-**/ios/**/*.perspectivev3
-**/ios/**/*sync/
-**/ios/**/.sconsign.dblite
-**/ios/**/.tags*
-**/ios/**/.vagrant/
-**/ios/**/DerivedData/
-**/ios/**/Icon?
-**/ios/**/Pods/
-**/ios/**/.symlinks/
-**/ios/**/profile
-**/ios/**/xcuserdata
-**/ios/.generated/
-**/ios/Flutter/.last_build_id
-**/ios/Flutter/App.framework
-**/ios/Flutter/Flutter.framework
-**/ios/Flutter/Flutter.podspec
-**/ios/Flutter/Generated.xcconfig
-**/ios/Flutter/ephemeral
-**/ios/Flutter/app.flx
-**/ios/Flutter/app.zip
-**/ios/Flutter/flutter_assets/
-**/ios/Flutter/flutter_export_environment.sh
-**/ios/ServiceDefinitions.json
-**/ios/Runner/GeneratedPluginRegistrant.*
-
-# macOS, Windows, Linux outputs
-**/windows/flutter/generated_plugin_registrant.cc
-**/windows/flutter/generated_plugin_registrant.h
-**/windows/flutter/generated_plugins.cmake
-**/macos/Flutter/GeneratedPluginRegistrant.swift
-**/macos/Flutter/ephemeral
-**/linux/flutter/generated_plugin_registrant.cc
-**/linux/flutter/generated_plugin_registrant.h
-**/linux/flutter/generated_plugins.cmake
-
-# ── 6. IDEs & Text Editors ───────────────────────────────────────────────────
-# Exclude individual editor configurations and local workspace files
+# ── IDEs, Editors & Local Workspace Settings ──────────────────────────────────
 .vs/
-frontend/.vs/
 .vscode/
 .idea/
-frontend/.idea/
 *.suo
 *.user
 *.userosscache
 *.sln.docuser
 *.iml
-*.ipr
-*.iws
-personnel_appraisal.iml
-frontend/personnel_appraisal.iml
 
-# ── 7. OS Specific & Logging ─────────────────────────────────────────────────
-# Exclude system folders and log files
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Desktop.ini
+# ── Flutter / Dart ─────────────────────────────────────────────────────────────
+.dart_tool/
+frontend/.dart_tool/
+build/
+frontend/build/
+frontend-flutter/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+frontend/.flutter-plugins-dependencies
+frontend/.metadata
+.packages
+.pub/
+.pub-preload-cache/
+**/doc/api/
+
+# ── Android ───────────────────────────────────────────────────────────────────
+.gradle/
+frontend/android/.gradle/
+frontend/android/local.properties
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/**/gradle-wrapper.jar
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+*.jks
+
+# ── iOS / macOS / XCode ───────────────────────────────────────────────────────
+**/ios/**/*.mode1v3
+**/ios/**/*.mode2v3
+**/ios/**/*.pbxuser
+**/ios/**/*.perspectivev3
+**/ios/**/DerivedData/
+**/ios/**/Pods/
+**/ios/**/xcuserdata/
+**/ios/.generated/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral
+**/Pods/
+**/Flutter/ephemeral/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral
+**/xcuserdata/
+
+# ── Windows / Linux generated files ───────────────────────────────────────────
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/generated_plugins.cmake
+**/linux/flutter/generated_plugin_registrant.cc
+**/linux/flutter/generated_plugin_registrant.h
+**/linux/flutter/generated_plugins.cmake
+
+# ── Miscellaneous ──────────────────────────────────────────────────────────────
+*.class
 *.log
+*.swp
 .buildlog/
 .history
 coverage/
 app.*.symbols
-app.*.map.json

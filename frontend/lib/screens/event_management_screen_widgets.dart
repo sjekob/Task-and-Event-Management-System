@@ -1,0 +1,1379 @@
+part of 'event_management_screen.dart';
+
+class _CubePatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final topPaint   = Paint()..color = Colors.white.withValues(alpha: 0.07)..style = PaintingStyle.fill;
+    final leftPaint  = Paint()..color = Colors.white.withValues(alpha: 0.04)..style = PaintingStyle.fill;
+    final rightPaint = Paint()..color = Colors.white.withValues(alpha: 0.02)..style = PaintingStyle.fill;
+    final stroke     = Paint()..color = Colors.white.withValues(alpha: 0.06)..style = PaintingStyle.stroke..strokeWidth = 0.5;
+    const double w = 40.0, h = 22.0;
+    for (double row = -1; row < size.height / h + 2; row++) {
+      for (double col = -1; col < size.width / w + 2; col++) {
+        final ox = col * w + (row % 2 == 0 ? 0 : w / 2);
+        final oy = row * h * 0.75;
+        _drawCube(canvas, Offset(ox, oy), w, h, topPaint, leftPaint, rightPaint, stroke);
+      }
+    }
+  }
+  void _drawCube(Canvas canvas, Offset o, double w, double h,
+      Paint top, Paint left, Paint right, Paint stroke) {
+    final cx = o.dx + w / 2, cy = o.dy;
+    final tp = Path()..moveTo(cx, cy)..lineTo(cx + w/2, cy + h/2)..lineTo(cx, cy + h)..lineTo(cx - w/2, cy + h/2)..close();
+    canvas.drawPath(tp, top); canvas.drawPath(tp, stroke);
+    final lp = Path()..moveTo(cx - w/2, cy + h/2)..lineTo(cx, cy + h)..lineTo(cx, cy + h*1.6)..lineTo(cx - w/2, cy + h*1.1)..close();
+    canvas.drawPath(lp, left); canvas.drawPath(lp, stroke);
+    final rp = Path()..moveTo(cx + w/2, cy + h/2)..lineTo(cx, cy + h)..lineTo(cx, cy + h*1.6)..lineTo(cx + w/2, cy + h*1.1)..close();
+    canvas.drawPath(rp, right); canvas.drawPath(rp, stroke);
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter _) => false;
+}
+
+// ─── Tab ──────────────────────────────────────────────────────────────────────
+
+class _Tab extends StatelessWidget {
+  final String label; final bool active; final VoidCallback onTap;
+  const _Tab({required this.label, required this.active, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFF1E2126) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: active ? const Color(0xFF1E2126) : const Color(0xFFDDE3ED)),
+        ),
+        child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+            color: active ? Colors.white : const Color(0xFF4A5568))),
+      ),
+    );
+  }
+}
+
+// ─── Event Detail Sheet ───────────────────────────────────────────────────────
+
+void _showEventDetail(BuildContext context, _CalEvent event, {
+  bool canApprove = false, bool canManage = false, bool isPrincipal = false,
+  VoidCallback? onApprove, VoidCallback? onDisable,
+}) {
+  Navigator.of(context).push(MaterialPageRoute(
+    builder: (_) => _EventDetailPage(
+      event: event,
+      canApprove: canApprove,
+      isPrincipal: isPrincipal,
+      onApprove: onApprove,
+      onDisable: onDisable,
+    ),
+  ));
+}
+
+class _EventDetailPage extends StatelessWidget {
+  final _CalEvent event;
+  final bool canApprove;
+  final bool isPrincipal;
+  final VoidCallback? onApprove;
+  final VoidCallback? onDisable;
+  const _EventDetailPage({
+    required this.event,
+    this.canApprove = false,
+    this.isPrincipal = false,
+    this.onApprove,
+    this.onDisable,
+  });
+
+  static String _money(dynamic v) {
+    final s = (v ?? '').toString().trim();
+    final n = double.tryParse(s.replaceAll(',', '').replaceAll('₱', '').trim());
+    if (n == null) return s;
+    final parts = n.toStringAsFixed(2).split('.');
+    final whole = parts[0].replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+    return '₱$whole.${parts[1]}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = event.raw;
+    final width = MediaQuery.of(context).size.width;
+    final wide = width >= 900;
+    final pending = event.status == _EventStatus.pendingApproval;
+    final showApprove = canApprove && pending;
+    final showDisable = isPrincipal && pending;
+    final me = context.read<AppState>().currentUser;
+    final showAttendanceQr = event.status == _EventStatus.approved && event.id != null &&
+        me != null && (me.can('approve_events') || event.createdBy == me.id);
+
+    final hasFocal = _notEmpty(raw['focal_name']);
+    final hasParticipants = _notEmpty(raw['participants']);
+    final focalCard = _DetailCard(
+      icon: Icons.badge_outlined,
+      title: 'Focal person',
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _PropField('Name', raw['focal_name']),
+        _PropField('Role', raw['focal_role']),
+        _PropField('Contact', raw['focal_contact']),
+      ]),
+    );
+    final participantsCard = _DetailCard(
+      icon: Icons.groups_outlined,
+      title: 'Target participants',
+      child: _buildParticipantsWidget((raw['participants'] ?? '').toString()),
+    );
+
+    // Numbered proposal sections, only those with content.
+    final sections = <(String, IconData, Widget)>[
+      if (_notEmpty(raw['rationale']))
+        ('Rationale', Icons.lightbulb_outline, _PropBody(raw['rationale'].toString())),
+      if (_notEmpty(raw['objectives']))
+        ('Objectives', Icons.flag_outlined, _PropBullets(raw['objectives'].toString())),
+      if (_notEmpty(raw['phase1']) || _notEmpty(raw['phase2']) || _notEmpty(raw['phase3']))
+        ('Methodology / Work plan', Icons.route_outlined, Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_notEmpty(raw['phase1'])) _buildMethodology(raw['phase1'].toString()),
+            if (_notEmpty(raw['phase2'])) _PropField('Phase 2', raw['phase2']),
+            if (_notEmpty(raw['phase3'])) _PropField('Phase 3', raw['phase3']),
+          ],
+        )),
+      if (_notEmpty(raw['activity_matrix']))
+        ('Activity matrix', Icons.view_timeline_outlined,
+            _buildActivityMatrix(raw['activity_matrix'].toString())),
+      if (_notEmpty(raw['training_materials']) || _notEmpty(raw['snacks']))
+        ('Budget', Icons.payments_outlined, Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_notEmpty(raw['training_materials'])) ...[
+              const _SubHeading('Training materials'),
+              _buildBudgetTable(raw['training_materials'].toString(),
+                  [('item', 'Item'), ('qty', 'Qty'), ('cost', 'Cost'), ('total', 'Total')]),
+            ],
+            if (_notEmpty(raw['snacks'])) ...[
+              const SizedBox(height: 16),
+              const _SubHeading('Meals / snacks'),
+              _buildBudgetTable(raw['snacks'].toString(),
+                  [('item', 'Item'), ('pax', 'Participants'), ('cost', 'Cost/Day'), ('total', 'Total')]),
+            ],
+          ],
+        )),
+      if (_notEmpty(raw['exec_committee']) || _notEmpty(raw['twg_groups']))
+        ('Committees', Icons.account_tree_outlined, Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_notEmpty(raw['exec_committee'])) ...[
+              const _SubHeading('Executive committee'),
+              _buildCommitteeList(raw['exec_committee'].toString()),
+            ],
+            if (_notEmpty(raw['twg_groups'])) ...[
+              const SizedBox(height: 14),
+              const _SubHeading('Technical working groups'),
+              _buildTwgGroups(raw['twg_groups'].toString()),
+            ],
+          ],
+        )),
+      if (_notEmpty(raw['monitoring_criteria']) || _notEmpty(raw['indicators']))
+        ('Monitoring & evaluation', Icons.fact_check_outlined, Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_notEmpty(raw['monitoring_criteria'])) _PropBody(raw['monitoring_criteria'].toString()),
+            if (_notEmpty(raw['indicators'])) ...[
+              const _SubHeading('Indicators'),
+              _buildIndicators(raw['indicators'].toString()),
+            ],
+          ],
+        )),
+      if (_notEmpty(raw['comments']))
+        ('Signatories', Icons.draw_outlined, _buildSignatories(raw['comments'].toString())),
+    ];
+
+    final facts = [
+      ('Nature', Icons.category_outlined, (raw['nature'] ?? '').toString()),
+      ('Venue', Icons.place_outlined, (raw['venue'] ?? '').toString()),
+      ('Proposed budget', Icons.account_balance_wallet_outlined, _money(raw['proposed_budget'])),
+      ('Fund source', Icons.savings_outlined, (raw['fund_source'] ?? '').toString()),
+    ];
+
+    final pad = width < 600 ? 16.0 : 28.0;
+    return Scaffold(
+      backgroundColor: const Color(0xFFF1F5FB),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(pad, 20, pad, 32),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1100),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                // ── Header ──
+                _Panel(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      IconButton(
+                        tooltip: 'Back to events',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFFF1F5F9),
+                            foregroundColor: const Color(0xFF1A1A2E)),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('EVENT PROPOSAL', style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8,
+                              color: const Color(0xFF718096))),
+                          const SizedBox(height: 4),
+                          Text(event.title, style: GoogleFonts.plusJakartaSans(
+                              fontSize: 24, fontWeight: FontWeight.w800,
+                              color: const Color(0xFF1A1A2E), height: 1.2)),
+                        ]),
+                      ),
+                      const SizedBox(width: 12),
+                      _StatusBadge(status: event.status),
+                    ]),
+                    const SizedBox(height: 16),
+                    Wrap(spacing: 22, runSpacing: 10, children: [
+                      if (event.creatorName.isNotEmpty)
+                        _PropMeta(Icons.person_outline, 'Proposed by ${event.creatorName}'),
+                      if (_notEmpty(raw['target_date']))
+                        _PropMeta(Icons.event_outlined, raw['target_date'].toString()),
+                      if (_notEmpty(raw['venue']))
+                        _PropMeta(Icons.place_outlined, raw['venue'].toString()),
+                    ]),
+                    ...[
+                      const SizedBox(height: 18),
+                      const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                      const SizedBox(height: 14),
+                      Wrap(spacing: 10, runSpacing: 10, children: [
+                        if (showApprove)
+                          FilledButton.icon(
+                            onPressed: () { Navigator.pop(context); onApprove?.call(); },
+                            icon: const Icon(Icons.check_circle_outline, size: 18),
+                            label: const Text('Approve event'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF16A34A),
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        if (showDisable)
+                          OutlinedButton.icon(
+                            onPressed: () { Navigator.pop(context); onDisable?.call(); },
+                            icon: const Icon(Icons.block, size: 18),
+                            label: const Text('Disable event'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFDC2626),
+                              side: const BorderSide(color: Color(0xFFFCA5A5)),
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        if (showAttendanceQr)
+                          OutlinedButton.icon(
+                            onPressed: () => showDialog(
+                                context: context,
+                                builder: (_) => _AttendanceQrDialog(eventId: event.id!)),
+                            icon: const Icon(Icons.qr_code_2, size: 18),
+                            label: const Text('Attendance QR codes'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF1A1A2E),
+                              side: const BorderSide(color: Color(0xFFE2E8F0)),
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        OutlinedButton.icon(
+                          onPressed: () => EventPrintHelper.printEvent(context, raw),
+                          icon: const Icon(Icons.print_outlined, size: 18),
+                          label: const Text('Print proposal'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1A1A2E),
+                            side: const BorderSide(color: Color(0xFFE2E8F0)),
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ]),
+                    ],
+                  ]),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Key facts ──
+                LayoutBuilder(builder: (context, c) {
+                  final cols = c.maxWidth >= 800 ? 4 : c.maxWidth >= 340 ? 2 : 1;
+                  final w = (c.maxWidth - 12 * (cols - 1)) / cols;
+                  return Wrap(spacing: 12, runSpacing: 12, children: [
+                    for (final f in facts)
+                      SizedBox(width: w, child: _FactTile(label: f.$1, icon: f.$2, value: f.$3)),
+                  ]);
+                }),
+                const SizedBox(height: 16),
+
+                // ── Focal person + participants ──
+                if (hasFocal || hasParticipants) ...[
+                  if (wide && hasFocal && hasParticipants)
+                    // No IntrinsicHeight here: the participants table sizes
+                    // itself with a LayoutBuilder, which can't report
+                    // intrinsic dimensions (debug builds assert on it).
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      SizedBox(width: 320, child: focalCard),
+                      const SizedBox(width: 16),
+                      Expanded(child: participantsCard),
+                    ])
+                  else ...[
+                    if (hasFocal) focalCard,
+                    if (hasFocal && hasParticipants) const SizedBox(height: 16),
+                    if (hasParticipants) participantsCard,
+                  ],
+                  const SizedBox(height: 16),
+                ],
+
+                if (_notEmpty(raw['expected_outputs'])) ...[
+                  _DetailCard(
+                    icon: Icons.checklist_rounded,
+                    title: 'Expected outputs',
+                    child: _buildOutputs(raw['expected_outputs'].toString()),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // ── Numbered sections ──
+                for (var i = 0; i < sections.length; i++) ...[
+                  _ProposalSection(
+                    number: i + 2, // I. is the proposal brief shown above
+                    icon: sections[i].$2,
+                    title: sections[i].$1,
+                    children: [sections[i].$3],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Panel extends StatelessWidget {
+  final Widget child;
+  const _Panel({required this.child});
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE3E9F3)),
+        ),
+        child: child,
+      );
+}
+
+class _DetailCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final Widget child;
+  const _DetailCard({required this.icon, required this.title, required this.child});
+  @override
+  Widget build(BuildContext context) => _Panel(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Icon(icon, size: 18, color: const Color(0xFF4A5568)),
+            const SizedBox(width: 8),
+            Text(title, style: GoogleFonts.plusJakartaSans(
+                fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A2E))),
+          ]),
+          const SizedBox(height: 14),
+          child,
+        ]),
+      );
+}
+
+class _FactTile extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final String value;
+  const _FactTile({required this.label, required this.icon, required this.value});
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE3E9F3)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 38, height: 38,
+            decoration: BoxDecoration(color: const Color(0xFFEEF2FA), borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, size: 19, color: const Color(0xFF1A1A2E)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(fontSize: 11.5, color: Color(0xFF718096))),
+            const SizedBox(height: 2),
+            Text(value.trim().isEmpty ? '—' : value, maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.plusJakartaSans(fontSize: 14.5, fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1A1A2E))),
+          ])),
+        ]),
+      );
+}
+
+class _SubHeading extends StatelessWidget {
+  final String text;
+  const _SubHeading(this.text);
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(text, style: GoogleFonts.plusJakartaSans(
+            fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF4A5568))),
+      );
+}
+
+/// Rounded, bordered container for the proposal's data tables. On narrow
+/// screens the table keeps a readable width and scrolls sideways.
+Widget _tableFrame(Table table) => LayoutBuilder(builder: (context, c) {
+      const minWidth = 560.0;
+      final framed = Container(
+        width: c.maxWidth < minWidth ? minWidth : c.maxWidth,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: table,
+      );
+      return c.maxWidth < minWidth
+          ? SingleChildScrollView(scrollDirection: Axis.horizontal, child: framed)
+          : framed;
+    });
+
+const _kTableInner = TableBorder(
+  horizontalInside: BorderSide(color: Color(0xFFEDF2F7)),
+  verticalInside: BorderSide(color: Color(0xFFEDF2F7)),
+);
+
+// ── Detail helpers ────────────────────────────────────────────────────────────
+
+bool _notEmpty(dynamic v) => v != null && v.toString().trim().isNotEmpty;
+
+Widget _buildParticipantsWidget(String raw) {
+  try {
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    final rows  = (data['rows'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final tots  = data['totals'] as Map<String, dynamic>?;
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return _tableFrame(
+      Table(
+        border: _kTableInner,
+        columnWidths: const {0: FlexColumnWidth(3), 1: FlexColumnWidth(1), 2: FlexColumnWidth(1), 3: FlexColumnWidth(1)},
+        children: [
+          TableRow(decoration: const BoxDecoration(color: Color(0xFFF8FAFC)), children: [
+            _tc('Category', bold: true), _tc('Male', bold: true), _tc('Female', bold: true), _tc('Total', bold: true),
+          ]),
+          for (final r in rows)
+            TableRow(children: [
+              _tc(r['category']?.toString() ?? ''),
+              _tc(r['male']?.toString() ?? ''),
+              _tc(r['female']?.toString() ?? ''),
+              _tc(r['total']?.toString() ?? ''),
+            ]),
+          if (tots != null)
+            TableRow(decoration: const BoxDecoration(color: Color(0xFFEFF6FF)), children: [
+              _tc('Total', bold: true),
+              _tc(tots['male']?.toString() ?? '', bold: true),
+              _tc(tots['female']?.toString() ?? '', bold: true),
+              _tc(tots['total']?.toString() ?? '', bold: true),
+            ]),
+        ],
+      ),
+    );
+  } catch (_) {
+    return _PropField('Participants', raw);
+  }
+}
+
+Widget _buildActivityMatrix(String raw) {
+  try {
+    final rows = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return _tableFrame(Table(
+      border: _kTableInner,
+      columnWidths: const {0: FixedColumnWidth(120), 1: FixedColumnWidth(96), 2: FlexColumnWidth(2), 3: FlexColumnWidth(2)},
+      children: [
+        TableRow(decoration: const BoxDecoration(color: Color(0xFFF8FAFC)), children: [
+          _tc('Day', bold: true), _tc('Time', bold: true), _tc('Activity', bold: true), _tc('Speaker/Facilitator', bold: true),
+        ]),
+        for (final r in rows)
+          TableRow(children: [
+            _tc(r['day']?.toString() ?? ''),
+            _tc(r['time']?.toString() ?? ''),
+            _tc(r['event']?.toString() ?? ''),
+            _tc(r['speaker']?.toString() ?? ''),
+          ]),
+      ],
+    ));
+  } catch (_) {
+    return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
+  }
+}
+
+// columns: list of (dataKey, headerLabel). Decoupling the two lets the same
+// data key (e.g. 'cost') carry a different header per table (Cost vs Cost/Day).
+Widget _buildBudgetTable(String raw, List<(String, String)> columns) {
+  try {
+    final rows = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return _tableFrame(Table(
+      border: _kTableInner,
+      columnWidths: const {0: FlexColumnWidth(2)},
+      defaultColumnWidth: const FlexColumnWidth(1),
+      children: [
+        TableRow(decoration: const BoxDecoration(color: Color(0xFFF8FAFC)), children: [
+          for (final c in columns) _tc(c.$2, bold: true),
+        ]),
+        for (final r in rows)
+          TableRow(children: [
+            for (final c in columns) _tc(r[c.$1]?.toString() ?? ''),
+          ]),
+      ],
+    ));
+  } catch (_) {
+    return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
+  }
+}
+
+Widget _buildCommitteeList(String raw) {
+  try {
+    final members = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: members.map((m) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Builder(builder: (_) {
+          // Exec-committee members store 'position'; TWG members use 'designation'.
+          final pos = (m['position'] ?? m['designation'] ?? '').toString();
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('• ', style: TextStyle(fontSize: 12, color: Color(0xFF718096))),
+            Expanded(child: Text(
+              '${m['name'] ?? ''}${pos.isNotEmpty ? ' — $pos' : ''}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)),
+            )),
+          ]);
+        }),
+      )).toList(),
+    );
+  } catch (_) {
+    return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
+  }
+}
+
+Widget _buildMethodology(String raw) {
+  try {
+    final list = jsonDecode(raw) as List;
+    final sections = <Widget>[];
+    for (final item in list) {
+      final m = item as Map<String, dynamic>;
+      final stage = (m['stage'] ?? '').toString().trim();
+      final activities = (m['activities'] ?? '').toString().trim();
+      if (stage.isEmpty && activities.isEmpty) continue;
+      final step = sections.length + 1;
+      sections.add(Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 26, height: 26,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(color: Color(0xFFEEF2FA), shape: BoxShape.circle),
+            child: Text('$step', style: const TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (stage.isNotEmpty)
+              Text(stage, style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            const SizedBox(height: 4),
+            for (final l in activities.split('\n').where((l) => l.trim().isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text('• ${l.trim()}',
+                    style: const TextStyle(fontSize: 13.5, color: Color(0xFF4A5568), height: 1.4)),
+              ),
+          ])),
+        ]),
+      ));
+    }
+    if (sections.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: sections);
+  } catch (_) {
+    return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
+  }
+}
+
+Widget _buildOutputs(String raw) {
+  // expected_outputs is stored as a JSON array, but legacy data may be newline text.
+  List<String> items;
+  final t = raw.trim();
+  if (t.startsWith('[')) {
+    try {
+      final decoded = jsonDecode(t);
+      items = decoded is List ? decoded.map((e) => e.toString()).toList() : [raw];
+    } catch (_) {
+      items = [raw];
+    }
+  } else {
+    items = raw.split('\n');
+  }
+  items = items.where((s) => s.trim().isNotEmpty).toList();
+  if (items.isEmpty) return const SizedBox.shrink();
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: items.map((s) => Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Text('• ${s.trim().replaceFirst(RegExp(r'^[•\-\*·●○]\s*'), '')}',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF1A1A2E), height: 1.4)),
+    )).toList(),
+  );
+}
+
+Widget _buildSignatories(String raw) {
+  try {
+    final decoded = jsonDecode(raw);
+    final list = (decoded is Map ? decoded['signatories'] : decoded) as List;
+    final rows = <Widget>[];
+    for (final s in list) {
+      final m = s as Map<String, dynamic>;
+      final role = (m['role'] ?? '').toString().trim();
+      final name = (m['name'] ?? '').toString().trim();
+      final title = (m['title'] ?? '').toString().trim();
+      if (role.isEmpty && name.isEmpty && title.isEmpty) continue;
+      rows.add(Container(
+        width: 240,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (role.isNotEmpty)
+            Text(role.toUpperCase(), style: const TextStyle(
+                fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: Color(0xFF718096))),
+          const SizedBox(height: 6),
+          Text(name.isNotEmpty ? name : '—',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+          if (title.isNotEmpty)
+            Text(title, style: const TextStyle(fontSize: 12.5, color: Color(0xFF4A5568))),
+        ]),
+      ));
+    }
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Wrap(spacing: 12, runSpacing: 12, children: rows);
+  } catch (_) {
+    // Fall back to raw text for any legacy free-text comments.
+    return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
+  }
+}
+
+Widget _buildTwgGroups(String raw) {
+  try {
+    final list = jsonDecode(raw) as List;
+    final sections = <Widget>[];
+    for (final group in list) {
+      final g = group as Map<String, dynamic>;
+      final title = g['title']?.toString() ?? '';
+      final members = (g['members'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      if (title.isNotEmpty) {
+        sections.add(Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 4),
+          child: Text(title,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                  color: Color(0xFF718096), letterSpacing: 0.3)),
+        ));
+      }
+      for (final m in members) {
+        final name  = m['name']?.toString() ?? '';
+        final desig = m['designation']?.toString() ?? '';
+        sections.add(Padding(
+          padding: const EdgeInsets.only(bottom: 3, left: 8),
+          child: Text('• $name${desig.isNotEmpty ? ' — $desig' : ''}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568))),
+        ));
+      }
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: sections);
+  } catch (_) {
+    return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
+  }
+}
+
+Widget _buildIndicators(String raw) {
+  try {
+    final list = jsonDecode(raw) as List;
+    final items = list
+        .asMap()
+        .entries
+        .map((e) {
+          final label = (e.value as Map<String, dynamic>)['label']?.toString() ?? '';
+          return '${e.key + 1}. $label';
+        })
+        .where((s) => s.trim().length > 3)
+        .toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items.map((s) => Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Text(s, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568))),
+      )).toList(),
+    );
+  } catch (_) {
+    return Text(raw, style: const TextStyle(fontSize: 12, color: Color(0xFF4A5568)));
+  }
+}
+
+Widget _tc(String text, {bool bold = false}) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Text(text,
+          style: TextStyle(
+              fontSize: 13,
+              fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+              color: bold ? const Color(0xFF1A1A2E) : const Color(0xFF4A5568))),
+    );
+
+class _StatusBadge extends StatelessWidget {
+  final _EventStatus status;
+  const _StatusBadge({required this.status});
+  @override
+  Widget build(BuildContext context) {
+    final isApproved = status == _EventStatus.approved;
+    final isDisabled = status == _EventStatus.disabled;
+    final isDraft    = status == _EventStatus.draft;
+    final color = isDisabled ? const Color(0xFFE53E3E)
+        : isDraft ? const Color(0xFF718096)
+        : isApproved ? const Color(0xFF48BB78) : const Color(0xFFED8936);
+    final label = isDisabled ? 'Disabled' : isDraft ? 'Draft' : isApproved ? 'Approved' : 'Pending';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+      child: Text(label, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+// ─── Proposal Detail Widgets ──────────────────────────────────────────────────
+
+class _PropMeta extends StatelessWidget {
+  final IconData icon;
+  final String   text;
+  const _PropMeta(this.icon, this.text);
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.zero,
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 16, color: const Color(0xFF718096)),
+      const SizedBox(width: 6),
+      Text(text, style: const TextStyle(fontSize: 13.5, color: Color(0xFF4A5568))),
+    ]),
+  );
+}
+
+/// A numbered proposal section (II. Rationale, III. Objectives, ...) as a card.
+class _ProposalSection extends StatelessWidget {
+  final int number;
+  final IconData icon;
+  final String title;
+  final List<Widget> children;
+  const _ProposalSection({required this.number, required this.icon,
+      required this.title, required this.children});
+
+  static const _roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
+  @override
+  Widget build(BuildContext context) => _Panel(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(6)),
+              child: Text(number <= _roman.length ? _roman[number - 1] : '$number',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800,
+                      color: Colors.white, letterSpacing: 0.4)),
+            ),
+            const SizedBox(width: 10),
+            Icon(icon, size: 18, color: const Color(0xFF4A5568)),
+            const SizedBox(width: 6),
+            Expanded(child: Text(title, style: GoogleFonts.plusJakartaSans(
+                fontSize: 15.5, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A2E)))),
+          ]),
+          const SizedBox(height: 14),
+          ...children,
+        ]),
+      );
+}
+
+class _PropField extends StatelessWidget {
+  final String  label;
+  final dynamic value;
+  const _PropField(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    final v = value?.toString() ?? '';
+    if (v.trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
+                color: Color(0xFF718096))),
+        const SizedBox(height: 2),
+        Text(v, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A2E), height: 1.4)),
+      ]),
+    );
+  }
+}
+
+class _PropBody extends StatelessWidget {
+  final String text;
+  const _PropBody(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    if (text.trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(text,
+          style: const TextStyle(fontSize: 14.5, color: Color(0xFF1A1A2E), height: 1.65)),
+    );
+  }
+}
+
+class _PropBullets extends StatelessWidget {
+  final String text;
+  const _PropBullets(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    if (lines.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: lines.map((l) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('•  ', style: TextStyle(fontSize: 14.5, color: Color(0xFF718096))),
+          Expanded(child: Text(l.trim().replaceFirst(RegExp(r'^[•\-\*·●○]\s*'), ''),
+              style: const TextStyle(fontSize: 14.5, color: Color(0xFF1A1A2E), height: 1.5))),
+        ]),
+      )).toList(),
+    );
+  }
+}
+
+// ─── Event Card ───────────────────────────────────────────────────────────────
+
+class _EventCard extends StatelessWidget {
+  final _CalEvent    event;
+  final bool         canManage;
+  final bool         canApprove;
+  final bool         isPrincipal;
+  final VoidCallback onEdit;
+  final VoidCallback onDisable;
+  final VoidCallback onApprove;
+  final VoidCallback? onPrint;
+  final VoidCallback? onTap;
+
+  const _EventCard({
+    required this.event, required this.canManage, required this.canApprove,
+    required this.isPrincipal, required this.onEdit, required this.onDisable,
+    required this.onApprove, this.onPrint, this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Flexible(child: Text(event.title,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)))),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: event.status == _EventStatus.approved
+                          ? const Color(0xFF48BB78).withValues(alpha: 0.12)
+                          : const Color(0xFFED8936).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4)),
+                  child: Text(
+                      event.status == _EventStatus.approved ? 'Approved' : 'Pending',
+                      style: TextStyle(fontSize: 11,
+                          color: event.status == _EventStatus.approved
+                              ? const Color(0xFF48BB78) : const Color(0xFFED8936),
+                          fontWeight: FontWeight.w500)),
+                ),
+              ]),
+              const SizedBox(height: 3),
+              Text(event.description,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF718096)),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              if (event.creatorName.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('By ${event.creatorName}',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFFB0B7C3))),
+              ],
+            ]),
+          ),
+
+          // Print / Save as PDF — available to all roles for all statuses
+          if (onPrint != null)
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18, color: Color(0xFF718096)),
+              onPressed: onPrint,
+              tooltip: 'Print / Save as PDF',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+
+          // Principal: Approve + Disable for pending events
+          if (isPrincipal && canApprove && event.status == _EventStatus.pendingApproval)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 20, color: Color(0xFF718096)),
+              offset: const Offset(0, 30),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding: EdgeInsets.zero,
+              onSelected: (v) {
+                if (v == 'approve') onApprove();
+                if (v == 'disable') onDisable();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem<String>(value: 'approve', height: 40,
+                    child: Text('Approve',
+                        style: TextStyle(fontSize: 13, color: Color(0xFF48BB78)))),
+                PopupMenuItem<String>(value: 'disable', height: 40, padding: EdgeInsets.zero,
+                  child: Container(width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: const BoxDecoration(color: Color(0xFFE53E3E),
+                        borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(0), bottom: Radius.circular(8))),
+                    child: const Text('Disable',
+                        style: TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500))),
+                ),
+              ],
+            )
+
+          // Coordinator/Dean/Admin: Edit only for pending events (no disable)
+          else if (canManage && event.status == _EventStatus.pendingApproval)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 20, color: Color(0xFF718096)),
+              offset: const Offset(0, 30),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding: EdgeInsets.zero,
+              onSelected: (v) {
+                if (v == 'edit') onEdit();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem<String>(value: 'edit', height: 40,
+                    child: Text('Edit',
+                        style: TextStyle(fontSize: 13, color: Color(0xFF1A1A2E)))),
+              ],
+            ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Disabled Event Card ──────────────────────────────────────────────────────
+
+class _DisabledEventCard extends StatelessWidget {
+  final _CalEvent event; final bool canManage;
+  final VoidCallback onEnable; final VoidCallback? onPrint; final VoidCallback? onTap;
+  const _DisabledEventCard({required this.event, required this.canManage,
+      required this.onEnable, this.onPrint, this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE53E3E).withValues(alpha: 0.3))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Flexible(child: Text(event.title,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+                      color: Color(0xFF9CA3AF), decoration: TextDecoration.lineThrough))),
+              const SizedBox(width: 8),
+              Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: const Color(0xFFE53E3E).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4)),
+                child: const Text('Disabled',
+                    style: TextStyle(fontSize: 11, color: Color(0xFFE53E3E), fontWeight: FontWeight.w500))),
+            ]),
+            const SizedBox(height: 3),
+            Text(event.description, style: const TextStyle(fontSize: 12, color: Color(0xFFB0B7C3))),
+          ])),
+          if (onPrint != null)
+            IconButton(
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18, color: Color(0xFF718096)),
+              onPressed: onPrint,
+              tooltip: 'Print / Save as PDF',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+          if (canManage)
+            TextButton(onPressed: onEnable,
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFF48BB78),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              child: const Text('Enable')),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Draft Event Card ─────────────────────────────────────────────────────────
+
+class _DraftEventCard extends StatelessWidget {
+  final _CalEvent event;
+  final VoidCallback onContinue;
+  final VoidCallback onDelete;
+  const _DraftEventCard({required this.event, required this.onContinue, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = event.title.trim().isEmpty ? 'Untitled Draft' : event.title;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFDDE3ED))),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Flexible(child: Text(title,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)))),
+              const SizedBox(width: 8),
+              const _StatusBadge(status: _EventStatus.draft),
+            ]),
+            const SizedBox(height: 3),
+            const Text('Continue where you left off.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF718096))),
+          ]),
+        ),
+        TextButton(onPressed: onContinue,
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFF1E2126),
+              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          child: const Text('Continue Editing')),
+        IconButton(
+          icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFE53E3E)),
+          onPressed: onDelete,
+          tooltip: 'Delete draft',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─── Confirm Disable Dialog ───────────────────────────────────────────────────
+
+class _ConfirmDisableDialog extends StatelessWidget {
+  final String eventTitle;
+  const _ConfirmDisableDialog({required this.eventTitle});
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SizedBox(width: 320,
+        child: Padding(padding: const EdgeInsets.all(28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Confirm Disable',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            const SizedBox(height: 12),
+            Text('Disable "$eventTitle"?', textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
+            const SizedBox(height: 24),
+            Row(children: [
+              Expanded(child: SizedBox(height: 44,
+                child: ElevatedButton(onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE53E3E),
+                      foregroundColor: Colors.white, elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  child: const Text('Disable', style: TextStyle(fontWeight: FontWeight.w600))))),
+              const SizedBox(width: 12),
+              Expanded(child: SizedBox(height: 44,
+                child: OutlinedButton(onPressed: () => Navigator.pop(context, false),
+                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF4A5568),
+                      side: const BorderSide(color: Color(0xFFDDE3ED)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600))))),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Confirm Delete Dialog ────────────────────────────────────────────────────
+
+class _ConfirmDeleteDialog extends StatelessWidget {
+  final String eventTitle;
+  const _ConfirmDeleteDialog({required this.eventTitle});
+  @override
+  Widget build(BuildContext context) {
+    final title = eventTitle.trim().isEmpty ? 'Untitled Draft' : eventTitle;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SizedBox(width: 320,
+        child: Padding(padding: const EdgeInsets.all(28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Delete Draft',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            const SizedBox(height: 12),
+            Text('Delete "$title"? This cannot be undone.', textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF718096))),
+            const SizedBox(height: 24),
+            Row(children: [
+              Expanded(child: SizedBox(height: 44,
+                child: ElevatedButton(onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE53E3E),
+                      foregroundColor: Colors.white, elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w600))))),
+              const SizedBox(width: 12),
+              Expanded(child: SizedBox(height: 44,
+                child: OutlinedButton(onPressed: () => Navigator.pop(context, false),
+                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF4A5568),
+                      side: const BorderSide(color: Color(0xFFDDE3ED)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600))))),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Side Calendar ────────────────────────────────────────────────────────────
+
+class _SideCalendar extends StatelessWidget {
+  final DateTime focusedDay; final DateTime? selectedDay;
+  final Map<DateTime, List<_CalEvent>> eventsByDay;
+  final List<DepedEntry> deped;
+  final Function(DateTime, DateTime) onDaySelected;
+  final Function(DateTime) onPageChanged;
+  /// Opens the expanded calendar (also triggered by tapping a day).
+  final VoidCallback onExpand;
+  const _SideCalendar({required this.focusedDay, required this.selectedDay,
+      required this.eventsByDay, this.deped = const [], required this.onDaySelected,
+      required this.onPageChanged, required this.onExpand});
+
+  // Hover tooltip text: title · when · where for each event on the day.
+  String? _tooltipText(DateTime day) {
+    final memos = [
+      for (final d in deped)
+        if (d.covers(day)) 'DepEd Memo · ${d.category}\n${d.title}\n${d.rangeLabel}',
+    ];
+    final events = eventsByDay[day];
+    if (events == null || events.isEmpty) return memos.isEmpty ? null : memos.join('\n\n');
+    return [...memos, ...events.map((e) {
+      final when = (e.raw['target_date'] ?? '').toString().trim();
+      final where = (e.raw['venue'] ?? '').toString().trim();
+      final lines = <String>[e.title];
+      if (when.isNotEmpty) lines.add('When: $when');
+      if (where.isNotEmpty) lines.add('Where: $where');
+      return lines.join('\n');
+    })].join('\n\n');
+  }
+
+  @override
+  Widget build(BuildContext context) => AppCalendar(
+        month: focusedDay,
+        onMonthChanged: onPageChanged,
+        selectedDay: selectedDay,
+        onDaySelected: (d) => onDaySelected(d, d),
+        eventDays: eventsByDay.keys.toSet(),
+        depedDays: DepedEntry.byDay(deped).keys.toSet(),
+        tooltipFor: _tooltipText,
+        actions: [
+          AppCalendarAction(
+              icon: Icons.open_in_full_rounded, tooltip: 'Open full calendar', onTap: onExpand),
+        ],
+      );
+}
+
+// ─── Attendance QR Codes ──────────────────────────────────────────────────────
+
+/// Time In / Time Out QR codes for every Activity Matrix row. Each QR opens the
+/// attendance scan page; the code in it is signed by the server.
+class _AttendanceQrDialog extends StatefulWidget {
+  final int eventId;
+  const _AttendanceQrDialog({required this.eventId});
+
+  @override
+  State<_AttendanceQrDialog> createState() => _AttendanceQrDialogState();
+}
+
+class _AttendanceQrDialogState extends State<_AttendanceQrDialog> {
+  late final Future<Map<String, dynamic>> _future =
+      ApiService.getAttendanceQrCodes(widget.eventId);
+
+  String _url(int index, String action, String code) =>
+      '${Uri.base.origin}/#/attendance/${widget.eventId}/$index/scan'
+      '?action=$action&code=$code';
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 760),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: _future,
+            builder: (context, snap) {
+              final header = Row(children: [
+                Expanded(child: Text('Attendance QR Codes',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary))),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ]);
+              if (snap.connectionState != ConnectionState.done) {
+                return Column(mainAxisSize: MainAxisSize.min, children: [
+                  header,
+                  const Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()),
+                ]);
+              }
+              if (snap.hasError) {
+                return Column(mainAxisSize: MainAxisSize.min, children: [
+                  header,
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(snap.error.toString().replaceFirst('Exception: ', ''),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 13, color: Color(0xFFE53E3E))),
+                  ),
+                ]);
+              }
+              final data = snap.data!;
+              final activities = (data['activities'] as List? ?? const []).cast<Map>();
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  Text(data['title']?.toString() ?? '',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, color: AppTheme.textMuted)),
+                  const SizedBox(height: 12),
+                  if (activities.isEmpty)
+                    const _QrNotice('This event has no Activity Matrix rows.'),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: activities.length,
+                      separatorBuilder: (_, __) => const Divider(height: 28, color: Color(0xFFE2E8F0)),
+                      itemBuilder: (_, i) => _activity(activities[i]),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _activity(Map a) {
+    final index = a['index'] as int;
+    final name = (a['event'] ?? '').toString().trim();
+    final task = (a['special_task_title'] ?? '').toString().trim();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(name.isEmpty ? 'Activity ${index + 1}' : name,
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+      Text([a['day'], a['time']].where((v) => (v ?? '').toString().isNotEmpty).join('  ·  '),
+          style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppTheme.textMuted)),
+      if (task.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('Automated special task: $task',
+              style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppTheme.greenColor)),
+        ),
+      if (a['schedule_readable'] != true)
+        const _QrNotice("This row's day/time can't be read (use e.g. \"4:00-5:00 PM\"), "
+            'so its scans will be rejected.'),
+      const SizedBox(height: 10),
+      Wrap(spacing: 16, runSpacing: 12, children: [
+        _qr('Time In', _url(index, 'time_in', a['time_in_code'].toString())),
+        _qr('Time Out', _url(index, 'time_out', a['time_out_code'].toString())),
+      ]),
+    ]);
+  }
+
+  Widget _qr(String label, String url) => SizedBox(
+        width: 250,
+        child: Column(children: [
+          Text(label,
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: Colors.grey.shade200),
+                borderRadius: BorderRadius.circular(10)),
+            child: QrImageView(data: url, version: QrVersions.auto, size: 170),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(url,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(fontSize: 9, color: const Color(0xFF3B82F6))),
+        ]),
+      );
+}
+
+class _QrNotice extends StatelessWidget {
+  final String text;
+  const _QrNotice(this.text);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 6, bottom: 6),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFFDE68A))),
+        child: Text(text, style: const TextStyle(fontSize: 12, color: Color(0xFF92400E))),
+      );
+}

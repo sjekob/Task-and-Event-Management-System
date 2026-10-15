@@ -1,0 +1,37 @@
+{
+  "folders": [
+    { "name": "Frontend (Flutter)", "path": "./frontend" },
+    { "name": "Backend (FastAPI)",  "path": "./backend" }
+  ],
+  "settings": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": null,
+    "[dart]": {
+      "editor.defaultFormatter": "Dart-Code.dart-code",
+      "editor.rulers": [80]
+    },
+    "[python]": {
+      "editor.defaultFormatter": "ms-python.python"
+    },
+    "python.defaultInterpreterPath": "./backend/venv/bin/python",
+    "dart.flutterSdkPath": null,
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.dart_tool": true,
+      "**/build": false
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "Dart-Code.flutter",
+      "Dart-Code.dart-code",
+      "ms-python.python",
+      "ms-python.pylance",
+      "tamasfe.even-better-toml",
+      "humao.rest-client",
+      "rangav.vscode-thunder-client",
+      "eamodio.gitlens",
+      "ms-azuretools.vscode-docker"
+    ]
+  }
+}
