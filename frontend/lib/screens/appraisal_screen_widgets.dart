@@ -314,9 +314,11 @@ class _SpecialTasksTab extends StatefulWidget {
   final bool loading;
   final String? error;
   final VoidCallback onRefresh;
+  final Future<void> Function() onExport;
   final ValueChanged<SpecialTask> onEvaluated;
   const _SpecialTasksTab({required this.tasks, required this.loading,
-      this.error, required this.onRefresh, required this.onEvaluated});
+      this.error, required this.onRefresh, required this.onExport,
+      required this.onEvaluated});
   @override
   State<_SpecialTasksTab> createState() => _SpecialTasksTabState();
 }
@@ -325,6 +327,7 @@ class _SpecialTasksTabState extends State<_SpecialTasksTab> {
   String? _filterDept;
   String? _filterRole;
   String? _filterPersonnel;
+  bool _exporting = false;
 
   List<SpecialTask> get _filtered {
     var list = widget.tasks;
@@ -437,13 +440,6 @@ class _SpecialTasksTabState extends State<_SpecialTasksTab> {
               iconBg: const Color(0xFFFEE2E2),
               title: 'Escalation Threshold', subtitle: 'Below 3 stars auto-flags')),
         ]),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity, height: 40,
-          decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
-              borderRadius: BorderRadius.circular(8)),
-        ),
       ]),
     );
   }
@@ -626,9 +622,19 @@ class _SpecialTasksTabState extends State<_SpecialTasksTab> {
         const SizedBox(width: 16),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
           ElevatedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.download_outlined, size: 16),
-            label: Text('Export Performance Summary',
+            onPressed: _exporting ? null : () async {
+              setState(() => _exporting = true);
+              try {
+                await widget.onExport();
+              } finally {
+                if (mounted) setState(() => _exporting = false);
+              }
+            },
+            icon: _exporting
+                ? const SizedBox(width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.picture_as_pdf_outlined, size: 16),
+            label: Text(_exporting ? 'Generating PDF...' : 'Export Performance Summary',
                 style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600)),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.darkBanner, foregroundColor: Colors.white,
@@ -637,7 +643,7 @@ class _SpecialTasksTabState extends State<_SpecialTasksTab> {
             ),
           ),
           const SizedBox(height: 4),
-          Text('Last exported: March 15, 2025',
+          Text('Exports the selected school year as PDF',
               style: GoogleFonts.plusJakartaSans(fontSize: 11, color: const Color(0xFF3B82F6))),
         ]),
       ]),
@@ -666,14 +672,15 @@ class _EvaluateSpecialTaskDialog extends StatefulWidget {
 
 class _EvaluateSpecialTaskDialogState extends State<_EvaluateSpecialTaskDialog> {
   int _step = 1; // 1 = info, 2 = rating
-  int _completion = 0;
-  int _timeliness = 0;
-  int _initiative = 0;
+  int _quality = 0;     // Q
+  int _efficiency = 0;  // E
+  int _timeliness = 0;  // T
   final _remarksCtrl = TextEditingController();
   bool _submitting = false;
 
-  int get _estimatedScore =>
-      ((_completion * 40 + _timeliness * 30 + _initiative * 30) / 5).round();
+  bool get _allRated => _quality > 0 && _efficiency > 0 && _timeliness > 0;
+  double get _finalScore =>
+      _allRated ? (_quality + _efficiency + _timeliness) / 3 : 0;
 
   @override
   void dispose() { _remarksCtrl.dispose(); super.dispose(); }
@@ -687,18 +694,18 @@ class _EvaluateSpecialTaskDialogState extends State<_EvaluateSpecialTaskDialog> 
   }
 
   Future<void> _submit() async {
-    if (_completion == 0 || _timeliness == 0 || _initiative == 0) {
+    if (!_allRated) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please rate all criteria.')));
+          const SnackBar(content: Text('Please rate Quality, Efficiency and Timeliness.')));
       return;
     }
     setState(() => _submitting = true);
     try {
       final updated = await ApiService.evaluateSpecialTask(widget.task.id, {
-        'completion_quality_score': _completion,
+        'completion_quality_score': _quality,
         'timeliness_score': _timeliness,
-        'initiative_score': _initiative,
-        'coordination_score': _initiative,
+        'initiative_score': _efficiency,
+        'coordination_score': 0,
         'remarks': _remarksCtrl.text.trim(),
       });
       if (mounted) Navigator.pop(context, updated);
@@ -764,6 +771,8 @@ class _EvaluateSpecialTaskDialogState extends State<_EvaluateSpecialTaskDialog> 
       ]),
       const SizedBox(height: 16),
       _InfoField('Due Date', _fmtDate(t.dueDate)),
+      const SizedBox(height: 20),
+      _MovList(task: t),
       const SizedBox(height: 24),
       Row(mainAxisAlignment: MainAxisAlignment.end, children: [
         TextButton(onPressed: () => Navigator.pop(context),
@@ -792,23 +801,31 @@ class _EvaluateSpecialTaskDialogState extends State<_EvaluateSpecialTaskDialog> 
 
   Widget _buildRatingStep() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _StarRatingRow('Task Completion Quality (40%)', _completion,
-          (v) => setState(() => _completion = v)),
+      Text('Rating (Scale 1 - 5):', style: GoogleFonts.plusJakartaSans(
+          fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+      const SizedBox(height: 14),
+      _RatingDropdownRow('Quality (Q):', _quality, (v) => setState(() => _quality = v)),
+      const SizedBox(height: 14),
+      _RatingDropdownRow('Efficiency (E):', _efficiency, (v) => setState(() => _efficiency = v)),
+      const SizedBox(height: 14),
+      _RatingDropdownRow('Timeliness (T):', _timeliness, (v) => setState(() => _timeliness = v)),
       const SizedBox(height: 16),
-      _StarRatingRow('Timeliness and Reliability (30%)', _timeliness,
-          (v) => setState(() => _timeliness = v)),
+      Text(
+        _allRated
+            ? 'Final IPCRF Score: ${_finalScore.toStringAsFixed(2)} / 5.00 (${_ipcrfRating(_finalScore)})'
+            : 'Final IPCRF Score: — / 5.00',
+        style: GoogleFonts.plusJakartaSans(
+            fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF1D4ED8)),
+      ),
       const SizedBox(height: 16),
-      _StarRatingRow('Initiative and Problem-Solving (30%)', _initiative,
-          (v) => setState(() => _initiative = v)),
-      const SizedBox(height: 16),
-      Text('Remarks', style: GoogleFonts.plusJakartaSans(
+      Text('Remarks:', style: GoogleFonts.plusJakartaSans(
           fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
       const SizedBox(height: 6),
       TextField(
-        controller: _remarksCtrl, maxLines: 4,
+        controller: _remarksCtrl, maxLines: 3,
         style: GoogleFonts.plusJakartaSans(fontSize: 13),
         decoration: InputDecoration(
-          hintText: 'Add remarks...', hintStyle: AppTheme.bodyMd,
+          hintText: 'Add performance comments...', hintStyle: AppTheme.bodyMd,
           filled: true, fillColor: Colors.white,
           contentPadding: const EdgeInsets.all(12),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
@@ -819,10 +836,6 @@ class _EvaluateSpecialTaskDialogState extends State<_EvaluateSpecialTaskDialog> 
               borderSide: const BorderSide(color: AppTheme.accentBlue, width: 1.5)),
         ),
       ),
-      const SizedBox(height: 10),
-      Text('Estimated score: $_estimatedScore/100',
-          style: GoogleFonts.plusJakartaSans(
-              fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.textMuted)),
       const SizedBox(height: 20),
       Row(mainAxisAlignment: MainAxisAlignment.end, children: [
         TextButton(onPressed: () => setState(() => _step = 1),
@@ -910,22 +923,22 @@ class _ViewSpecialTaskDialog extends StatelessWidget {
             ]),
             const SizedBox(height: 16),
             _InfoField('Due Date', _fmtDate(task.dueDate)),
+            const SizedBox(height: 16),
+            _MovList(task: task),
             if (ev != null) ...[
               const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 12),
               Text('Previous Evaluation:',
                   style: GoogleFonts.plusJakartaSans(
                       fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
               const SizedBox(height: 12),
-              _EvalReadRow('Task Completion Quality (40%)', ev.completionScore),
+              _ScoreReadRow('Quality (Q)', ev.completionScore),
               const SizedBox(height: 8),
-              _EvalReadRow('Timeliness and Reliability (30%)', ev.timelinessScore),
+              _ScoreReadRow('Efficiency (E)', ev.initiativeScore),
               const SizedBox(height: 8),
-              _EvalReadRow('Initiative and Problem-Solving (30%)', ev.initiativeScore),
+              _ScoreReadRow('Timeliness (T)', ev.timelinessScore),
               const SizedBox(height: 12),
               Row(children: [
-                Expanded(child: Text('Total Weighted Score',
+                Expanded(child: Text('Final IPCRF Score',
                     style: GoogleFonts.plusJakartaSans(
                         fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary))),
                 Container(
@@ -933,7 +946,7 @@ class _ViewSpecialTaskDialog extends StatelessWidget {
                   decoration: BoxDecoration(
                       color: const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(6)),
-                  child: Text('${task.scoreOutOf100}/100',
+                  child: Text('${(ev.weightedAverage ?? 0).toStringAsFixed(2)} / 5.00',
                       style: GoogleFonts.plusJakartaSans(
                           fontSize: 14, fontWeight: FontWeight.w700,
                           color: const Color(0xFF1D4ED8))),
@@ -2212,3 +2225,199 @@ Widget _EvalReadRow(String label, int score) => Padding(
         color: (i + 1) <= score ? Colors.amber : Colors.grey.shade300, size: 20))),
   ]),
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Evaluator demographics (event evaluations)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DemographicsDialog extends StatelessWidget {
+  final EventForAppraisal event;
+  const _DemographicsDialog({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    final d = event.demographics;
+    final total = (d['total'] as num?)?.toInt() ?? 0;
+    Map<String, int> m(String k) => (d[k] as Map? ?? {})
+        .map((key, v) => MapEntry(key.toString(), (v as num).toInt()));
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 720, maxHeight: MediaQuery.of(context).size.height * 0.85),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Evaluator demographics', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18, fontWeight: FontWeight.w700)),
+                Text('${event.title} · $total ${total == 1 ? 'evaluation' : 'evaluations'}',
+                    style: AppTheme.bodySm),
+              ])),
+              IconButton(onPressed: () => Navigator.pop(context), tooltip: 'Close',
+                  icon: const Icon(Icons.close)),
+            ]),
+            const SizedBox(height: 16),
+            Flexible(
+              child: total == 0
+                  ? Text('No evaluations yet.', style: AppTheme.bodyMd)
+                  : SingleChildScrollView(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        _breakdown('By role', m('by_role'), total),
+                        _breakdown('By sex', m('by_sex'), total),
+                        _breakdown('By age group', m('by_age_group'), total),
+                      ]),
+                    ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _breakdown(String title, Map<String, int> counts, int total) => Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(title, style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          for (final e in counts.entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(children: [
+                SizedBox(width: 150, child: Text(
+                    e.key.isEmpty ? '—' : e.key[0].toUpperCase() + e.key.substring(1),
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(fontSize: 13,
+                        color: e.key == 'Not specified' ? AppTheme.textLight : AppTheme.textPrimary))),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: e.value / total,
+                      minHeight: 10,
+                      backgroundColor: const Color(0xFFEEF2FA),
+                      color: e.key == 'Not specified' ? const Color(0xFFCBD5E1) : AppTheme.accentBlue,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(width: 90, child: Text(
+                    '${e.value} · ${(e.value * 100 / total).toStringAsFixed(0)}%',
+                    textAlign: TextAlign.right, style: AppTheme.captionMd)),
+              ]),
+            ),
+        ]),
+      );
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// Special task dialog helpers (IPCRF-style Q / E / T rating)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const _ratingLabels = {
+  5: 'Outstanding',
+  4: 'Very Satisfactory',
+  3: 'Satisfactory',
+  2: 'Unsatisfactory',
+  1: 'Poor',
+};
+
+/// DepEd RPMS rating bands for a 1-5 score.
+String _ipcrfRating(double s) {
+  if (s >= 4.5) return 'Outstanding';
+  if (s >= 3.5) return 'Very Satisfactory';
+  if (s >= 2.5) return 'Satisfactory';
+  return 'Unsatisfactory';
+}
+
+class _RatingDropdownRow extends StatelessWidget {
+  final String label;
+  final int value; // 0 = not chosen
+  final ValueChanged<int> onChanged;
+  const _RatingDropdownRow(this.label, this.value, this.onChanged);
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Expanded(child: Text(label, style: GoogleFonts.plusJakartaSans(
+            fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary))),
+        SizedBox(
+          width: 250,
+          child: DropdownButtonFormField<int>(
+            value: value == 0 ? null : value,
+            isDense: true,
+            hint: Text('Select rating', style: GoogleFonts.plusJakartaSans(
+                fontSize: 13, color: AppTheme.textMuted)),
+            items: [
+              for (final e in _ratingLabels.entries)
+                DropdownMenuItem(value: e.key,
+                    child: Text('${e.key} - ${e.value}',
+                        style: GoogleFonts.plusJakartaSans(fontSize: 13))),
+            ],
+            onChanged: (v) { if (v != null) onChanged(v); },
+            decoration: InputDecoration(
+              filled: true, fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppTheme.borderColor)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppTheme.borderColor)),
+            ),
+          ),
+        ),
+      ]);
+}
+
+Widget _ScoreReadRow(String label, int score) => Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(children: [
+        Expanded(child: Text(label, style: GoogleFonts.plusJakartaSans(
+            fontSize: 13, color: AppTheme.textMuted))),
+        Text('$score', style: GoogleFonts.plusJakartaSans(
+            fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+      ]),
+    );
+
+/// "Attached MOVs" list: the files / links attached to the special task.
+class _MovList extends StatelessWidget {
+  final SpecialTask task;
+  const _MovList({required this.task});
+
+  String _resolve(String url) =>
+      url.startsWith('http') ? url : '${ApiService.baseUrl}$url';
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20, top: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Attached MOVs:', style: GoogleFonts.plusJakartaSans(
+            fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+        const SizedBox(height: 10),
+        if (task.movs.isEmpty)
+          Text('No MOVs uploaded', style: GoogleFonts.plusJakartaSans(
+              fontSize: 12, color: AppTheme.textMuted, fontStyle: FontStyle.italic)),
+        for (final m in task.movs)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              const Icon(Icons.description, size: 16, color: Color(0xFF3B82F6)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(
+                  ((m['name'] ?? '').toString().isEmpty ? (m['url'] ?? '') : m['name']).toString(),
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13,
+                      color: const Color(0xFF2563EB),
+                      decoration: TextDecoration.underline))),
+              InkWell(
+                onTap: () {
+                  final url = (m['url'] ?? '').toString();
+                  if (url.isNotEmpty) webOpenUrl(_resolve(url));
+                },
+                child: Text('[View MOV]', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12, color: AppTheme.textMuted)),
+              ),
+            ]),
+          ),
+      ]),
+    );
+  }
+}

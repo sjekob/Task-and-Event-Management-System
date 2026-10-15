@@ -157,12 +157,23 @@ def _event_status_from_avg(avg: Optional[float]) -> str:
 
 
 def _appraisal_grade(total_points: float) -> str:
-    """RPMS/DepEd scale."""
-    if total_points >= 90:
+    """
+    Overall Grade following the DepEd RPMS rating scale
+    (DO 2 s. 2015; DM 008 s. 2023), applied to the 1.000–5.000 rating
+    derived from aggregated appraisal points:
+      Outstanding        4.500 – 5.000
+      Very Satisfactory  3.500 – 4.499
+      Satisfactory       2.500 – 3.499
+      Unsatisfactory     below 2.500
+    This is supporting appraisal evidence for IPCRF preparation; it does
+    not replace the official RPMS/IPCRF rating.
+    """
+    rating = (total_points / 100) * 4 + 1
+    if rating >= 4.5:
         return "Outstanding"
-    elif total_points >= 75:
+    elif rating >= 3.5:
         return "Very Satisfactory"
-    elif total_points >= 60:
+    elif rating >= 2.5:
         return "Satisfactory"
     else:
         return "Unsatisfactory"

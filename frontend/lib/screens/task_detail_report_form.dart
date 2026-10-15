@@ -64,9 +64,8 @@ class _ReportFormState extends State<_ReportForm> {
       );
       // Upload file bytes if file was picked
       if (_selectedType == 'file' && _pickedFileBytes != null) {
-        try {
-          await ApiService.uploadReportFile(widget.taskId, _pickedFileBytes!, _fileName!);
-        } catch (_) {} // file upload failure is non-critical
+        await ApiService.uploadReportFile(
+            widget.taskId, _pickedFileBytes!, _fileName!);
       }
       if (mounted) widget.onSubmitted();
     } catch (e) {

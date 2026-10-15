@@ -786,34 +786,16 @@ class ApiService {
     throw Exception(_detail(res, 'Failed to submit evaluation'));
   }
 
-  // ── Badges ──
-  static Future<List<AppraisalBadge>> getBadges(
-      {int? userId, SchoolYearFilter filter = SchoolYearFilter.current}) async {
-    final res = await _client.get(
-      _withFilter('/api/appraisal/badges', filter, {if (userId != null) 'user_id': '$userId'}),
-      headers: await _headers,
-    );
-    if (res.statusCode == 200) {
-      return ((jsonDecode(res.body) as Map)['badges'] as List)
-          .map((b) => AppraisalBadge.fromJson(b as Map<String, dynamic>))
-          .toList();
-    }
-    throw Exception(_detail(res, 'Failed to load badges'));
-  }
-
-  /// [{id, full_name, role, grade_level, earned_count, badges: [...]}]
-  static Future<List<Map<String, dynamic>>> getBadgeLeaderboard(
+  static Future<Map<String, dynamic>> getPerformanceSummary(
       {SchoolYearFilter filter = SchoolYearFilter.current}) async {
     final res = await _client.get(
-      _withFilter('/api/appraisal/badges/leaderboard', filter),
+      _withFilter('/api/appraisal/performance-summary', filter),
       headers: await _headers,
     );
     if (res.statusCode == 200) {
-      return (jsonDecode(res.body) as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+      return Map<String, dynamic>.from(jsonDecode(res.body) as Map);
     }
-    throw Exception(_detail(res, 'Failed to load badges'));
+    throw Exception(_detail(res, 'Failed to generate performance summary'));
   }
 
   // ── School years ──

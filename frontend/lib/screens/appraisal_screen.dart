@@ -10,11 +10,12 @@ import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 import '../widgets/school_year_picker.dart';
+import '../utils/performance_summary_pdf.dart';
+import '../utils/web_downloader.dart';
 
 part 'appraisal_screen_widgets.dart';
-part 'appraisal_badges_tab.dart';
 
-enum _AppraisalTab { timingPoints, specialTasks, events, badges, analytics }
+enum _AppraisalTab { timingPoints, specialTasks, events, analytics }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shell
@@ -50,9 +51,9 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     if (!context.read<AppState>().can('view_all_appraisals')) {
       // Without school-wide appraisal access (server permission), people see
       // their own / their grade level's records and no Analytics tab.
-      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.badges];
+      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events];
     } else {
-      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.badges, _AppraisalTab.analytics];
+      _availableTabs = [_AppraisalTab.timingPoints, _AppraisalTab.specialTasks, _AppraisalTab.events, _AppraisalTab.analytics];
     }
     _activeTab = _availableTabs.first;
     _loadSubmissions();
@@ -97,7 +98,6 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     _AppraisalTab.timingPoints => 'Timing Points',
     _AppraisalTab.specialTasks => 'Special Tasks',
     _AppraisalTab.events => 'Events',
-    _AppraisalTab.badges => 'Badges',
     _AppraisalTab.analytics => 'Analytics',
   };
 
@@ -105,7 +105,6 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     _AppraisalTab.timingPoints => Icons.timer_outlined,
     _AppraisalTab.specialTasks => Icons.assignment_outlined,
     _AppraisalTab.events => Icons.calendar_month_outlined,
-    _AppraisalTab.badges => Icons.workspace_premium_outlined,
     _AppraisalTab.analytics => Icons.bar_chart_outlined,
   };
 
@@ -115,6 +114,32 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     _loadSubmissions();
     _loadTasks();
     _loadEvents();
+  }
+
+  Future<void> _exportPerformanceSummary() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(
+      content: Text('Generating Annual Faculty Performance Summary PDF...'),
+    ));
+    try {
+      final data = await ApiService.getPerformanceSummary(filter: _filter);
+      await PerformanceSummaryPdf.export(data);
+      if (mounted) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Performance summary PDF is ready.'),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(SnackBar(
+          content: Text('Could not export performance summary: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
   }
 
   @override
@@ -193,17 +218,12 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
         onRefresh: _loadSubmissions),
     _AppraisalTab.specialTasks => _SpecialTasksTab(
         tasks: _tasks, loading: _loadingTasks, error: _taskError,
-        onRefresh: _loadTasks,
+        onRefresh: _loadTasks, onExport: _exportPerformanceSummary,
         onEvaluated: (u) { setState(() { final i = _tasks.indexWhere((t) => t.id == u.id); if (i >= 0) _tasks[i] = u; }); }),
     _AppraisalTab.events => _EventsTab(
         events: _events, loading: _loadingEvents, error: _eventError,
         onRefresh: _loadEvents,
         onEvaluated: (u) { setState(() { final i = _events.indexWhere((e) => e.id == u.id); if (i >= 0) _events[i] = u; }); }),
-    _AppraisalTab.badges => _BadgesTab(
-        filter: _filter,
-        // Principal/admin aren't appraised themselves; supervisors also rank staff.
-        showOwn: context.read<AppState>().can('receive_tasks'),
-        showLeaderboard: context.read<AppState>().can('evaluate_appraisal')),
     _AppraisalTab.analytics => _AnalyticsTab(tasks: _tasks, events: _events),
   };
 }

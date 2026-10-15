@@ -840,6 +840,8 @@ class SpecialTask {
   final String? submittedDate;
   final String status;
   final SpecialTaskEvaluation? evaluation;
+  /// Attached means of verification: [{name, url, attachment_type}].
+  final List<Map<String, dynamic>> movs;
 
   SpecialTask({
     required this.id,
@@ -854,6 +856,7 @@ class SpecialTask {
     this.submittedDate,
     required this.status,
     this.evaluation,
+    this.movs = const [],
   });
 
   factory SpecialTask.fromJson(Map<String, dynamic> json) {
@@ -870,9 +873,12 @@ class SpecialTask {
       assigneeDepartment: assignee?['grade_level']?.toString(),
       assignerName: assigner?['full_name']?.toString(),
       dueDate: json['due_date']?.toString(),
-      submittedDate: json['created_at']?.toString(),
+      submittedDate: json['submitted_at']?.toString(),
       status: (json['status'] ?? 'pending').toString(),
       evaluation: evalJson != null ? SpecialTaskEvaluation.fromJson(evalJson) : null,
+      movs: (json['movs'] as List? ?? [])
+          .map((m) => Map<String, dynamic>.from(m as Map))
+          .toList(),
     );
   }
 
@@ -1083,31 +1089,4 @@ class SchoolYearFilter {
       other is SchoolYearFilter && other.schoolYear == schoolYear && other.termId == termId;
   @override
   int get hashCode => Object.hash(schoolYear, termId);
-}
-
-// ── Appraisal badges ──────────────────────────────────────────────────────────
-
-class AppraisalBadge {
-  final String code;
-  final String name;
-  final String description;
-  final String icon;
-  final String? tier; // bronze | silver | gold
-  final bool earned;
-  final int progress;
-  final int target;
-  const AppraisalBadge({required this.code, required this.name, required this.description,
-      required this.icon, this.tier, required this.earned, required this.progress,
-      required this.target});
-
-  factory AppraisalBadge.fromJson(Map<String, dynamic> j) => AppraisalBadge(
-        code: (j['code'] ?? '').toString(),
-        name: (j['name'] ?? '').toString(),
-        description: (j['description'] ?? '').toString(),
-        icon: (j['icon'] ?? '').toString(),
-        tier: j['tier']?.toString(),
-        earned: j['earned'] == true,
-        progress: (j['progress'] as num?)?.toInt() ?? 0,
-        target: (j['target'] as num?)?.toInt() ?? 1,
-      );
 }

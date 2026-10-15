@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
@@ -18,7 +19,7 @@ def _window(db, school_year: str, term_id: Optional[int]):
 def _visible_personnel_ids(db, user):
     """Which personnel's appraisal records this user may see.
     Returns None = everyone (principal/coordinator/admin); otherwise a set of
-    user ids: the user themselves, plus — for a dean — the teachers in the grade
+    user ids: the user themselves, plus â€” for a dean â€” the teachers in the grade
     level they handle (dean_assignment.grade_level_id, falling back to own)."""
     role = user["role"]
     uid = int(user["sub"])
@@ -42,9 +43,9 @@ def _visible_personnel_ids(db, user):
 router = APIRouter(prefix="/api/appraisal", tags=["Appraisal"])
 
 
-# ── Timing Points (report submission compliance) ──────────────────────────────
+# â”€â”€ Timing Points (report submission compliance) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # All timing scoring is computed here in Python from the server-recorded
-# submission time vs the task deadline — the frontend only renders the result.
+# submission time vs the task deadline â€” the frontend only renders the result.
 TIMING_ON_TIME = 100
 TIMING_LATE_24H = 50
 TIMING_LATE_OVER = 0
@@ -153,7 +154,7 @@ def list_report_submissions(db=Depends(get_db), user=Depends(require_appraisal_v
     return shape(rows)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _special_task_row(row, db):
     """Shape a `tasks` row (tagged task_category='special') into the special-task
@@ -173,12 +174,41 @@ def _special_task_row(row, db):
     ev = db.execute(
         "SELECT * FROM special_task_evaluations WHERE task_id=?", (d["id"],)
     ).fetchone()
+    # MOVs are the assignee's actual report submission, never the reference
+    # attachments supplied by the person who created the task.
+    report = db.execute(
+        """SELECT r.id, r.report_title, r.report_link_url,
+                  r.report_file_path, r.report_filename,
+                  sl.date_of_submission
+           FROM reports r
+           LEFT JOIN submission_log sl ON sl.report_id = r.id
+           WHERE r.task_id=? AND r.personnel_id=?""",
+        (d["id"], assignee["id"] if assignee else -1)
+    ).fetchone()
+    movs = []
+    if report:
+        if report["report_file_path"]:
+            movs.append({
+                "id": f"report-{report['id']}-file",
+                "attachment_type": "file",
+                "name": report["report_filename"] or report["report_title"] or "Submitted file",
+                "url": report["report_file_path"],
+            })
+        if report["report_link_url"]:
+            movs.append({
+                "id": f"report-{report['id']}-link",
+                "attachment_type": "link",
+                "name": report["report_title"] or report["report_link_url"],
+                "url": report["report_link_url"],
+            })
     return {
+        "movs": movs,
         "id": d["id"],
         "title": d["title"],
         "description": d.get("instructions"),
         "due_date": d.get("end_date"),
         "created_at": d.get("created_at"),
+        "submitted_at": report["date_of_submission"] if report else None,
         "status": "evaluated" if ev else "pending",
         "assignee": dict(assignee) if assignee else None,
         "assigner": dict(assigner) if assigner else None,
@@ -219,7 +249,7 @@ def _demographics(evaluations: list) -> dict:
     }
 
 
-# ── Special Tasks ─────────────────────────────────────────────────────────────
+# â”€â”€ Special Tasks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class SpecialTaskBody(BaseModel):
     title: str
@@ -292,8 +322,13 @@ def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody,
     _special_task_or_404(db, task_id)
     scores = [body.completion_quality_score, body.timeliness_score,
               body.initiative_score, body.coordination_score]
-    weights = [0.40, 0.30, 0.30, 0.00]
-    weighted_avg = sum(s * w for s, w in zip(scores, weights))
+    # Final IPCRF score (1-5) = average of Quality (completion), Efficiency
+    # (initiative) and Timeliness; coordination is no longer rated.
+    weights = [1 / 3, 1 / 3, 1 / 3, 0.0]
+    scores = [s for s in scores]
+    if not all(1 <= s <= 5 for s in scores[:3]):
+        raise HTTPException(400, "Ratings must be between 1 and 5")
+    weighted_avg = round(sum(s * w for s, w in zip(scores, weights)), 2)
     uid = int(user["sub"])
     db.execute(
         """INSERT INTO special_task_evaluations
@@ -316,7 +351,7 @@ def evaluate_special_task(task_id: int, body: SpecialTaskEvalBody,
     return _special_task_row(_special_task_or_404(db, task_id), db)
 
 
-# ── Event Evaluation (appraisal rubric on EVENTS) ──────────────────────────────
+# â”€â”€ Event Evaluation (appraisal rubric on EVENTS) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class EventEvalBody(BaseModel):
     evaluator_name: str
@@ -391,312 +426,139 @@ def evaluate_event(event_id: int, body: EventEvalBody, db=Depends(get_db),
         db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone(), db
     )
 
+# ── Annual Faculty Performance Summary (feeds the PDF export) ─────────────────
+# One row per personnel, aggregated from the same records the appraisal tabs
+# use. The grade follows the DepEd RPMS rating scale on a 1-5 rating derived
+# from the total appraisal points; it supports IPCRF preparation and does not
+# replace the official RPMS rating.
 
-# ── Badges ────────────────────────────────────────────────────────────────────
-# Achievement badges, computed live from the same records the appraisal tabs
-# use (submission timing, special-task ratings, event evaluations), scoped to a
-# school year / term. Nothing is stored, so badges always match the data.
-
-_TIERS = [("gold", 30), ("silver", 15), ("bronze", 5)]
-
-
-def _person_submissions(db, uid: int, window) -> list:
-    """The person's first submission per task in the window, oldest first, with
-    its timing status and how early it was."""
-    rows = db.execute(
-        """SELECT r.task_id, MIN(sl.date_of_submission) AS submitted_at,
-                  t.end_date, t.due_time
-           FROM submission_log sl
-           JOIN reports r ON r.id = sl.report_id
-           JOIN tasks t ON t.id = r.task_id
-           WHERE sl.sender_personnel_id=?
-           GROUP BY r.task_id""", (uid,)).fetchall()
-    out = []
-    for r in rows:
-        if not in_window(window, r["end_date"], r["submitted_at"]):
-            continue
-        status, _ = _compute_timing(r["submitted_at"], r["end_date"], r["due_time"])
-        dl, sub = _deadline_dt(r["end_date"], r["due_time"]), _parse_dt(r["submitted_at"])
-        out.append({"status": status, "submitted": sub,
-                    "early": bool(dl and sub and dl - sub >= timedelta(hours=24))})
-    return sorted(out, key=lambda s: s["submitted"] or datetime.min)
+SCHOOL_NAME = os.environ.get("SCHOOL_NAME", "Naga Central School II")
+SCHOOL_STATION_ID = os.environ.get("SCHOOL_STATION_ID", "")
+SCHOOL_DIVISION = os.environ.get(
+    "SCHOOL_DIVISION", "Schools Division Office (SDO Naga City, Region V)"
+)
 
 
-def _missing_count(db, uid: int, window) -> tuple:
-    """(deadlines passed, of which never submitted) for the person's
-    assignments in the window."""
-    now = datetime.now()
-    passed = missing = 0
-    for r in db.execute(
-            """SELECT t.*, (EXISTS (SELECT 1 FROM task_log tl WHERE tl.task_id=t.id
-                                    AND tl.personnel_id=ta.user_id)
-                         OR EXISTS (SELECT 1 FROM reports rp WHERE rp.task_id=t.id
-                                    AND rp.personnel_id=ta.user_id)) AS done
-               FROM task_assignments ta JOIN tasks t ON t.id = ta.task_id
-               WHERE ta.user_id=? AND t.status='active'""", (uid,)).fetchall():
-        if not task_in_window(window, r):
-            continue
-        dl = _deadline_dt(r["end_date"], r["due_time"])
-        if dl and dl < now:
-            passed += 1
-            missing += 0 if r["done"] else 1
-    return passed, missing
+def _rpms_grade(points: float) -> str:
+    rating = points / 100 * 4 + 1
+    if rating >= 4.5:
+        return "Outstanding"
+    if rating >= 3.5:
+        return "Very Satisfactory"
+    if rating >= 2.5:
+        return "Satisfactory"
+    return "Unsatisfactory"
 
 
-def _badge(code, name, description, icon, progress, target, tier=None):
-    return {"code": code, "name": name, "description": description, "icon": icon,
-            "tier": tier, "earned": progress >= target,
-            "progress": min(progress, target), "target": target}
-
-
-def compute_badges(db, uid: int, window) -> list:
-    subs = _person_submissions(db, uid, window)
-    on_time = sum(1 for s in subs if s["status"] == "On Time")
-    early = sum(1 for s in subs if s["early"])
-    streak = best = 0
-    for s in subs:
-        streak = streak + 1 if s["status"] == "On Time" else 0
-        best = max(best, streak)
-    passed, missing = _missing_count(db, uid, window)
-
-    # Punctual: highest tier reached, else progress toward bronze.
-    tier, target = next(((t, n) for t, n in _TIERS if on_time >= n), (None, _TIERS[-1][1]))
-    if tier is None:
-        punctual = _badge("punctual", "Punctual", "Submit reports on time (5 / 15 / 30).",
-                          "schedule", on_time, target)
+@router.get("/performance-summary")
+def performance_summary(school_year: str = "current", term_id: Optional[int] = None,
+                        db=Depends(get_db), user=Depends(require_appraisal_view)):
+    window = _window(db, school_year, term_id)
+    visible = _visible_personnel_ids(db, user)
+    if school_year == "current" or str(school_year).isdigit():
+        sy_row = (db.execute("SELECT name FROM school_years WHERE id=?", (int(school_year),)).fetchone()
+                  if str(school_year).isdigit() else None)
+        if sy_row is None and school_year == "current":
+            from school_calendar import current_school_year
+            cur = current_school_year(db)
+            sy_name = cur["name"] if cur else None
+        else:
+            sy_name = sy_row["name"] if sy_row else None
     else:
-        punctual = _badge("punctual", f"Punctual · {tier.title()}",
-                          "Submit reports on time (5 / 15 / 30).", "schedule",
-                          on_time, target, tier)
+        sy_name = None
 
-    # Special task ratings for tasks assigned to this person.
-    ratings = [r["weighted_average"] for r in db.execute(
-        """SELECT ste.weighted_average, t.end_date, t.start_date, t.created_at
-           FROM special_task_evaluations ste
-           JOIN tasks t ON t.id = ste.task_id
-           JOIN task_assignments ta ON ta.task_id = t.id
-           WHERE ta.user_id=? AND ste.weighted_average IS NOT NULL""", (uid,)).fetchall()
-        if task_in_window(window, r)]
-    avg_rating = sum(ratings) / len(ratings) if ratings else 0
-
-    # Events this person organized and how attendees rated them.
-    best_event_avg, most_evals = 0.0, 0
-    for e in db.execute("SELECT id, target_date, created_at FROM events WHERE created_by=?",
-                        (uid,)).fetchall():
-        if not in_window(window, e["target_date"], e["created_at"]):
-            continue
-        evs = db.execute(
-            """SELECT (planning_score + objectives_score + personnel_score + time_mgmt_score
-                       + engagement_score + resource_score) / 6.0 AS s
-               FROM event_evaluations WHERE event_id=?""", (e["id"],)).fetchall()
-        most_evals = max(most_evals, len(evs))
-        if len(evs) >= 5:
-            best_event_avg = max(best_event_avg, sum(r["s"] for r in evs) / len(evs))
-
-    return [
-        punctual,
-        _badge("early_bird", "Early Bird", "Submit 5 reports at least a day before the deadline.",
-               "wb_sunny", early, 5),
-        _badge("hot_streak", "Hot Streak", "Submit 5 reports on time in a row.",
-               "local_fire_department", best, 5),
-        _badge("perfect_record", "Perfect Record",
-               "Meet every deadline — at least 5 due, none late or missing.",
-               "verified", passed if (missing == 0 and on_time >= passed) else 0, 5),
-        _badge("special_star", "Special Task Star",
-               "Average special-task rating of 4.5 or higher.",
-               "star", 1 if ratings and avg_rating >= 4.5 else 0, 1),
-        _badge("event_excellence", "Event Excellence",
-               "Organize an event rated 4.5+ by at least 5 evaluators.",
-               "emoji_events", 1 if best_event_avg >= 4.5 else 0, 1),
-        _badge("crowd_favorite", "Crowd Favorite",
-               "Organize an event that receives 20 or more evaluations.",
-               "groups", most_evals, 20),
-    ]
-
-
-@router.get("/badges")
-def get_badges(user_id: Optional[int] = None, school_year: str = "current",
-               term_id: Optional[int] = None, db=Depends(get_db),
-               user=Depends(require_appraisal_view)):
-    """Badges for one person (default: the caller), if the caller may view them."""
-    uid = user_id or int(user["sub"])
-    visible = _visible_personnel_ids(db, user)
-    if visible is not None and uid not in visible:
-        raise HTTPException(403, "You cannot view this person's badges")
-    badges = compute_badges(db, uid, _window(db, school_year, term_id))
-    return {"user_id": uid, "earned": sum(1 for b in badges if b["earned"]),
-            "total": len(badges), "badges": badges}
-
-
-@router.get("/badges/leaderboard")
-def badge_leaderboard(school_year: str = "current", term_id: Optional[int] = None,
-                      db=Depends(get_db), user=Depends(require_appraisal_view)):
-    """Earned badges per visible personnel member, most badges first."""
-    window = _window(db, school_year, term_id)
-    visible = _visible_personnel_ids(db, user)
-    rows = db.execute(
-        """SELECT u.id, u.full_name, u.role, gl.grade_level FROM users u
+    people = db.execute(
+        """SELECT u.id, u.full_name, u.role,
+                  COALESCE(
+                    (SELECT GROUP_CONCAT(DISTINCT s.subject_name)
+                     FROM user_subjects us
+                     JOIN subjects s ON s.id = us.subject_id
+                     WHERE us.user_id = u.id),
+                    gl.grade_level
+                  ) AS department
+           FROM users u
            LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
-           WHERE u.is_active=1 AND u.role NOT IN ('admin','principal')""").fetchall()
-    out = []
-    for r in rows:
-        if visible is not None and r["id"] not in visible:
+           WHERE u.is_active=1 AND u.role NOT IN ('admin','principal')
+           ORDER BY u.full_name""").fetchall()
+
+    rows = []
+    for p in people:
+        pid = p["id"]
+        if visible is not None and pid not in visible:
             continue
-        earned = [b for b in compute_badges(db, r["id"], window) if b["earned"]]
-        out.append({**dict(r), "earned_count": len(earned), "badges": earned})
-    out.sort(key=lambda p: (-p["earned_count"], p["full_name"]))
-    return out
+        # Special tasks assigned to this person that were evaluated.
+        st = [r["weighted_average"] for r in db.execute(
+            """SELECT ste.weighted_average, t.end_date, t.start_date, t.created_at
+               FROM special_task_evaluations ste
+               JOIN tasks t ON t.id = ste.task_id
+               JOIN task_assignments ta ON ta.task_id = t.id
+               WHERE ta.user_id=? AND ste.weighted_average IS NOT NULL""", (pid,)).fetchall()
+              if task_in_window(window, r)]
+        # Events organized by this person: attendee evidence rate (0-100).
+        ev_rates, ev_flags = [], 0
+        for e in db.execute("SELECT id, target_date, created_at FROM events WHERE created_by=?",
+                            (pid,)).fetchall():
+            if not in_window(window, e["target_date"], e["created_at"]):
+                continue
+            scores = [r["s"] for r in db.execute(
+                """SELECT (planning_score + objectives_score + personnel_score + time_mgmt_score
+                           + engagement_score + resource_score) / 6.0 AS s
+                   FROM event_evaluations WHERE event_id=?""", (e["id"],)).fetchall()]
+            if scores:
+                avg = sum(scores) / len(scores)
+                ev_rates.append(avg / 5 * 100)
+                ev_flags += 1 if avg < 3.0 else 0
+        # Report timing points: first submission per task.
+        timing_pts, timing_n, late_over = 0, 0, 0
+        for s in _summary_submissions(db, pid, window):
+            timing_pts += s["points"]
+            timing_n += 1
+            late_over += 1 if s["points"] == TIMING_LATE_OVER else 0
+
+        parts = []
+        if st:
+            parts.append(sum(st) / len(st) / 5 * 100)
+        if ev_rates:
+            parts.append(sum(ev_rates) / len(ev_rates))
+        if timing_n:
+            parts.append(timing_pts / timing_n)  # 0-100 per report
+        total = round(sum(parts) / len(parts), 2) if parts else None
+        grade = _rpms_grade(total) if total is not None else None
+        escalations = sum(1 for w in st if w < 3.0) + ev_flags + late_over
+        if total is None:
+            remarks = "For Review"
+        elif grade == "Unsatisfactory":
+            remarks = "Flagged"
+        elif escalations > 0:
+            remarks = "For Review"
+        else:
+            remarks = "Cleared"
+        rows.append({
+            "id": pid, "name": p["full_name"], "position": (p["role"] or "").title(),
+            "department": p["department"],
+            "special_task_score": round(sum(st) / len(st), 2) if st else None,
+            "event_score": round(sum(ev_rates) / len(ev_rates), 1) if ev_rates else None,
+            "timing_points": timing_pts,
+            "total_points": total, "overall_grade": grade,
+            "escalation_count": escalations, "remarks": remarks,
+        })
+    return {"school_name": SCHOOL_NAME, "station_id": SCHOOL_STATION_ID,
+            "division": SCHOOL_DIVISION, "school_year": sy_name, "rows": rows}
 
 
-# ── Badges ────────────────────────────────────────────────────────────────────
-# Achievement badges, computed live from the same records the appraisal tabs
-# use (submission timing, special-task ratings, event evaluations), scoped to a
-# school year / term. Nothing is stored, so badges always match the data.
-
-_TIERS = [("gold", 30), ("silver", 15), ("bronze", 5)]
-
-
-def _person_submissions(db, uid: int, window) -> list:
-    """The person's first submission per task in the window, oldest first, with
-    its timing status and whether it came at least a day early."""
-    rows = db.execute(
-        """SELECT r.task_id, MIN(sl.date_of_submission) AS submitted_at,
-                  t.end_date, t.due_time
-           FROM submission_log sl
-           JOIN reports r ON r.id = sl.report_id
-           JOIN tasks t ON t.id = r.task_id
-           WHERE sl.sender_personnel_id=?
-           GROUP BY r.task_id""", (uid,)).fetchall()
+def _summary_submissions(db, uid: int, window) -> list:
+    """First submission per task in the window with its timing points."""
     out = []
-    for r in rows:
+    for r in db.execute(
+            """SELECT r.task_id, MIN(sl.date_of_submission) AS submitted_at,
+                      t.end_date, t.due_time
+               FROM submission_log sl
+               JOIN reports r ON r.id = sl.report_id
+               JOIN tasks t ON t.id = r.task_id
+               WHERE sl.sender_personnel_id=?
+               GROUP BY r.task_id""", (uid,)).fetchall():
         if not in_window(window, r["end_date"], r["submitted_at"]):
             continue
-        status, _ = _compute_timing(r["submitted_at"], r["end_date"], r["due_time"])
-        dl, sub = _deadline_dt(r["end_date"], r["due_time"]), _parse_dt(r["submitted_at"])
-        out.append({"status": status, "submitted": sub,
-                    "early": bool(dl and sub and dl - sub >= timedelta(hours=24))})
-    return sorted(out, key=lambda s: s["submitted"] or datetime.min)
-
-
-def _deadlines_passed(db, uid: int, window) -> tuple:
-    """(deadlines passed, of which never submitted) for the person's
-    assignments in the window."""
-    now = datetime.now()
-    passed = missing = 0
-    for r in db.execute(
-            """SELECT t.*, (EXISTS (SELECT 1 FROM task_log tl WHERE tl.task_id=t.id
-                                    AND tl.personnel_id=ta.user_id)
-                         OR EXISTS (SELECT 1 FROM reports rp WHERE rp.task_id=t.id
-                                    AND rp.personnel_id=ta.user_id)) AS done
-               FROM task_assignments ta JOIN tasks t ON t.id = ta.task_id
-               WHERE ta.user_id=? AND t.status='active'""", (uid,)).fetchall():
-        if not task_in_window(window, r):
-            continue
-        dl = _deadline_dt(r["end_date"], r["due_time"])
-        if dl and dl < now:
-            passed += 1
-            missing += 0 if r["done"] else 1
-    return passed, missing
-
-
-def _badge(code, name, description, icon, progress, target, tier=None):
-    return {"code": code, "name": name, "description": description, "icon": icon,
-            "tier": tier, "earned": progress >= target,
-            "progress": min(progress, target), "target": target}
-
-
-def compute_badges(db, uid: int, window) -> list:
-    subs = _person_submissions(db, uid, window)
-    on_time = sum(1 for s in subs if s["status"] == "On Time")
-    early = sum(1 for s in subs if s["early"])
-    streak = best = 0
-    for s in subs:
-        streak = streak + 1 if s["status"] == "On Time" else 0
-        best = max(best, streak)
-    passed, missing = _deadlines_passed(db, uid, window)
-
-    # Punctual: highest tier reached; otherwise progress toward bronze.
-    tier, target = next(((t, n) for t, n in _TIERS if on_time >= n), (None, _TIERS[-1][1]))
-    punctual = _badge("punctual", f"Punctual · {tier.title()}" if tier else "Punctual",
-                      "Submit reports on time (5 / 15 / 30).", "schedule",
-                      on_time, target, tier)
-
-    # Special-task ratings (0-5) for tasks assigned to this person.
-    ratings = [r["weighted_average"] for r in db.execute(
-        """SELECT ste.weighted_average, t.end_date, t.start_date, t.created_at
-           FROM special_task_evaluations ste
-           JOIN tasks t ON t.id = ste.task_id
-           JOIN task_assignments ta ON ta.task_id = t.id
-           WHERE ta.user_id=? AND ste.weighted_average IS NOT NULL""", (uid,)).fetchall()
-        if task_in_window(window, r)]
-    avg_rating = sum(ratings) / len(ratings) if ratings else 0
-
-    # Events this person organized and how evaluators rated them.
-    best_event_avg, most_evals = 0.0, 0
-    for e in db.execute("SELECT id, target_date, created_at FROM events WHERE created_by=?",
-                        (uid,)).fetchall():
-        if not in_window(window, e["target_date"], e["created_at"]):
-            continue
-        evs = db.execute(
-            """SELECT (planning_score + objectives_score + personnel_score + time_mgmt_score
-                       + engagement_score + resource_score) / 6.0 AS s
-               FROM event_evaluations WHERE event_id=?""", (e["id"],)).fetchall()
-        most_evals = max(most_evals, len(evs))
-        if len(evs) >= 5:
-            best_event_avg = max(best_event_avg, sum(r["s"] for r in evs) / len(evs))
-
-    perfect = passed if (missing == 0 and on_time >= passed) else 0
-    return [
-        punctual,
-        _badge("early_bird", "Early Bird",
-               "Submit 5 reports at least a day before the deadline.",
-               "wb_sunny", early, 5),
-        _badge("hot_streak", "Hot Streak", "Submit 5 reports on time in a row.",
-               "local_fire_department", best, 5),
-        _badge("perfect_record", "Perfect Record",
-               "Meet every deadline: at least 5 due, none late or missing.",
-               "verified", perfect, 5),
-        _badge("special_star", "Special Task Star",
-               "Average special-task rating of 4.5 or higher.",
-               "star", 1 if ratings and avg_rating >= 4.5 else 0, 1),
-        _badge("event_excellence", "Event Excellence",
-               "Organize an event rated 4.5+ by at least 5 evaluators.",
-               "emoji_events", 1 if best_event_avg >= 4.5 else 0, 1),
-        _badge("crowd_favorite", "Crowd Favorite",
-               "Organize an event that receives 20 or more evaluations.",
-               "groups", most_evals, 20),
-    ]
-
-
-@router.get("/badges")
-def get_badges(user_id: Optional[int] = None, school_year: str = "current",
-               term_id: Optional[int] = None, db=Depends(get_db),
-               user=Depends(require_appraisal_view)):
-    """Badges for one person (default: the caller), if the caller may view them."""
-    uid = user_id or int(user["sub"])
-    visible = _visible_personnel_ids(db, user)
-    if visible is not None and uid not in visible:
-        raise HTTPException(403, "You cannot view this person's badges")
-    badges = compute_badges(db, uid, _window(db, school_year, term_id))
-    return {"user_id": uid, "earned": sum(1 for b in badges if b["earned"]),
-            "total": len(badges), "badges": badges}
-
-
-@router.get("/badges/leaderboard")
-def badge_leaderboard(school_year: str = "current", term_id: Optional[int] = None,
-                      db=Depends(get_db), user=Depends(require_appraisal_view)):
-    """Earned badges per visible personnel member, most badges first."""
-    window = _window(db, school_year, term_id)
-    visible = _visible_personnel_ids(db, user)
-    rows = db.execute(
-        """SELECT u.id, u.full_name, u.role, gl.grade_level FROM users u
-           LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
-           WHERE u.is_active=1 AND u.role NOT IN ('admin','principal')""").fetchall()
-    out = []
-    for r in rows:
-        if visible is not None and r["id"] not in visible:
-            continue
-        earned = [b for b in compute_badges(db, r["id"], window) if b["earned"]]
-        out.append({**dict(r), "earned_count": len(earned), "badges": earned})
-    out.sort(key=lambda p: (-p["earned_count"], p["full_name"]))
+        _, pts = _compute_timing(r["submitted_at"], r["end_date"], r["due_time"])
+        out.append({"points": pts})
     return out
