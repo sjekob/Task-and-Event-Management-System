@@ -22,9 +22,12 @@ export const rateColor = (pct: number) => (pct >= 80 ? '#16A34A' : pct >= 50 ? '
 export const estimatedTaskScore = (completion: number, timeliness: number, initiative: number) =>
   Math.round((completion * 40 + timeliness * 30 + initiative * 30) / 5);
 
-/** Event appraisal status for display: completed once rated, awaiting once approved. */
+/**
+ * Event appraisal status for display: 'rated' once it has evaluations, awaiting
+ * once approved (or completed). Not the event's own 'completed' status.
+ */
 export const eventAppraisalStatus = (e: EventForAppraisal) =>
-  e.evaluations.length ? 'completed' : e.status === 'approved' ? 'awaiting_ratings' : e.status;
+  e.evaluations.length ? 'rated' : e.status === 'approved' || e.status === 'completed' ? 'awaiting_ratings' : e.status;
 
 export const APPRAISAL_STATUS: Record<string, [string, string]> = {
   evaluated: ['Evaluated', '#22C55E'],
@@ -38,7 +41,8 @@ export const APPRAISAL_STATUS: Record<string, [string, string]> = {
   approved: ['Approved', '#3B82F6'],
   draft: ['Draft', '#9CA3AF'],
   disabled: ['Disabled', '#EF4444'],
-  completed: ['Completed', '#22C55E'],
+  rated: ['Rated', '#22C55E'],
+  completed: ['Completed', '#64748B'],
   ongoing: ['Ongoing', '#3B82F6'],
 };
 

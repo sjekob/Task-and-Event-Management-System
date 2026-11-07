@@ -11,8 +11,15 @@ perimeter — the device's GPS position is required and its Haversine distance t
 the pin must be within the radius (allowing for the reported GPS accuracy, up
 to GPS_TOLERANCE_MAX_M). Events without a pin are checked by time window only;
 any coordinates sent are still logged with the scan.
-A successful Time Out unlocks the activity's evaluation; submitting it creates
-an already-completed Special Task when the row has a `special_task_title`.
+A successful Time Out unlocks the activity's evaluation; submitting it marks
+the attendance complete (evaluated_at). No special task is created.
+
+Guests (students, parents, external stakeholders) scan the same QR codes without
+an account: POST .../attendance/guest-scan with their details and Data Privacy
+consent. The same gate (_scan_gate: QR signature, event status, time window)
+and perimeter check apply; their rows have user_id NULL and guest_* columns,
+matched by email per session. Their evaluation is the public form with the
+session's activity_index (routes/public_evaluation.py).
 
 Times are school-local (date_utils.school_now) — the activity matrix holds
 free text such as "4:00-5:00 PM", parsed here.
@@ -29,9 +36,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from auth import SECRET_KEY, get_current_user, has_permission
-from database import create_notification, get_db
+from database import get_db
 from date_utils import parse_event_date, school_now
-from routes.public_evaluation import (AGE_GROUPS, SEX_OPTIONS, IndicatorResult,
+from routes.public_evaluation import (AGE_GROUPS, ROLE_ORDER, SEX_OPTIONS, IndicatorResult, _EMAIL_RE,
                                       _feedback_text, _score_from_indicators)
 
 router = APIRouter(prefix="/api/events", tags=["Attendance"])
@@ -42,6 +49,10 @@ TIME_OUT_BEFORE = timedelta(minutes=10)
 TIME_OUT_AFTER = timedelta(minutes=30)
 
 _TS = "%Y-%m-%d %H:%M:%S"
+
+# Attendance and its QR codes work for approved events; 'completed' is set only
+# after the last Time Out window closes, but accept it too in case of a race.
+OPEN_STATUSES = ("approved", "completed")
 
 # GPS fixes indoors are often 20–50 m off; a scan counts as inside when the
 # distance minus the device's reported accuracy (capped here) is within the radius.
@@ -198,7 +209,7 @@ def attendance_qr_codes(event_id: int, db=Depends(get_db), user=Depends(get_curr
     ev = _event(db, event_id)
     if not (has_permission(user, "approve_events") or ev["created_by"] == int(user["sub"])):
         raise HTTPException(403, "Only the event's proponent or the principal can get attendance QR codes")
-    if ev["status"] != "approved":
+    if ev["status"] not in OPEN_STATUSES:
         raise HTTPException(409, "Attendance QR codes are available once the event is approved.")
     activities = []
     for i, row in enumerate(_activity_rows(ev)):
@@ -207,7 +218,6 @@ def attendance_qr_codes(event_id: int, db=Depends(get_db), user=Depends(get_curr
             "index": i,
             "day": row.get("day"), "time": row.get("time"),
             "event": row.get("event"), "speaker": row.get("speaker"),
-            "special_task_title": row.get("special_task_title"),
             "schedule_readable": sched is not None,
             "time_in_code": qr_code(event_id, i, "time_in"),
             "time_out_code": qr_code(event_id, i, "time_out"),
@@ -226,6 +236,10 @@ def attendance_activity(event_id: int, index: int, db=Depends(get_db),
                         user=Depends(get_current_user)):
     """What the scan page shows: the activity, its windows, and the caller's record."""
     ev = _event(db, event_id)
+    return {**_activity_info(ev, index), "record": _record_out(_record(db, event_id, index, int(user["sub"])))}
+
+
+def _activity_info(ev, index: int) -> dict:
     row = _activity(ev, index)
     sched = _schedule(ev, row)
     windows = None
@@ -234,16 +248,29 @@ def attendance_activity(event_id: int, index: int, db=Depends(get_db),
         windows = {k: {"opens": v[0].strftime(_TS), "closes": v[1].strftime(_TS),
                        "label": f"{_fmt(v[0])} – {_fmt(v[1])}"} for k, v in w.items()}
     return {
-        "event_id": event_id, "event_title": ev["title"], "venue": ev["venue"],
+        "event_id": ev["id"], "event_title": ev["title"], "venue": ev["venue"],
         "venue_location": venue_pin(ev),
         "gps_tolerance_max_m": GPS_TOLERANCE_MAX_M,
         "activity_index": index,
         "activity": {k: row.get(k) for k in ("day", "time", "event", "speaker")},
-        "has_special_task": bool(row.get("special_task_title")),
-        "special_task_title": row.get("special_task_title"),
         "windows": windows,
-        "record": _record_out(_record(db, event_id, index, int(user["sub"]))),
     }
+
+
+@router.get("/{event_id}/attendance/guest/activities/{index}")
+def guest_attendance_activity(event_id: int, index: int, action: Action, code: str,
+                              email: Optional[str] = None, db=Depends(get_db)):
+    """Public scan landing info for a guest. Needs the QR's signed code, so only
+    someone holding the QR can look up the activity (and a guest's own record)."""
+    _check_code(event_id, index, action, code)
+    ev = _event(db, event_id)
+    info = _activity_info(ev, index)
+    rec = _guest_record(db, event_id, index, email) if email else None
+    return {**info, "record": _record_out(rec), "guest_options": _guest_options()}
+
+
+def _guest_options() -> dict:
+    return {"role": ROLE_ORDER, "sex": SEX_OPTIONS, "age_group": AGE_GROUPS}
 
 
 # ── Scan ──────────────────────────────────────────────────────────────────────
@@ -285,17 +312,15 @@ def _ok_message(label: str, distance: Optional[float]) -> str:
     return f"{label} recorded. You're inside the event perimeter ({_distance_label(distance)} from the venue)."
 
 
-@router.post("/{event_id}/attendance/scan")
-def attendance_scan(event_id: int, body: ScanBody, db=Depends(get_db),
-                    user=Depends(get_current_user)):
-    uid = int(user["sub"])
+def _scan_gate(db, event_id: int, body: ScanBody):
+    """The rules every scan must pass, personnel or guest: the QR's signature,
+    the event being approved, and the activity's Time In / Time Out window.
+    Returns (event, now). The perimeter is checked right before recording."""
     _check_code(event_id, body.activity_index, body.action, body.code)
     ev = _event(db, event_id)
-    if ev["status"] != "approved":
+    if ev["status"] not in OPEN_STATUSES:
         raise HTTPException(409, "This event is not approved, so attendance is closed.")
     row = _activity(ev, body.activity_index)
-
-    # Window check.
     sched = _schedule(ev, row)
     if sched is None:
         raise HTTPException(409, "This activity's day/time in the Activity Matrix couldn't be "
@@ -306,31 +331,32 @@ def attendance_scan(event_id: int, body: ScanBody, db=Depends(get_db),
         label = "Time In" if body.action == "time_in" else "Time Out"
         raise HTTPException(403, f"{label} window is not active "
                                  f"(open {_fmt(opens)} – {_fmt(closes)}).")
+    return ev, now
 
-    rec = _record(db, event_id, body.activity_index, uid)
+
+def _record_scan(db, ev, body: ScanBody, now: datetime, rec, who: dict, reload) -> dict:
+    """Time In (insert, with `who`'s identity columns) or Time Out (update the
+    Time In row). Shared by the personnel and guest scans."""
     stamp = now.strftime(_TS)
     if body.action == "time_in":
         if rec and rec["time_in_at"]:
-            raise HTTPException(409, f"You already timed in at {rec['time_in_at'][11:16]}.")
+            raise HTTPException(409, f"You already timed in at {str(rec['time_in_at'])[11:16]}.")
         distance = _check_perimeter(ev, body)  # geofence (pinned venues only)
-        db.execute(
-            """INSERT INTO event_attendance
-               (event_id, activity_index, user_id, time_in_at,
-                time_in_latitude, time_in_longitude, time_in_distance_m)
-               VALUES (?,?,?,?,?,?,?)""",
-            (event_id, body.activity_index, uid, stamp, body.latitude, body.longitude, distance))
+        cols = ["event_id", "activity_index", "time_in_at", "time_in_latitude",
+                "time_in_longitude", "time_in_distance_m", *who]
+        vals = [ev["id"], body.activity_index, stamp, body.latitude, body.longitude, distance, *who.values()]
+        db.execute(f"INSERT INTO event_attendance ({', '.join(cols)}) VALUES ({','.join('?' for _ in cols)})",
+                   tuple(vals))
         db.commit()
         return {"success": True, "action": "time_in", "timestamp": stamp,
                 "message": _ok_message("Time In", distance), "redirect_to_evaluation": False,
-                "distance_m": distance,
-                "record": _record_out(_record(db, event_id, body.activity_index, uid))}
+                "distance_m": distance, "record": _record_out(reload())}
 
-    # Time Out
     if not rec or not rec["time_in_at"]:
         raise HTTPException(409, "You need to Time In for this activity before you can Time Out.")
     if rec["time_out_at"]:
         # Re-scan after closing the page: let them get back to the evaluation.
-        return {"success": True, "action": "time_out", "timestamp": rec["time_out_at"],
+        return {"success": True, "action": "time_out", "timestamp": str(rec["time_out_at"]),
                 "message": "You already timed out for this activity.",
                 "redirect_to_evaluation": rec["evaluated_at"] is None,
                 "record": _record_out(rec)}
@@ -343,11 +369,143 @@ def attendance_scan(event_id: int, body: ScanBody, db=Depends(get_db),
     db.commit()
     return {"success": True, "action": "time_out", "timestamp": stamp,
             "message": _ok_message("Time Out", distance) + " Please complete the evaluation.",
-            "redirect_to_evaluation": True, "distance_m": distance,
-            "record": _record_out(_record(db, event_id, body.activity_index, uid))}
+            "redirect_to_evaluation": True, "distance_m": distance, "record": _record_out(reload())}
 
 
-# ── Attendee evaluation → automated Special Task ──────────────────────────────
+@router.post("/{event_id}/attendance/scan")
+def attendance_scan(event_id: int, body: ScanBody, db=Depends(get_db),
+                    user=Depends(get_current_user)):
+    uid = int(user["sub"])
+    ev, now = _scan_gate(db, event_id, body)
+    rec = _record(db, event_id, body.activity_index, uid)
+    return _record_scan(db, ev, body, now, rec, {"user_id": uid},
+                        lambda: _record(db, event_id, body.activity_index, uid))
+
+
+# ── Guest scan (no account) ───────────────────────────────────────────────────
+
+class GuestInfo(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=3, max_length=200)
+    role: str
+    sex: str
+    age_group: str
+    affiliation: Optional[str] = Field(default=None, max_length=200)
+
+
+class GuestScanBody(ScanBody):
+    guest: GuestInfo
+    # Data Privacy Act consent: must be true.
+    consent: bool = False
+
+
+def _guest_email(raw: Optional[str]) -> str:
+    return (raw or "").strip().lower()
+
+
+def _guest_record(db, event_id: int, index: int, email: Optional[str]):
+    return db.execute(
+        """SELECT * FROM event_attendance
+           WHERE event_id=? AND activity_index=? AND user_id IS NULL AND guest_email=?""",
+        (event_id, index, _guest_email(email))).fetchone()
+
+
+def _check_guest(g: GuestInfo) -> GuestInfo:
+    g.name = " ".join(g.name.split())
+    g.email = _guest_email(g.email)
+    g.role = g.role.strip().lower()
+    if len(g.name) < 2:
+        raise HTTPException(400, "Please enter your full name.")
+    if not _EMAIL_RE.match(g.email):
+        raise HTTPException(400, "Please enter a valid email address.")
+    if g.role not in ROLE_ORDER:
+        raise HTTPException(400, "Please choose your role.")
+    if g.sex not in SEX_OPTIONS:
+        raise HTTPException(400, "Please choose your sex.")
+    if g.age_group not in AGE_GROUPS:
+        raise HTTPException(400, "Please choose your age group.")
+    g.affiliation = (g.affiliation or "").strip() or None
+    return g
+
+
+@router.post("/{event_id}/attendance/guest-scan")
+def guest_attendance_scan(event_id: int, body: GuestScanBody, db=Depends(get_db)):
+    """Time In / Time Out for someone without a TaskNet account. Same QR, window
+    and perimeter rules as personnel; one Time In and one Time Out per email per
+    session. Time Out finds the Time In by email."""
+    if not body.consent:
+        raise HTTPException(400, "Please agree to the Data Privacy notice to record your attendance.")
+    g = _check_guest(body.guest)
+    ev, now = _scan_gate(db, event_id, body)
+    rec = _guest_record(db, event_id, body.activity_index, g.email)
+    who = {"guest_name": g.name, "guest_email": g.email, "guest_role": g.role, "guest_sex": g.sex,
+           "guest_age_group": g.age_group, "guest_affiliation": g.affiliation,
+           "guest_consent_at": now.strftime(_TS)}
+    if body.action == "time_out" and (not rec or not rec["time_in_at"]):
+        raise HTTPException(409, "No Time In was found for this email. Use the same email you timed in with, "
+                                 "or Time In first.")
+    try:
+        return _record_scan(db, ev, body, now, rec, who,
+                            lambda: _guest_record(db, event_id, body.activity_index, g.email))
+    except HTTPException:
+        raise
+    except Exception:
+        # Two Time Ins for the same email racing each other: the unique index wins.
+        db.rollback()
+        raise HTTPException(409, "This email has already timed in for this session.")
+
+
+# ── Attendance list (proponent / approver) ────────────────────────────────────
+
+@router.get("/{event_id}/attendance")
+def attendance_list(event_id: int, db=Depends(get_db), user=Depends(get_current_user)):
+    """Everyone who scanned, per session: personnel and guests (marked as such)."""
+    ev = _event(db, event_id)
+    if not (has_permission(user, "approve_events") or ev["created_by"] == int(user["sub"])):
+        raise HTTPException(403, "Only the event's proponent or the principal can see its attendance")
+    rows = db.execute(
+        """SELECT a.*, u.full_name, u.role AS user_role
+           FROM event_attendance a LEFT JOIN users u ON u.id = a.user_id
+           WHERE a.event_id=? ORDER BY a.activity_index, a.time_in_at""", (event_id,)).fetchall()
+    activities = _activity_rows(ev)
+    out = []
+    for r in rows:
+        guest = r["user_id"] is None
+        i = r["activity_index"]
+        out.append({
+            "id": r["id"], "activity_index": i,
+            "activity": (activities[i].get("event") if 0 <= i < len(activities) else None) or f"Session {i + 1}",
+            "is_guest": guest,
+            "name": r["guest_name"] if guest else r["full_name"],
+            "role": r["guest_role"] if guest else r["user_role"],
+            "email": r["guest_email"] if guest else None,
+            "affiliation": r["guest_affiliation"] if guest else None,
+            "time_in_at": str(r["time_in_at"]) if r["time_in_at"] else None,
+            "time_out_at": str(r["time_out_at"]) if r["time_out_at"] else None,
+            "evaluated_at": str(r["evaluated_at"]) if r["evaluated_at"] else None,
+            "time_in_distance_m": r["time_in_distance_m"],
+            "time_out_distance_m": r["time_out_distance_m"],
+        })
+    return {"event_id": event_id, "title": ev["title"],
+            "sessions": [{"index": i, "event": (a.get("event") or f"Session {i + 1}"), "time": a.get("time"),
+                          "day": a.get("day")} for i, a in enumerate(activities)],
+            "attendees": out}
+
+
+# ── Event end (for the automatic 'completed' status) ──────────────────────────
+
+def event_ends_at(ev) -> Optional[datetime]:
+    """When the event's last Time Out window closes: the latest Activity Matrix
+    session end + TIME_OUT_AFTER, or the end of the target date when no session
+    time can be read. None when neither can be read."""
+    ends = [s[1] for s in (_schedule(ev, r) for r in _activity_rows(ev)) if s]
+    if ends:
+        return max(ends) + TIME_OUT_AFTER
+    d = parse_event_date(ev["target_date"])
+    return datetime.combine(d, time(23, 59, 59)) if d else None
+
+
+# ── Personnel activity evaluation ─────────────────────────────────────────────
 
 class ActivityEvalBody(BaseModel):
     sex: str
@@ -357,45 +515,11 @@ class ActivityEvalBody(BaseModel):
     comments: Optional[str] = Field(default=None, max_length=2000)
 
 
-def _create_completed_special_task(db, ev, row: dict, uid: int, now: datetime) -> int:
-    """A special task assigned to the attendee and already completed: task +
-    assignment + a 'Completed' report and its submission log (the same records a
-    manual completion produces), tagged with the source event."""
-    title = row["special_task_title"]
-    stamp = now.strftime(_TS)
-    today = now.date().isoformat()
-    activity = (row.get("event") or "").strip() or "Event activity"
-    assigner = ev["created_by"] or uid
-    details = (f"Event: {ev['title']}\nActivity: {activity}\n"
-               f"Completed: {stamp}\n"
-               "Automatically completed after attending the activity and submitting its evaluation.")
-    task_id = db.execute(
-        """INSERT INTO tasks (title, instructions, task_category, start_date, end_date,
-                              due_time, status, created_by, source_event_id)
-           VALUES (?,?,'special',?,?,'11:59 PM','active',?,?)""",
-        (title, details, today, today, assigner, ev["id"])).lastrowid
-    db.execute("INSERT INTO task_assignments (task_id, user_id, assigned_by) VALUES (?,?,?)",
-               (task_id, uid, assigner))
-    report_id = db.execute(
-        """INSERT INTO reports (task_id, personnel_id, report_title, report_description,
-                                report_type, report_date, report_status)
-           VALUES (?,?,?,?,'attendance',CURRENT_TIMESTAMP,'Completed')""",
-        (task_id, uid, title, details)).lastrowid
-    db.execute("INSERT INTO task_log (submission_date, personnel_id, task_id) "
-               "VALUES (CURRENT_TIMESTAMP,?,?)", (uid, task_id))
-    db.execute(
-        """INSERT INTO submission_log (status, date_of_submission, sender_personnel_id,
-                                       report_id, receiver_personnel_id)
-           VALUES ('Completed', CURRENT_TIMESTAMP, ?, ?, ?)""",
-        (uid, report_id, assigner))
-    create_notification(db, uid, "task", f"Special task completed: {title}",
-                        f"From attending {ev['title']}", task_id)
-    return task_id
-
-
 @router.post("/{event_id}/attendance/activities/{index}/evaluate", status_code=201)
 def evaluate_activity(event_id: int, index: int, body: ActivityEvalBody,
                       db=Depends(get_db), user=Depends(get_current_user)):
+    """A signed-in attendee's evaluation of one session. Completes their
+    attendance (evaluated_at); no special task is created."""
     uid = int(user["sub"])
     ev = _event(db, event_id)
     row = _activity(ev, index)
@@ -409,7 +533,7 @@ def evaluate_activity(event_id: int, index: int, body: ActivityEvalBody,
     rec = _record(db, event_id, index, uid)
     if not rec or not rec["time_out_at"]:
         raise HTTPException(403, "Time Out of this activity before evaluating it.")
-    # Claim the evaluation atomically so a double submit can't create two tasks.
+    # Claim the evaluation atomically so a double submit can't record two.
     now = school_now()
     claimed = db.execute(
         "UPDATE event_attendance SET evaluated_at=? WHERE id=? AND evaluated_at IS NULL",
@@ -434,13 +558,5 @@ def evaluate_activity(event_id: int, index: int, body: ActivityEvalBody,
          me["email"] if me else None, user.get("role"), body.sex, body.age_group,
          (body.affiliation or "").strip() or None,
          score, score, score, score, score, score, feedback))
-
-    task = None
-    if (row.get("special_task_title") or "").strip():
-        row["special_task_title"] = row["special_task_title"].strip()
-        task_id = _create_completed_special_task(db, ev, row, uid, now)
-        db.execute("UPDATE event_attendance SET special_task_id=? WHERE id=?", (task_id, rec["id"]))
-        task = {"id": task_id, "title": row["special_task_title"], "status": "COMPLETED",
-                "event_title": ev["title"], "completed_at": now.strftime(_TS)}
     db.commit()
-    return {"message": "Thank you! Your evaluation was submitted.", "special_task": task}
+    return {"message": "Thank you! Your evaluation was submitted.", "special_task": None}

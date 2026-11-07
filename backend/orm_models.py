@@ -319,7 +319,8 @@ class Event(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending_approval','approved','disabled','draft')",
+            "status IN ('pending_approval','approved','disabled','draft','rejected',"
+            "'revisions_requested','completed')",
             name="ck_events_status",
         ),
     )

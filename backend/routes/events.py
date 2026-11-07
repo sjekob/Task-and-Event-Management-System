@@ -16,9 +16,10 @@ from typing import Any, Optional
 from database import get_db, create_notification
 from auth import (ROLE_PERMISSIONS, get_current_user, require_event_manager,
                   require_event_approver, has_permission)
-from date_utils import parse_event_date
+from date_utils import parse_event_date, school_now
 from school_calendar import resolve_window, in_window
 from routes.deped_calendar import mandatory_on, conflict_warning
+from routes.attendance import event_ends_at
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
 
@@ -247,6 +248,7 @@ async def geocode_venue(q: str, user=Depends(require_event_manager)):
 
 @router.get("/{event_id}")
 def get_event(event_id: int, db=Depends(get_db), user=Depends(get_current_user)):
+    complete_finished_events(db)
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Event not found")
@@ -332,6 +334,23 @@ class EventCreateBody(BaseModel):
 
 
 CREATE_STATUSES = ('draft', 'pending_approval')
+
+
+def complete_finished_events(db) -> list:
+    """Approved events whose last session is over (its Time Out window has
+    closed) become 'completed'. Run whenever events are listed or opened, so
+    no scheduled job is needed. Returns the ids that changed."""
+    now = school_now()
+    done = []
+    for r in db.execute("SELECT id, activity_matrix, target_date FROM events WHERE status='approved'").fetchall():
+        end = event_ends_at(r)
+        if end is not None and end < now:
+            done.append(r["id"])
+    for event_id in done:
+        db.execute("UPDATE events SET status='completed' WHERE id=? AND status='approved'", (event_id,))
+    if done:
+        db.commit()
+    return done
 # Sent back by the approver: the proponent revises and resubmits.
 RETURNED_STATUSES = ('rejected', 'revisions_requested')
 IN_REVIEW_STATUSES = ('pending_approval',) + RETURNED_STATUSES
@@ -347,6 +366,7 @@ def list_events(db=Depends(get_db), user=Depends(get_current_user),
         window = resolve_window(db, school_year, term_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    complete_finished_events(db)
     rows = db.execute("SELECT * FROM events ORDER BY created_at DESC").fetchall()
     result = []
     for r in rows:

@@ -18,15 +18,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from database import get_db
+from date_utils import school_now
 
 router = APIRouter(prefix="/api/appraisal/public", tags=["Public Evaluation"])
 
 # Free-text role label; kept permissive since attendees self-identify. We only
 # enforce a sane, known set so the stored data stays tidy.
 ALLOWED_EVALUATOR_ROLES = {
-    "student", "teacher", "parent", "visitor",
+    "student", "teacher", "parent", "visitor", "external stakeholder",
     "dean", "coordinator", "principal", "registrar",
 }
+# Shown first in the guest forms (the paper's stakeholders), then the rest.
+ROLE_ORDER = ["student", "parent", "external stakeholder", "visitor", "teacher",
+              "coordinator", "dean", "registrar", "principal"]
 
 # Evaluator demographics (for the event's evaluation report breakdown).
 SEX_OPTIONS = ["Male", "Female", "Prefer not to say"]
@@ -124,24 +128,43 @@ def _organizer_name(row, db) -> Optional[str]:
 
 def _lock_reason(row) -> Optional[str]:
     """None if the event is open for public evaluation, else why it's locked."""
-    if row["status"] != "approved":
+    if row["status"] not in ("approved", "completed"):
         return "This event is not yet approved for evaluation."
     event_date = _parse_event_date(row["target_date"])
     if event_date is None:
         return "This event's date has not been confirmed yet."
-    if event_date > date.today():
+    if event_date > school_now().date():  # school-local day, not the server's UTC day
         return f"Evaluation opens on {event_date.isoformat()}."
     return None
 
 
+def _session_lock_reason(db, row, session: int, email: str) -> Optional[str]:
+    """A guest's evaluation of one session: open once that email has timed out
+    of it (attendance, not the event's target date, decides)."""
+    if row["status"] not in ("approved", "completed"):
+        return "This event is not yet approved for evaluation."
+    rec = db.execute(
+        """SELECT time_out_at, evaluated_at FROM event_attendance
+           WHERE event_id=? AND activity_index=? AND user_id IS NULL AND guest_email=?""",
+        (row["id"], session, (email or "").strip().lower())).fetchone()
+    if not rec or not rec["time_out_at"]:
+        return "Time Out of this session first, using the same email."
+    if rec["evaluated_at"]:
+        return "You have already evaluated this session. Thank you!"
+    return None
+
+
 @router.get("/events/{event_id}")
-def get_public_event(event_id: int, db=Depends(get_db)):
+def get_public_event(event_id: int, session: Optional[int] = None, email: Optional[str] = None,
+                     db=Depends(get_db)):
     """Unauthenticated event info + the proposal's observation indicators for the
-    QR landing page. The frontend renders these as the Evident / Not Evident tool."""
+    QR landing page. The frontend renders these as the Evident / Not Evident tool.
+    With session + email: whether that guest may evaluate that session."""
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Event not found")
-    lock_reason = _lock_reason(row)
+    lock_reason = (_session_lock_reason(db, row, session, email) if session is not None and email
+                   else _lock_reason(row))
     monitoring = None
     try:
         monitoring = row["monitoring_criteria"]
@@ -156,7 +179,7 @@ def get_public_event(event_id: int, db=Depends(get_db)):
         "monitoring_criteria": monitoring,
         "indicators": _proposal_indicators(row),
         "demographic_options": {
-            "evaluator_role": sorted(ALLOWED_EVALUATOR_ROLES),
+            "evaluator_role": ROLE_ORDER,
             "sex": SEX_OPTIONS,
             "age_group": AGE_GROUPS,
         },
@@ -182,6 +205,9 @@ class PublicEvalBody(BaseModel):
     affiliation: Optional[str] = Field(default=None, max_length=200)  # school / office / organization
     indicators: List[IndicatorResult]
     comments: Optional[str] = Field(default=None, max_length=2000)
+    # Set when a guest evaluates one session after its Time Out (attendance QR
+    # flow). Completes that guest's attendance; never creates a special task.
+    activity_index: Optional[int] = Field(default=None, ge=0)
 
 
 def _score_from_indicators(results: List[IndicatorResult]) -> int:
@@ -211,13 +237,18 @@ def submit_public_evaluation(event_id: int, body: PublicEvalBody,
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Event not found")
-    lock_reason = _lock_reason(row)
-    if lock_reason:
+    # A guest's session evaluation is gated by their attendance (checked below);
+    # the general form by the event's date.
+    lock_reason = (_session_lock_reason(db, row, body.activity_index, body.evaluator_email)
+                   if body.activity_index is not None else _lock_reason(row))
+    if lock_reason and body.activity_index is None:
         raise HTTPException(403, lock_reason)
+    if body.activity_index is not None and row["status"] not in ("approved", "completed"):
+        raise HTTPException(403, "This event is not yet approved for evaluation.")
 
     role = body.evaluator_role.strip().lower()
     if role not in ALLOWED_EVALUATOR_ROLES:
-        raise HTTPException(400, f"evaluator_role must be one of {sorted(ALLOWED_EVALUATOR_ROLES)}")
+        raise HTTPException(400, f"evaluator_role must be one of {ROLE_ORDER}")
 
     if body.sex not in SEX_OPTIONS:
         raise HTTPException(400, f"sex must be one of {SEX_OPTIONS}")
@@ -238,24 +269,38 @@ def submit_public_evaluation(event_id: int, body: PublicEvalBody,
     feedback = _feedback_text(body.indicators, body.comments)
     name = (body.evaluator_name or "").strip() or "Anonymous"
 
-    # One evaluation per email per event — the email is the identity we throttle
-    # on so an attendee can only evaluate a given event once.
-    try:
-        db.execute(
-            "INSERT INTO public_submission_log (event_id, email) VALUES (?,?)",
-            (event_id, email),
-        )
-    except Exception:
-        raise HTTPException(409, "This email has already submitted an evaluation for this event.")
+    if body.activity_index is not None:
+        # A guest's session evaluation: completes their attendance for it.
+        rec = db.execute(
+            """SELECT id, time_out_at, evaluated_at FROM event_attendance
+               WHERE event_id=? AND activity_index=? AND user_id IS NULL AND guest_email=?""",
+            (event_id, body.activity_index, email)).fetchone()
+        if not rec or not rec["time_out_at"]:
+            raise HTTPException(403, "Time Out of this session first, using the same email.")
+        claimed = db.execute(
+            "UPDATE event_attendance SET evaluated_at=CURRENT_TIMESTAMP WHERE id=? AND evaluated_at IS NULL",
+            (rec["id"],)).rowcount
+        if not claimed:
+            raise HTTPException(409, "This email has already evaluated this session.")
+    else:
+        # One evaluation per email per event — the email is the identity we throttle
+        # on so an attendee can only evaluate a given event once.
+        try:
+            db.execute(
+                "INSERT INTO public_submission_log (event_id, email) VALUES (?,?)",
+                (event_id, email),
+            )
+        except Exception:
+            raise HTTPException(409, "This email has already submitted an evaluation for this event.")
 
     db.execute(
         """INSERT INTO event_evaluations
-           (event_id, evaluator_id, evaluator_name, evaluator_email, evaluator_role,
+           (event_id, activity_index, evaluator_id, evaluator_name, evaluator_email, evaluator_role,
             evaluator_sex, evaluator_age_group, evaluator_affiliation,
             planning_score, objectives_score, personnel_score,
             time_mgmt_score, engagement_score, resource_score, feedback_comments)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (event_id, None, name, email, role, body.sex, body.age_group, affiliation,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (event_id, body.activity_index, None, name, email, role, body.sex, body.age_group, affiliation,
          score, score, score, score, score, score, feedback)
     )
     db.commit()

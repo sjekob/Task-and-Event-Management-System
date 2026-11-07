@@ -26,6 +26,7 @@ const STATUS_PILL: Record<string, [string, string]> = {
   draft: ['Draft', '#718096'],
   revisions_requested: ['Revisions requested', '#DD6B20'],
   rejected: ['Rejected', '#E53E3E'],
+  completed: ['Completed', '#718096'],
 };
 
 export function EventStatusPill({ status }: { status: string }) {
@@ -159,6 +160,9 @@ export function EventsPage() {
       </Group>
       {all.length === 0 && <Paper p={40} radius="lg"><Text ta="center" size="sm" c="#718096">No events yet.</Text></Paper>}
       {section('Upcoming / Approved Events', shown.filter((e) => e.status === 'approved'), (e) => (
+        <EventCard key={e.id} event={e} onOpen={() => open(e)} onPrint={() => void actions.print(e)} />
+      ))}
+      {section('Completed Events', shown.filter((e) => e.status === 'completed'), (e) => (
         <EventCard key={e.id} event={e} onOpen={() => open(e)} onPrint={() => void actions.print(e)} />
       ))}
       {section('Pending Approval', shown.filter((e) => e.status === 'pending_approval'), (e) => (

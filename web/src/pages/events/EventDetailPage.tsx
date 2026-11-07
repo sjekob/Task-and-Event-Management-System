@@ -5,18 +5,19 @@ import {
   SimpleGrid, Stack, Table, Text, ThemeIcon, Title, Tooltip,
 } from '@mantine/core';
 import {
-  IconArrowBackUp, IconArrowLeft, IconBan, IconCircleX, IconHistory, IconBulb, IconCalendarEvent, IconCategory, IconChecklist, IconCircleCheck,
+  IconArrowBackUp, IconArrowLeft, IconBan, IconCircleX, IconHistory, IconUserCheck, IconBulb, IconCalendarEvent, IconCategory, IconChecklist, IconCircleCheck,
   IconFlag, IconHierarchy2, IconId, IconListCheck, IconMapPin, IconPencil, IconPigMoney, IconPrinter,
   IconQrcode, IconRoute, IconSignature, IconTimeline, IconUser, IconUsersGroup, IconWallet, IconCash,
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  api, formatMoney, hasContent, isReturnedEvent, listItems, parseJson, parseParticipants, qk, useSession, useUser,
+  api, formatMoney, hasContent, isApprovedEvent, isReturnedEvent, listItems, parseJson, parseParticipants, qk, useSession, useUser,
   type EventRecord,
 } from '@tasknet/shared';
 import { ErrorState, PageLoader } from '../../components/ui';
 import { ReturnedBanner, ReviewHistory } from './EventReview';
+import { EventAttendance } from './EventAttendance';
 import { VenueMap } from '../../components/VenueMap';
 import { EventStatusPill, useEventActions } from './EventsPage';
 import { colors } from '../../theme';
@@ -186,6 +187,7 @@ export function EventDetailPage() {
   const returned = isReturnedEvent(e.status);
   const showEdit = canManage && (pending || e.status === 'draft' || returned) && e.created_by === user.id;
   const showQr = e.status === 'approved' && (canApprove || e.created_by === user.id);
+  const showAttendance = isApprovedEvent(e.status) && (canApprove || e.created_by === user.id);
 
   const sections: [string, ReactNode, ReactNode][] = [];
   if (has(e.rationale)) sections.push(['Rationale', <IconBulb size={18} />, <Text className="tn-prewrap" lh={1.65}>{e.rationale}</Text>]);
@@ -354,6 +356,12 @@ export function EventDetailPage() {
         </Box>
       ))}
 
+      {showAttendance && (
+        <Box mt="md">
+          <DetailCard icon={<IconUserCheck size={18} />} title="Attendance"><EventAttendance eventId={e.id} /></DetailCard>
+        </Box>
+      )}
+
       {(e.reviews?.length ?? 0) > 0 && (
         <Box mt="md">
           <DetailCard icon={<IconHistory size={18} />} title="Review history"><ReviewHistory reviews={e.reviews!} /></DetailCard>
@@ -398,7 +406,6 @@ function AttendanceQrModal({ eventId, onClose }: { eventId: number; onClose: () 
               <Box key={a.index} pb="md" style={{ borderBottom: '1px solid #E2E8F0' }}>
                 <Text fw={700} size="sm">{a.event?.trim() || `Activity ${a.index + 1}`}</Text>
                 <Text size="xs" c="dimmed">{[a.day, a.time].filter(Boolean).join('  ·  ')}</Text>
-                {a.special_task_title?.trim() && <Text size="xs" c={colors.green} mt={4}>Automated special task: {a.special_task_title}</Text>}
                 {!a.schedule_readable && (
                   <Notice text={'This row\'s day/time can\'t be read (use e.g. "4:00-5:00 PM"), so its scans will be rejected.'} />
                 )}

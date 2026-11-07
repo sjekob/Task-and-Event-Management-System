@@ -244,7 +244,12 @@ export interface DashboardData {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
-export type EventStatus = 'pending_approval' | 'approved' | 'disabled' | 'draft' | 'rejected' | 'revisions_requested';
+export type EventStatus = 'pending_approval' | 'approved' | 'disabled' | 'draft' | 'rejected' | 'revisions_requested'
+  /** set by the server once an approved event's last session has ended */
+  | 'completed';
+
+/** Approved and still to come or happening, or already completed: on the calendar and in the lists. */
+export const isApprovedEvent = (status?: string | null) => status === 'approved' || status === 'completed';
 
 /** Sent back by the approver; the proponent revises and resubmits. */
 export const RETURNED_EVENT_STATUSES: readonly EventStatus[] = ['rejected', 'revisions_requested'];
@@ -372,11 +377,32 @@ export interface AttendanceActivity {
   gps_tolerance_max_m?: number;
   activity_index: number;
   activity: { day?: string; time?: string; event?: string; speaker?: string };
-  has_special_task: boolean;
-  special_task_title?: string | null;
   /** null when the row's day/time can't be read */
   windows: { time_in: AttendanceWindow; time_out: AttendanceWindow } | null;
   record: AttendanceRecord | null;
+}
+
+/** GET /api/events/{id}/attendance/guest/activities/{index} (public, needs the QR code) */
+export interface GuestActivity extends AttendanceActivity {
+  guest_options: { role: string[]; sex: string[]; age_group: string[] };
+}
+
+/** Who a guest (no TaskNet account) is; remembered in the browser between Time In and Time Out. */
+export interface GuestInfo {
+  name: string; email: string; role: string; sex: string; age_group: string; affiliation?: string | null;
+}
+
+/** GET /api/events/{id}/attendance: everyone who scanned, per session. */
+export interface AttendanceList {
+  event_id: number;
+  title: string;
+  sessions: { index: number; event: string; time?: string; day?: string }[];
+  attendees: {
+    id: number; activity_index: number; activity: string; is_guest: boolean;
+    name?: string | null; role?: string | null; email?: string | null; affiliation?: string | null;
+    time_in_at?: string | null; time_out_at?: string | null; evaluated_at?: string | null;
+    time_in_distance_m?: number | null; time_out_distance_m?: number | null;
+  }[];
 }
 
 export interface AttendanceScanResult {
@@ -398,7 +424,7 @@ export interface AttendanceQrCodes {
   venue_location?: VenueLocation | null;
   activities: {
     index: number; day?: string; time?: string; event?: string; speaker?: string;
-    special_task_title?: string | null; schedule_readable: boolean;
+    schedule_readable: boolean;
     time_in_code: string; time_out_code: string;
   }[];
 }

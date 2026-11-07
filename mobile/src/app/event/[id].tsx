@@ -37,7 +37,9 @@ export default function EventDetailScreen() {
   const canApprove = can('approve_events');
   const pending = e.status === 'pending_approval';
   const isOwner = e.created_by === user.id;
+  // Attendance codes while it's running; the evaluation QR also after it's completed.
   const showQr = e.status === 'approved' && (canApprove || isOwner);
+  const showEvalQr = (e.status === 'approved' || e.status === 'completed') && (canApprove || isOwner);
 
   const run = async (key: string, fn: () => Promise<unknown>, done?: string) => {
     setBusy(key);
@@ -131,7 +133,7 @@ export default function EventDetailScreen() {
           {canApprove && e.status === 'disabled' && <Button title="Re-enable event" kind="outline" icon="refresh-outline" loading={busy === 'enable'}
             onPress={() => void run('enable', () => api.events.enable(e.id), 'Event re-enabled')} />}
           {showQr && <Button title="Attendance QR codes" kind="outline" icon="qr-code-outline" onPress={() => setQr('attendance')} />}
-          {showQr && <Button title="Evaluation QR code" kind="outline" icon="star-outline" onPress={() => setQr('evaluation')} />}
+          {showEvalQr && <Button title="Evaluation QR code" kind="outline" icon="star-outline" onPress={() => setQr('evaluation')} />}
           <Button title="Print / share proposal" kind="outline" icon="print-outline" loading={busy === 'print'}
             onPress={() => void run('print', () => shareProposal(e))} />
         </View>

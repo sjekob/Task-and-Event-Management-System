@@ -23,7 +23,8 @@ export default function EventsScreen() {
     upcoming: all.filter((e) => e.status === 'approved' && time(e) >= today).sort((a, b) => time(a) - time(b)),
     pending,
     returned,
-    past: all.filter((e) => e.status === 'approved' && time(e) < today).sort((a, b) => time(b) - time(a)),
+    // Completed (set by the server after the last session) or approved with a past date.
+    past: all.filter((e) => e.status === 'completed' || (e.status === 'approved' && time(e) < today)).sort((a, b) => time(b) - time(a)),
     mine: all.filter((e) => e.created_by === user?.id).sort((a, b) => time(b) - time(a)),
   };
   const options: { value: Filter; label: string; count?: number }[] = [

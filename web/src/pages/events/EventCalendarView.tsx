@@ -13,6 +13,7 @@ const STATUS: Record<string, [string, string]> = {
   pending_approval: ['Pending', colors.amber],
   draft: ['Draft', colors.textMuted],
   disabled: ['Disabled', colors.red],
+  completed: ['Completed', colors.textMuted],
 };
 
 interface Entry { event: EventRecord; date: Date; times: [number, number] | null }

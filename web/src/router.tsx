@@ -46,13 +46,15 @@ function LoginRoute() {
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginRoute /> },
-  // Public QR evaluation landing page — no login.
+  // Public QR evaluation landing page — no login. Guests land here after Time Out (?session=N).
   { path: '/eval/:eventId', element: <PublicEvaluationPage /> },
+  // Attendance QR landing — public: signed-in personnel scan as themselves,
+  // everyone else (students, parents, external stakeholders) as a guest.
+  { path: '/attendance/:eventId/:index/scan', element: <AttendanceScanPage /> },
   {
     element: <RequireAuth />,
     children: [
-      // Attendance QR landing (login required): Time In / Time Out, then the activity evaluation.
-      { path: '/attendance/:eventId/:index/scan', element: <AttendanceScanPage /> },
+      // A signed-in attendee's evaluation of one activity, after Time Out.
       { path: '/attendance/:eventId/:index/evaluate', element: <PublicEvaluationPage /> },
       {
         element: <AppLayout />,

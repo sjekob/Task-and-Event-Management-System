@@ -16,6 +16,7 @@ export const EVENT_STATUS: Record<string, [string, string]> = {
   draft: ['Draft', '#4A5568'],
   revisions_requested: ['Revisions requested', '#C05621'],
   rejected: ['Rejected', '#C53030'],
+  completed: ['Completed', '#4A5568'],
 };
 
 export function EventStatusPill({ status }: { status: string }) {

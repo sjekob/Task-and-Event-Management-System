@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Alert, Badge, Box, Button, Center, List, Loader, Paper, Stack, Text, Title } from '@mantine/core';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  Alert, Anchor, Badge, Box, Button, Center, Checkbox, List, Loader, Paper, Select, SimpleGrid, Stack, Text, TextInput, Title,
+} from '@mantine/core';
 import { IconAlertCircle, IconAlertTriangle, IconCircleCheck, IconMapPinOff, IconRefresh } from '@tabler/icons-react';
 import {
-  api, distanceMeters, formatDistance, insidePerimeter, type AttendanceActivity, type VenueLocation,
+  api, distanceMeters, formatDistance, insidePerimeter, titleCase, useSession,
+  type AttendanceActivity, type AttendanceScanResult, type GuestActivity, type GuestInfo, type VenueLocation,
 } from '@tasknet/shared';
 import { notifySuccess } from '../../components/ui';
 import { VenueMap } from '../../components/VenueMap';
 import { colors } from '../../theme';
+import { loadGuest, saveGuest } from './guestStore';
 
-type Step = 'loading' | 'locating' | 'submitting' | 'done' | 'error' | 'outside' | 'no-location';
+type Step = 'loading' | 'guest-form' | 'locating' | 'submitting' | 'done' | 'error' | 'outside' | 'no-location';
 type Fix = { lat: number; lng: number; accuracy: number };
 type LocationProblem = 'denied' | 'unavailable' | 'timeout' | 'unsupported';
 
@@ -47,92 +51,147 @@ const PROBLEM_TEXT: Record<LocationProblem, { title: string; steps: string[] }> 
   },
   unsupported: {
     title: "This browser can't share your location",
-    steps: ['Open the QR link in Chrome, Safari or the TaskNet app instead.'],
+    steps: ['Open the QR link in Chrome or Safari instead.'],
   },
 };
 
+const EMPTY_GUEST: GuestInfo = { name: '', email: '', role: 'student', sex: '', age_group: '', affiliation: '' };
+const validEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.trim());
+const roleLabel = (r: string) => titleCase(r);
+
 /**
  * Landing page of an attendance QR (Time In or Time Out for one Activity
- * Matrix row). The backend accepts the scan only inside its time window and,
- * when the venue is pinned, only from inside its perimeter. A successful Time
- * Out goes straight to the activity evaluation.
+ * Matrix row). Signed-in personnel scan as themselves; anyone else (students,
+ * parents, external stakeholders) fills a short guest form first. The backend
+ * accepts the scan only inside its time window and, when the venue is pinned,
+ * only from inside its perimeter. A successful Time Out goes to the evaluation.
  */
 export function AttendanceScanPage() {
   const { eventId, index } = useParams();
   const [params] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const { user, restoring } = useSession();
   const action = params.get('action') ?? '';
   const code = params.get('code') ?? '';
   const ev = Number(eventId);
   const idx = Number(index);
   const isTimeIn = action === 'time_in';
   const label = isTimeIn ? 'Time In' : 'Time Out';
+  const isGuest = !restoring && !user;
   const [step, setStep] = useState<Step>('loading');
   const [message, setMessage] = useState('');
-  const [info, setInfo] = useState<AttendanceActivity | null>(null);
+  const [info, setInfo] = useState<AttendanceActivity | GuestActivity | null>(null);
   const [fix, setFix] = useState<Fix | null>(null);
   const [problem, setProblem] = useState<LocationProblem | null>(null);
+  const [guest, setGuest] = useState<GuestInfo>(() => loadGuest()?.guest ?? EMPTY_GUEST);
+  const [consent, setConsent] = useState(() => !!loadGuest()?.consentEvents.includes(ev));
+  const [formError, setFormError] = useState<string | null>(null);
   const started = useRef(false);
+  const validLink = (action === 'time_in' || action === 'time_out') && !!code;
 
-  const run = useCallback(async () => {
-    if ((action !== 'time_in' && action !== 'time_out') || !code) {
-      setStep('error');
-      setMessage('This attendance QR code is incomplete. Please scan it again.');
+  /** Location → perimeter → scan. Shared by personnel and guests. */
+  const scan = useCallback(async (activity: AttendanceActivity, send: (here: Fix | null) => Promise<AttendanceScanResult>,
+    onTimeOut: () => void) => {
+    const pin = activity.venue_location ?? null;
+    const alreadyOut = !isTimeIn && !!activity.record?.time_out_at;
+    setStep('locating');
+    const got = await locate(!!pin);
+    const here = 'fix' in got ? got.fix : null;
+    setFix(here);
+    if (pin && !alreadyOut) {
+      if (!here) {
+        setProblem('problem' in got ? got.problem : 'unavailable');
+        setStep('no-location');
+        return;
+      }
+      const d = distanceMeters(here.lat, here.lng, pin.latitude, pin.longitude);
+      if (!insidePerimeter(d, pin.radius_m, here.accuracy, activity.gps_tolerance_max_m)) {
+        setStep('outside');
+        return;
+      }
+    }
+    setStep('submitting');
+    const res = await send(here);
+    if (res.redirect_to_evaluation) {
+      notifySuccess(res.message || 'Time Out recorded.');
+      onTimeOut();
       return;
     }
+    setStep('done');
+    setMessage(res.message || `${label} recorded.`);
+  }, [isTimeIn, label]);
+
+  /** Signed-in personnel: unchanged flow. */
+  const runPersonnel = useCallback(async () => {
     try {
       setStep('loading');
       const activity = info ?? await api.events.attendanceActivity(ev, idx);
       setInfo(activity);
-      const pin = activity.venue_location ?? null;
-      const alreadyOut = !isTimeIn && !!activity.record?.time_out_at;
-
-      setStep('locating');
-      const got = await locate(!!pin);
-      const here = 'fix' in got ? got.fix : null;
-      setFix(here);
-      if (pin && !alreadyOut) {
-        if (!here) {
-          setProblem('problem' in got ? got.problem : 'unavailable');
-          setStep('no-location');
-          return;
-        }
-        const d = distanceMeters(here.lat, here.lng, pin.latitude, pin.longitude);
-        if (!insidePerimeter(d, pin.radius_m, here.accuracy, activity.gps_tolerance_max_m)) {
-          setStep('outside');
-          return;
-        }
-      }
-
-      setStep('submitting');
-      const res = await api.events.scanAttendance(ev, {
+      await scan(activity, (here) => api.events.scanAttendance(ev, {
         activity_index: idx, action, code,
         latitude: here?.lat ?? null, longitude: here?.lng ?? null, accuracy: here?.accuracy ?? null,
-      });
-      if (res.redirect_to_evaluation) {
-        notifySuccess(res.message || 'Time Out recorded.');
-        navigate(`/attendance/${ev}/${idx}/evaluate`, { replace: true });
-        return;
-      }
-      setStep('done');
-      setMessage(res.message || `${label} recorded.`);
+      }), () => navigate(`/attendance/${ev}/${idx}/evaluate`, { replace: true }));
     } catch (e) {
       setStep('error');
       setMessage(e instanceof Error ? e.message : 'Could not record your attendance');
     }
-  }, [action, code, ev, idx, info, isTimeIn, label, navigate]);
+  }, [action, code, ev, idx, info, navigate, scan]);
+
+  /** Guest: load the activity (needs the QR code), then show the form. */
+  const loadForGuest = useCallback(async () => {
+    try {
+      setStep('loading');
+      const stored = loadGuest()?.guest;
+      const activity = await api.events.guestActivity(ev, idx, { action, code, email: stored?.email || undefined });
+      setInfo(activity);
+      setStep('guest-form');
+    } catch (e) {
+      setStep('error');
+      setMessage(e instanceof Error ? e.message : 'Could not load this activity');
+    }
+  }, [action, code, ev, idx]);
+
+  const submitGuest = async () => {
+    const g: GuestInfo = { ...guest, name: guest.name.trim(), email: guest.email.trim().toLowerCase(), affiliation: guest.affiliation?.trim() || null };
+    if (g.name.length < 2) return setFormError('Please enter your full name.');
+    if (!validEmail(g.email)) return setFormError('Please enter a valid email address.');
+    if (!g.sex || !g.age_group) return setFormError('Please choose your sex and age group.');
+    if (!consent) return setFormError('Please tick the Data Privacy box to continue.');
+    setFormError(null);
+    saveGuest(g, ev);
+    try {
+      // The guest's own record (by email) decides "already timed out" for this session.
+      const activity = await api.events.guestActivity(ev, idx, { action, code, email: g.email });
+      setInfo(activity);
+      await scan(activity, (here) => api.events.guestScan(ev, {
+        activity_index: idx, action, code, guest: g, consent: true,
+        latitude: here?.lat ?? null, longitude: here?.lng ?? null, accuracy: here?.accuracy ?? null,
+      }), () => navigate(`/eval/${ev}?session=${idx}`, { replace: true }));
+    } catch (e) {
+      setStep('error');
+      setMessage(e instanceof Error ? e.message : 'Could not record your attendance');
+    }
+  };
 
   useEffect(() => {
-    // Record the scan once, even under StrictMode's double effects.
-    if (started.current) return;
+    if (restoring || started.current) return;
+    // Run once, even under StrictMode's double effects.
     started.current = true;
-    void run();
-  }, [run]);
+    if (!validLink) {
+      setStep('error');
+      setMessage('This attendance QR code is incomplete. Please scan it again.');
+      return;
+    }
+    void (user ? runPersonnel() : loadForGuest());
+  }, [restoring, user, validLink, runPersonnel, loadForGuest]);
 
+  const retry = () => void (user ? runPersonnel() : (info ? submitGuest() : loadForGuest()));
   const window = info?.windows?.[action as 'time_in' | 'time_out']?.label;
   const tone = isTimeIn ? colors.green : colors.accent;
   const pin: VenueLocation | null = info?.venue_location ?? null;
   const distance = pin && fix ? distanceMeters(fix.lat, fix.lng, pin.latitude, pin.longitude) : null;
+  const options = (info as GuestActivity | null)?.guest_options;
   const map = pin && (
     <Box mt="sm" w="100%">
       <VenueMap pin={{ lat: pin.latitude, lng: pin.longitude }} radius={pin.radius_m} label={info?.venue ?? 'Venue'}
@@ -140,7 +199,7 @@ export function AttendanceScanPage() {
       <Text size="11px" c="dimmed" ta="center" mt={4}>Blue circle: the venue perimeter ({pin.radius_m} m). Orange dot: you.</Text>
     </Box>
   );
-  const retry = <Button mt="md" color="#0F2C59" leftSection={<IconRefresh size={18} />} onClick={() => void run()}>Try again</Button>;
+  const retryButton = <Button mt="md" color="#0F2C59" leftSection={<IconRefresh size={18} />} onClick={retry}>Try again</Button>;
 
   let body: ReactNode;
   if (step === 'loading' || step === 'locating' || step === 'submitting') {
@@ -153,6 +212,37 @@ export function AttendanceScanPage() {
               : `Recording your ${label}…`}
         </Text>
         {step === 'locating' && pin && <Text size="xs" c="dimmed" ta="center">Allow location access if your browser asks.</Text>}
+      </Stack>
+    );
+  } else if (step === 'guest-form') {
+    const g = guest;
+    const set = (patch: Partial<GuestInfo>) => { setFormError(null); setGuest((x) => ({ ...x, ...patch })); };
+    body = (
+      <Stack gap="sm">
+        <Text size="sm" c="dimmed">
+          No TaskNet account needed. Enter your details to {label === 'Time In' ? 'time in' : 'time out'}.
+          {!isTimeIn && ' Use the same email you timed in with.'}
+        </Text>
+        <TextInput label="Full name" withAsterisk value={g.name} onChange={(e) => set({ name: e.currentTarget.value })}
+          autoComplete="name" />
+        <Select label="I am a…" withAsterisk allowDeselect={false} value={g.role} onChange={(v) => v && set({ role: v })}
+          data={(options?.role ?? ['student', 'parent', 'external stakeholder', 'visitor']).map((r) => ({ value: r, label: roleLabel(r) }))} />
+        <TextInput label="Email" withAsterisk type="email" value={g.email} onChange={(e) => set({ email: e.currentTarget.value })}
+          autoComplete="email" description="One Time In and one Time Out per email for each session." />
+        <SimpleGrid cols={2} spacing="sm">
+          <Select label="Sex" withAsterisk data={options?.sex ?? []} value={g.sex || null} onChange={(v) => set({ sex: v ?? '' })} />
+          <Select label="Age group" withAsterisk data={options?.age_group ?? []} value={g.age_group || null} onChange={(v) => set({ age_group: v ?? '' })} />
+        </SimpleGrid>
+        <TextInput label="School / office / organization (optional)" value={g.affiliation ?? ''}
+          onChange={(e) => set({ affiliation: e.currentTarget.value })} autoComplete="organization" />
+        <Checkbox mt={4} checked={consent} onChange={(e) => { setFormError(null); setConsent(e.currentTarget.checked); }} color="#0F2C59"
+          label={<Text size="sm">I agree that TaskNet records my name, email and location for this event&apos;s attendance and evaluation.</Text>}
+          description="In line with the Data Privacy Act of 2012 (RA 10173). Used only for this event's records." />
+        {formError && <Text size="sm" c="red">{formError}</Text>}
+        <Button fullWidth size="md" color={isTimeIn ? 'green' : '#0F2C59'} onClick={() => void submitGuest()} mt={4}>{label}</Button>
+        <Text size="xs" c="dimmed" ta="center">
+          Have a TaskNet account? <Anchor component={Link} size="xs" to={`/login?from=${encodeURIComponent(location.pathname + location.search)}`}>Log in instead</Anchor>
+        </Text>
       </Stack>
     );
   } else if (step === 'outside') {
@@ -171,7 +261,7 @@ export function AttendanceScanPage() {
           )}
         </Alert>
         {map}
-        {retry}
+        {retryButton}
       </Stack>
     );
   } else if (step === 'no-location') {
@@ -186,7 +276,7 @@ export function AttendanceScanPage() {
         <Alert w="100%" mt="xs" color="yellow" variant="light" title={<Text fw={700} size="sm">{p.title}</Text>}>
           <List size="sm" spacing={4}>{p.steps.map((s) => <List.Item key={s}>{s}</List.Item>)}</List>
         </Alert>
-        {retry}
+        {retryButton}
         <Text size="xs" c="dimmed" ta="center" mt={4}>Still stuck? Open the QR link on a phone with GPS turned on (laptops often can&apos;t find their location).</Text>
       </Stack>
     );
@@ -198,16 +288,24 @@ export function AttendanceScanPage() {
         <Text fw={700} size="lg" ta="center">{label} {ok ? 'recorded' : 'not recorded'}</Text>
         <Text size="sm" c="dimmed" ta="center">{message}</Text>
         {pin && fix && map}
-        {ok ? <Button variant="subtle" mt="md" onClick={() => navigate('/dashboard')}>Go to dashboard</Button> : retry}
+        {ok && isGuest && isTimeIn && (
+          <Text size="xs" c="dimmed" ta="center" mt={4}>Scan the Time Out QR at the end of the session. Your details are remembered on this phone.</Text>
+        )}
+        {ok
+          ? (!isGuest && <Button variant="subtle" mt="md" onClick={() => navigate('/dashboard')}>Go to dashboard</Button>)
+          : retryButton}
+        {!ok && isGuest && <Button variant="subtle" onClick={() => setStep('guest-form')}>Edit my details</Button>}
       </Stack>
     );
   }
 
   return (
     <Center mih="100dvh" p="md" bg="#F1F5F9">
-      <Paper w="100%" maw={480} p={24} radius="lg" shadow="md">
+      <Paper w="100%" maw={480} p={{ base: 18, sm: 24 }} radius="lg" shadow="md">
         <Stack align="center" gap={2}>
-          <Badge radius="xl" tt="none" size="lg" style={{ background: `${tone}1A`, color: tone }}>Attendance · {label}</Badge>
+          <Badge radius="xl" tt="none" size="lg" style={{ background: `${tone}1A`, color: tone }}>
+            Attendance · {label}{isGuest ? ' · Guest' : ''}
+          </Badge>
           {info && (
             <>
               <Title order={3} fz={18} ta="center" mt={12}>{info.activity.event?.trim() || `Activity ${idx + 1}`}</Title>

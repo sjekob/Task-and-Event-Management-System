@@ -590,7 +590,7 @@ CREATE TABLE IF NOT EXISTS events (
     comments            TEXT,
     status              TEXT NOT NULL DEFAULT 'pending_approval'
         CHECK(status IN ('pending_approval','approved','disabled','draft',
-                         'rejected','revisions_requested')),
+                         'rejected','revisions_requested','completed')),
     created_by          INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     department          TEXT,
@@ -606,16 +606,18 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_longitude DOUBLE PRECISION
     CHECK (venue_longitude BETWEEN -180 AND 180);
 ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_radius_m  INTEGER
     CHECK (venue_radius_m BETWEEN 10 AND 5000);
--- Principal's review decisions added 'rejected' and 'revisions_requested'.
+-- Principal's review decisions added 'rejected' and 'revisions_requested';
+-- 'completed' is set automatically once an approved event's last session ends.
 -- Widen an existing database's status check once (fresh ones get it above).
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
                    WHERE conrelid = 'events'::regclass AND conname = 'events_status_check'
-                     AND pg_get_constraintdef(oid) LIKE '%revisions_requested%') THEN
+                     AND pg_get_constraintdef(oid) LIKE '%''completed''%') THEN
         ALTER TABLE events DROP CONSTRAINT IF EXISTS events_status_check;
         ALTER TABLE events ADD CONSTRAINT events_status_check CHECK (status IN
-            ('pending_approval','approved','disabled','draft','rejected','revisions_requested'));
+            ('pending_approval','approved','disabled','draft','rejected','revisions_requested',
+             'completed'));
     END IF;
 END $$;
 -- What the proposal reader found when the proposal was filled from a file
@@ -850,6 +852,20 @@ CREATE TABLE IF NOT EXISTS event_attendance (
 -- event had no pin.
 ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS time_in_distance_m  DOUBLE PRECISION;
 ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS time_out_distance_m DOUBLE PRECISION;
+-- Guests (students, parents, external stakeholders) scan without an account:
+-- user_id is NULL and who they are is kept here. One row per email per session.
+ALTER TABLE event_attendance ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS guest_name        TEXT;
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS guest_email       TEXT;
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS guest_role        TEXT;
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS guest_sex         TEXT;
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS guest_age_group   TEXT;
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS guest_affiliation TEXT;
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS guest_consent_at  TIMESTAMP;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_event_attendance_guest
+    ON event_attendance (event_id, activity_index, guest_email) WHERE user_id IS NULL;
+-- Which session an evaluation is about (NULL = the whole event, public QR form).
+ALTER TABLE event_evaluations ADD COLUMN IF NOT EXISTS activity_index INTEGER;
 
 -- The approver's decisions on an event proposal, newest last (Event Reviews).
 -- A proposal can be reviewed several times: revisions requested, resubmitted,

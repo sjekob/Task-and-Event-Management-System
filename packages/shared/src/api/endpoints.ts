@@ -1,7 +1,7 @@
 import { clearToken, http, request, resolveUrl, saveToken } from './client';
 import type {
   AppNotification, AppraisalBadge, AssigneeSuggestion, AuditEntry, AttendanceActivity, AttendanceQrCodes,
-  AttendanceScanResult,
+  AttendanceList, AttendanceScanResult, GuestActivity, GuestInfo,
   CertificateFile, CertificateSet, CertificationCatalogItem, CertificationMeta, Comment,
   DashboardData, DateCheck, DepedEntry, Department, EducationOptions, EventForAppraisal,
   EventInput, EventRecord, EventReview, EventStatus, GeocodeResult, GradeLevel, LeaderboardEntry, LoginResult, Page, Report,
@@ -263,9 +263,10 @@ export const appraisal = {
       { query: yearQuery(filter), fallback: 'Failed to load badges' }),
 
   // Public QR evaluation (no login).
-  publicEvent: (eventId: string | number) =>
+  /** session + email: a guest's evaluation of one session (open once they've timed out of it). */
+  publicEvent: (eventId: string | number, q?: { session?: number; email?: string }) =>
     http.get<PublicEvent>(`/api/appraisal/public/events/${eventId}`,
-      { anonymous: true, fallback: 'Event not found.' }),
+      { query: q, anonymous: true, fallback: 'Event not found.' }),
   submitPublicEvaluation: (eventId: string | number, body: Record<string, unknown>) =>
     http.post(`/api/appraisal/public/events/${eventId}/evaluate`, body,
       { anonymous: true, fallback: 'Failed to submit evaluation.' }),
@@ -358,6 +359,19 @@ export const events = {
     latitude?: number | null; longitude?: number | null; accuracy?: number | null;
   }) => http.post<AttendanceScanResult>(`/api/events/${eventId}/attendance/scan`, body,
     { fallback: 'Could not record your attendance' }),
+  /** Public (no login): a guest's scan landing info; needs the QR's signed code. */
+  guestActivity: (eventId: number, index: number, q: { action: string; code: string; email?: string }) =>
+    http.get<GuestActivity>(`/api/events/${eventId}/attendance/guest/activities/${index}`,
+      { query: q, anonymous: true, fallback: 'Could not load this activity' }),
+  /** Public (no login): Time In / Time Out for a guest, with Data Privacy consent. */
+  guestScan: (eventId: number, body: {
+    activity_index: number; action: string; code: string; guest: GuestInfo; consent: boolean;
+    latitude?: number | null; longitude?: number | null; accuracy?: number | null;
+  }) => http.post<AttendanceScanResult>(`/api/events/${eventId}/attendance/guest-scan`, body,
+    { anonymous: true, fallback: 'Could not record your attendance' }),
+  /** Proponent / approver: who scanned, guests included. */
+  attendanceList: (eventId: number) => http.get<AttendanceList>(`/api/events/${eventId}/attendance`,
+    { fallback: 'Could not load the attendance list' }),
   evaluateActivity: (eventId: number, index: number, body: Record<string, unknown>) =>
     http.post<{ message: string; special_task?: Record<string, unknown> | null }>(`/api/events/${eventId}/attendance/activities/${index}/evaluate`, body,
       { fallback: 'Failed to submit evaluation.' }),
