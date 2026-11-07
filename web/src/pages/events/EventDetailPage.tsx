@@ -15,6 +15,7 @@ import {
   api, formatMoney, hasContent, listItems, parseJson, parseParticipants, qk, useSession, useUser, type EventRecord,
 } from '@tasknet/shared';
 import { ErrorState, PageLoader } from '../../components/ui';
+import { VenueMap } from '../../components/VenueMap';
 import { EventStatusPill, useEventActions } from './EventsPage';
 import { colors } from '../../theme';
 
@@ -282,6 +283,28 @@ export function EventDetailPage() {
         ))}
       </SimpleGrid>
 
+      {e.venue_latitude != null && e.venue_longitude != null && (
+        <Paper p={16} radius="md" withBorder mt="md">
+          <Group justify="space-between" mb={10} gap="xs">
+            <Group gap={10}>
+              <ThemeIcon size={32} radius={8} style={{ background: '#EEF2FA', color: colors.dark }}><IconMapPin size={18} /></ThemeIcon>
+              <div>
+                <Text fw={700}>Venue &amp; attendance perimeter</Text>
+                <Text size="xs" c="dimmed">
+                  Time In / Time Out scans are accepted within {e.venue_radius_m ?? 100} m of the pin
+                  {has(e.venue) ? ` (${e.venue})` : ''}.
+                </Text>
+              </div>
+            </Group>
+            <Anchor size="xs" target="_blank" rel="noreferrer"
+              href={`https://www.openstreetmap.org/?mlat=${e.venue_latitude}&mlon=${e.venue_longitude}#map=18/${e.venue_latitude}/${e.venue_longitude}`}>
+              Open in OpenStreetMap
+            </Anchor>
+          </Group>
+          <VenueMap pin={{ lat: e.venue_latitude, lng: e.venue_longitude }} radius={e.venue_radius_m ?? 100} label={e.venue ?? undefined} height={300} />
+        </Paper>
+      )}
+
       {(has(e.focal_name) || has(e.participants)) && (
         <Grid gap="md" mt="md">
           {has(e.focal_name) && (
@@ -341,6 +364,16 @@ function AttendanceQrModal({ eventId, onClose }: { eventId: number; onClose: () 
         : qr.isError ? <Text c="red" ta="center" size="sm">{(qr.error as Error).message}</Text> : (
           <Stack>
             <Text size="sm" c="dimmed">{qr.data.title}</Text>
+            {qr.data.venue_location ? (
+              <Alert color="blue" p={10} icon={<IconMapPin size={16} />}>
+                <Text size="xs">
+                  Scans are accepted only within {qr.data.venue_location.radius_m} m of the pinned venue, so attendees must allow
+                  location access on their phone. Post the codes at the venue.
+                </Text>
+              </Alert>
+            ) : (
+              <Notice text="The venue isn't pinned, so scans are checked by time only and can be made from anywhere. Edit the proposal and pin the venue to require attendees to be there." />
+            )}
             {!qr.data.activities.length && <Notice text="This event has no Activity Matrix rows." />}
             {qr.data.activities.map((a) => (
               <Box key={a.index} pb="md" style={{ borderBottom: '1px solid #E2E8F0' }}>

@@ -5,8 +5,12 @@ Flow: the proponent prints two QR codes per activity (Time In, Time Out). An
 attendee scans one and the server accepts it only inside its window (Option C):
   * Time In:  start - 15 min .. start + 15 min
   * Time Out: end   - 10 min .. end   + 30 min
-The device's coordinates are logged with each scan for the record (passive —
-never used to accept or reject a scan; missing when location is unavailable).
+Geofence: when the proponent pinned the venue (events.venue_latitude/
+venue_longitude/venue_radius_m), a scan is accepted only from inside that
+perimeter — the device's GPS position is required and its Haversine distance to
+the pin must be within the radius (allowing for the reported GPS accuracy, up
+to GPS_TOLERANCE_MAX_M). Events without a pin are checked by time window only;
+any coordinates sent are still logged with the scan.
 A successful Time Out unlocks the activity's evaluation; submitting it creates
 an already-completed Special Task when the row has a `special_task_title`.
 
@@ -16,6 +20,7 @@ free text such as "4:00-5:00 PM", parsed here.
 import hashlib
 import hmac
 import json
+import math
 import re
 from datetime import datetime, time, timedelta
 from typing import List, Literal, Optional
@@ -37,6 +42,33 @@ TIME_OUT_BEFORE = timedelta(minutes=10)
 TIME_OUT_AFTER = timedelta(minutes=30)
 
 _TS = "%Y-%m-%d %H:%M:%S"
+
+# GPS fixes indoors are often 20–50 m off; a scan counts as inside when the
+# distance minus the device's reported accuracy (capped here) is within the radius.
+GPS_TOLERANCE_MAX_M = 50.0
+
+
+# ── Venue geofence ────────────────────────────────────────────────────────────
+
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in metres."""
+    r = 6371008.8  # mean Earth radius
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def venue_pin(ev) -> Optional[dict]:
+    """{latitude, longitude, radius_m} when the event's venue is pinned."""
+    lat, lon = ev["venue_latitude"], ev["venue_longitude"]
+    if lat is None or lon is None:
+        return None
+    return {"latitude": lat, "longitude": lon, "radius_m": ev["venue_radius_m"] or 100}
+
+
+def _distance_label(m: float) -> str:
+    return f"{m / 1000:.1f} km" if m >= 1000 else f"{round(m)} m"
 
 
 # ── Activity schedule parsing ─────────────────────────────────────────────────
@@ -182,6 +214,7 @@ def attendance_qr_codes(event_id: int, db=Depends(get_db), user=Depends(get_curr
         })
     return {
         "event_id": event_id, "title": ev["title"], "venue": ev["venue"],
+        "venue_location": venue_pin(ev),
         "activities": activities,
     }
 
@@ -202,6 +235,8 @@ def attendance_activity(event_id: int, index: int, db=Depends(get_db),
                        "label": f"{_fmt(v[0])} – {_fmt(v[1])}"} for k, v in w.items()}
     return {
         "event_id": event_id, "event_title": ev["title"], "venue": ev["venue"],
+        "venue_location": venue_pin(ev),
+        "gps_tolerance_max_m": GPS_TOLERANCE_MAX_M,
         "activity_index": index,
         "activity": {k: row.get(k) for k in ("day", "time", "event", "speaker")},
         "has_special_task": bool(row.get("special_task_title")),
@@ -217,9 +252,37 @@ class ScanBody(BaseModel):
     activity_index: int = Field(ge=0)
     action: Action
     code: str = Field(min_length=1, max_length=64)
-    # Passive audit log only; null when the device couldn't share a location.
+    # Required when the event's venue is pinned (geofence); otherwise only logged.
     latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    # The device's reported accuracy radius in metres (GeolocationCoordinates.accuracy).
+    accuracy: Optional[float] = Field(default=None, ge=0, le=100000)
+
+
+def _check_perimeter(ev, body: ScanBody) -> Optional[float]:
+    """Distance (m) from the pinned venue, or None when the event isn't pinned.
+    Raises when the location is missing or outside the perimeter."""
+    pin = venue_pin(ev)
+    if pin is None:
+        return None
+    label = "Time In" if body.action == "time_in" else "Time Out"
+    if body.latitude is None or body.longitude is None:
+        raise HTTPException(400, f"Your location is needed to {label}: this event only accepts "
+                                 "scans at the venue. Allow location access for this site, turn on "
+                                 "your device's Location/GPS, then try again.")
+    distance = haversine_m(body.latitude, body.longitude, pin["latitude"], pin["longitude"])
+    slack = min(body.accuracy or 0.0, GPS_TOLERANCE_MAX_M)
+    if distance - slack > pin["radius_m"]:
+        raise HTTPException(403, f"You are outside the event perimeter: about "
+                                 f"{_distance_label(distance)} from the venue (scans are accepted "
+                                 f"within {pin['radius_m']} m). Go to the venue, then scan again.")
+    return round(distance, 1)
+
+
+def _ok_message(label: str, distance: Optional[float]) -> str:
+    if distance is None:
+        return f"{label} recorded."
+    return f"{label} recorded. You're inside the event perimeter ({_distance_label(distance)} from the venue)."
 
 
 @router.post("/{event_id}/attendance/scan")
@@ -249,15 +312,17 @@ def attendance_scan(event_id: int, body: ScanBody, db=Depends(get_db),
     if body.action == "time_in":
         if rec and rec["time_in_at"]:
             raise HTTPException(409, f"You already timed in at {rec['time_in_at'][11:16]}.")
+        distance = _check_perimeter(ev, body)  # geofence (pinned venues only)
         db.execute(
             """INSERT INTO event_attendance
                (event_id, activity_index, user_id, time_in_at,
-                time_in_latitude, time_in_longitude)
-               VALUES (?,?,?,?,?,?)""",
-            (event_id, body.activity_index, uid, stamp, body.latitude, body.longitude))
+                time_in_latitude, time_in_longitude, time_in_distance_m)
+               VALUES (?,?,?,?,?,?,?)""",
+            (event_id, body.activity_index, uid, stamp, body.latitude, body.longitude, distance))
         db.commit()
         return {"success": True, "action": "time_in", "timestamp": stamp,
-                "message": "Time In recorded.", "redirect_to_evaluation": False,
+                "message": _ok_message("Time In", distance), "redirect_to_evaluation": False,
+                "distance_m": distance,
                 "record": _record_out(_record(db, event_id, body.activity_index, uid))}
 
     # Time Out
@@ -269,15 +334,16 @@ def attendance_scan(event_id: int, body: ScanBody, db=Depends(get_db),
                 "message": "You already timed out for this activity.",
                 "redirect_to_evaluation": rec["evaluated_at"] is None,
                 "record": _record_out(rec)}
+    distance = _check_perimeter(ev, body)  # geofence (pinned venues only)
     db.execute(
         """UPDATE event_attendance SET time_out_at=?, time_out_latitude=?,
-               time_out_longitude=?
+               time_out_longitude=?, time_out_distance_m=?
            WHERE id=?""",
-        (stamp, body.latitude, body.longitude, rec["id"]))
+        (stamp, body.latitude, body.longitude, distance, rec["id"]))
     db.commit()
     return {"success": True, "action": "time_out", "timestamp": stamp,
-            "message": "Time Out recorded. Please complete the evaluation.",
-            "redirect_to_evaluation": True,
+            "message": _ok_message("Time Out", distance) + " Please complete the evaluation.",
+            "redirect_to_evaluation": True, "distance_m": distance,
             "record": _record_out(_record(db, event_id, body.activity_index, uid))}
 
 

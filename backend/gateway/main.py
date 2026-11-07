@@ -157,7 +157,9 @@ async def proxy(request: Request, path: str):
 
     body = await request.body()
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    # Reading a proposal from page photos runs OCR on each page, which can take a while.
+    timeout = 180.0 if url_path.endswith("/read-proposal") else 30.0
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.request(
             method=request.method,
             url=dest,

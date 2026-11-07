@@ -103,3 +103,66 @@ body {
   background: var(--tn-bg);
   border-top: 1px solid #c9d6ea;
 }
+
+/* Add Event: proposal file drop area */
+.tn-dropzone {
+  border: 2px dashed #CBD5E1;
+  border-radius: 14px;
+  background: #F8FAFC;
+  padding: 24px 16px;
+  transition: border-color 120ms, background 120ms;
+}
+.tn-dropzone[data-over] {
+  border-color: #3B82F6;
+  background: #EFF6FF;
+}
+
+/* Leaflet maps (venue pin, attendance perimeter) */
+.tn-map {
+  position: relative;
+  isolation: isolate; /* keep Leaflet's panes under sticky bars and dialogs */
+  z-index: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #E2E8F0;
+}
+.tn-map .leaflet-container {
+  font-family: inherit;
+}
+.tn-venue-bar {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color 120ms, background 120ms;
+}
+.tn-venue-bar:hover {
+  border-color: #93C5FD;
+  background: #F8FAFF;
+}
+
+/* Add Event: committee table in the proposal reading summary */
+.tn-committee-table td,
+.tn-committee-table th {
+  vertical-align: top;
+  padding: 10px 12px;
+}
+.tn-committee-table .tn-committee-group td {
+  background: #F3F5F9;
+  padding: 8px 12px;
+}
+
+/* Add Event: "filled in from file" checks */
+.tn-reading-box {
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  background: #fff;
+}
+.tn-reading-line {
+  padding: 10px 14px;
+}
+.tn-reading-line + .tn-reading-line {
+  border-top: 1px solid #EEF2F6;
+}

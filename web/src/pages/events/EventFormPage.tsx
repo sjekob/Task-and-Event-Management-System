@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ActionIcon, Alert, Anchor, Box, Button, Checkbox, Group, Loader, Modal, NumberInput, Paper, Radio,
+  ActionIcon, Alert, Box, Button, Checkbox, Group, Loader, Modal, NumberInput, Paper, Radio,
   ScrollArea, Stack, Table, Text, Textarea, TextInput, Title, UnstyledButton,
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
-import { IconAlertTriangle, IconArrowLeft, IconCircleMinus, IconPlus, IconSearch, IconUsersGroup } from '@tabler/icons-react';
+import { modals } from '@mantine/modals';
+import { IconAlertTriangle, IconArrowLeft, IconCircleMinus, IconFileUpload, IconPlus, IconSearch, IconUsersGroup } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api, canSaveAsDraft, emptyExec, emptyMaterial, emptyMatrixRow, emptyMember, emptyPhase, emptySnack,
-  firstProposalIssue, isoDate, longDate, NATURES, parseEventDate, proposalFromEvent, proposalPayload,
+  firstProposalIssue, isoDate, longDate, NATURES, parseEventDate, proposalFromEvent, proposalFromReading, proposalPayload,
   PROPOSAL_STEPS, qk, roleLabel, startOfDay, titleCase, useSession, type EventRecord, type ProposalForm,
-  type TwgMember, type User,
+  type ProposalReading, type TwgMember, type User,
 } from '@tasknet/shared';
 import { ErrorState, notifyError, notifySuccess, PageLoader, UserAvatar } from '../../components/ui';
+import { MemberAccount, ProposalDropArea, ReadingSummary } from './ProposalUpload';
+import { VenueMapPicker } from '../../components/VenueMap';
 
 export function EventFormPage() {
   const { id } = useParams();
@@ -43,9 +46,18 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
   const [dateIssue, setDateIssue] = useState<string | null>(null);
   const [depedWarning, setDepedWarning] = useState<string | null>(null);
   const [checkingDate, setCheckingDate] = useState(false);
-  const [linking, setLinking] = useState<{ g: number; m: number; repick: boolean } | null>(null);
+  const [linking, setLinking] = useState<{ g: number; m: number; repick: boolean; automate: boolean } | null>(null);
   const editing = !!event;
   const draftable = canSaveAsDraft(event?.status);
+  // New proposals start at the file upload; editing goes straight to the form.
+  const [uploading, setUploading] = useState(!event);
+  /** Tick a member's "automate" box: link their account first if needed. */
+  const tick = (g: number, m: number, on: boolean) => {
+    const mem = form.twg[g].members[m];
+    if (!on) setMember(g, m, { automate: false });
+    else if (mem.userId == null) setLinking({ g, m, repick: false, automate: true });
+    else setMember(g, m, { automate: true });
+  };
 
   const set = <K extends keyof ProposalForm>(key: K, value: ProposalForm[K]) => setForm((f) => ({ ...f, [key]: value }));
   /** Update item i of a list field. */
@@ -143,6 +155,24 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
     }
   };
 
+  /** Fill the wizard from a read proposal; asks first if it would overwrite typed work. */
+  const applyReading = (result: ProposalReading, files: string[]) => {
+    const apply = () => {
+      const { form: next } = proposalFromReading(result, files);
+      setForm(next);
+      setStep(0);
+      setUploading(false);
+    };
+    if (JSON.stringify(form) === initial.current) { apply(); return; }
+    modals.openConfirmModal({
+      title: 'Replace what you entered?',
+      children: <Text size="sm">The proposal fields will be filled from {files.length > 1 ? 'the photos' : files[0]}, replacing what is in the form now.</Text>,
+      labels: { confirm: 'Replace', cancel: 'Keep my entries' },
+      confirmProps: { color: 'ink.8' },
+      onConfirm: apply,
+    });
+  };
+
   const today = startOfDay(new Date());
   const pickedDate = parseEventDate(form.targetDate);
   const [pA, pB] = form.participants;
@@ -176,6 +206,8 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
         </div>
         <TextInput label="d. Proposed Venue" placeholder="e.g. NCS II Pavilion" value={form.venue} onChange={(e) => set('venue', e.currentTarget.value)} />
       </Group>
+      <VenueMapPicker venue={form.venue} pin={form.venuePin} radius={form.venueRadius}
+        onChange={(pin, radius) => setForm((f) => ({ ...f, venuePin: pin, venueRadius: radius }))} />
       <div>
         <Text size="sm" fw={500} mb={6}>e. Target Participants</Text>
         <Table withTableBorder verticalSpacing={8} className="tn-pax">
@@ -319,6 +351,10 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
       <AddButton onClick={() => set('exec', [...form.exec, emptyExec()])}>Add member</AddButton>
 
       <Text fw={600} size="sm">b. Technical Working Group</Text>
+      <Text size="xs" c="dimmed" mt={-8}>
+        Tick &quot;Automate&quot; to give a member a special task when the event is approved. Members left unticked get no task
+        and are credited the top score (100/100). Either way, link each member to their TaskNet account.
+      </Text>
       {form.twg.map((g, gi) => (
         <Stack key={gi} gap={10}>
           <Group gap={8} wrap="nowrap">
@@ -327,19 +363,19 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
               onChange={(e) => set('twg', form.twg.map((x, j) => (j === gi ? { ...x, title: e.currentTarget.value } : x)))} />
             {form.twg.length > 1 && <RemoveButton onClick={() => set('twg', form.twg.filter((_, j) => j !== gi))} />}
           </Group>
-          <EditTable head={['Name', 'Designation', 'Terms of Reference', 'Output', 'Automate Special Task']}>
+          <EditTable head={['Name', 'Designation', 'Terms of Reference', 'Output', 'Automate · Account']}>
             {g.members.map((m, mi) => (
               <Table.Tr key={mi}>
                 <Table.Td style={{ verticalAlign: 'top' }}><Textarea autosize minRows={1} value={m.name} placeholder="Full name" onChange={(e) => setMember(gi, mi, { name: titleCase(e.currentTarget.value) })} aria-label="Member name" /></Table.Td>
                 <Table.Td style={{ verticalAlign: 'top' }}><Textarea autosize minRows={1} value={m.designation} placeholder="e.g. Chairperson" onChange={(e) => setMember(gi, mi, { designation: e.currentTarget.value })} aria-label="Designation" /></Table.Td>
                 <Table.Td style={{ verticalAlign: 'top' }}><Textarea autosize minRows={1} value={m.tor} placeholder="e.g. Leads the Committee" onChange={(e) => setMember(gi, mi, { tor: e.currentTarget.value })} aria-label="Terms of reference" /></Table.Td>
                 <Table.Td style={{ verticalAlign: 'top' }}><Textarea autosize minRows={1} value={m.output} placeholder="e.g. Checked reports" onChange={(e) => setMember(gi, mi, { output: e.currentTarget.value })} aria-label="Output" /></Table.Td>
-                <Table.Td w={140} ta="center" style={{ verticalAlign: 'top' }}>
-                  <Checkbox mx="auto" w="fit-content" mt={8} color="ink.8" checked={m.automate} aria-label="Automate special task"
-                    onChange={(e) => (e.currentTarget.checked ? setLinking({ g: gi, m: mi, repick: false }) : setMember(gi, mi, { automate: false }))} />
-                  {m.automate && m.userName && (
-                    <Anchor size="11px" mt={4} display="block" onClick={() => setLinking({ g: gi, m: mi, repick: true })}>Assign to {m.userName}</Anchor>
-                  )}
+                <Table.Td w={170} style={{ verticalAlign: 'top' }}>
+                  <Checkbox mt={8} color="ink.8" checked={m.automate} label={<Text size="xs">{m.automate ? 'Special task' : 'Top score'}</Text>}
+                    aria-label="Automate special task" onChange={(e) => tick(gi, mi, e.currentTarget.checked)} />
+                  <Box mt={6}>
+                    <MemberAccount member={m} onLink={() => setLinking({ g: gi, m: mi, repick: m.userId != null, automate: false })} />
+                  </Box>
                 </Table.Td>
                 <Table.Td w={40} style={{ verticalAlign: 'top' }}>
                   <RemoveButton onClick={() => set('twg', form.twg.map((x, j) => (j === gi ? { ...x, members: x.members.filter((_, k) => k !== mi) } : x)))} />
@@ -389,13 +425,36 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
   ];
 
   const last = step === PROPOSAL_STEPS.length - 1;
-  return (
-    <Box className="tn-proposal">
-      <Group gap={8} mb="md">
+  const header = (
+    <Group gap={8} mb="md" justify="space-between">
+      <Group gap={8}>
         <ActionIcon variant="subtle" color="dark" size="lg" onClick={() => navigate('/events')} aria-label="Back to events"><IconArrowLeft /></ActionIcon>
         <Title order={2} fz={22}>{editing ? 'Edit Event' : 'Add New Event'}</Title>
       </Group>
-      <StepTabs active={step} onChange={setStep} />
+      {!uploading && draftable && !form.reading && (
+        <Button variant="default" size="sm" leftSection={<IconFileUpload size={16} />} onClick={() => setUploading(true)}>
+          Fill from proposal file
+        </Button>
+      )}
+    </Group>
+  );
+  if (uploading) {
+    return (
+      <Box className="tn-proposal">
+        {header}
+        <ProposalDropArea onRead={applyReading} onSkip={() => setUploading(false)} />
+      </Box>
+    );
+  }
+  return (
+    <Box className="tn-proposal">
+      {header}
+      {form.reading && (
+        <ReadingSummary reading={form.reading} form={form}
+          onMember={setMember} onJump={setStep} onReplace={() => setUploading(true)}
+          onLink={(g, m, automate) => setLinking({ g, m, repick: form.twg[g].members[m].userId != null, automate })} />
+      )}
+      <Box mt="md"><StepTabs active={step} onChange={setStep} /></Box>
       <Paper p={{ base: 16, sm: 24 }} radius="lg" mt="md">{steps[step]}</Paper>
       <Group justify="space-between" className="tn-proposal-footer" wrap="nowrap">
         {step > 0 ? <Button variant="default" w={120} onClick={() => setStep(step - 1)}>Back</Button> : <span />}
@@ -413,7 +472,10 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
           onClose={() => setLinking(null)}
           onPick={(u) => {
             const member = form.twg[linking.g].members[linking.m];
-            setMember(linking.g, linking.m, { automate: true, userId: u.id, userName: u.full_name, name: member.name.trim() ? member.name : u.full_name });
+            setMember(linking.g, linking.m, {
+              automate: linking.automate || member.automate, userId: u.id, userName: u.full_name,
+              name: member.name.trim() ? member.name : u.full_name,
+            });
             setLinking(null);
           }} />
       )}

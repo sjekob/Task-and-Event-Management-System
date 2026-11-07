@@ -15,3 +15,6 @@ pypdf>=4.2.0
 pypdfium2>=4.30.0
 pytesseract>=0.3.10
 Pillow>=10.3.0
+# Event proposal reader (proposal_reader.py): Word documents and PDF tables
+python-docx>=1.1.0
+pdfplumber>=0.11.0

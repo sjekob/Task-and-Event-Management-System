@@ -186,6 +186,69 @@ def _special_task_row(row, db):
     }
 
 
+def _committee_credits(db, window) -> list:
+    """Top-score credits for committee members whose task wasn't automated,
+    within the window (by the event's target date)."""
+    rows = db.execute(
+        """SELECT c.*, e.title AS event_title, e.target_date, e.created_at AS event_created_at
+           FROM event_committee_credits c JOIN events e ON e.id = c.event_id
+           ORDER BY c.created_at DESC""").fetchall()
+    return [dict(r) for r in rows if in_window(window, r["target_date"], r["event_created_at"])]
+
+
+def _credit_row(c: dict, db):
+    """A committee credit shaped like an evaluated special task (flagged
+    auto_credit) so the appraisal tables, averages and charts include it."""
+    assignee = db.execute(
+        """SELECT u.id, u.full_name, u.role, gl.grade_level FROM users u
+           LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id WHERE u.id=?""",
+        (c["user_id"],)).fetchone()
+    assigner = db.execute("SELECT id, full_name FROM users WHERE id=?",
+                          (c.get("created_by"),)).fetchone()
+    committee = c.get("committee") or "Working Committee"
+    about = [f"Event: {c['event_title']}", f"Committee: {committee}"]
+    for label, key in (("Designation", "designation"), ("Expected output", "output")):
+        if c.get(key):
+            about.append(f"{label}: {c[key]}")
+    lines = ([f"Terms of Reference:\n{c['tor']}", ""] if c.get("tor") else []) + about
+    return {
+        "id": c["id"],
+        "auto_credit": True,
+        "event_id": c["event_id"],
+        "title": f"{committee} — {c['event_title']}",
+        "description": "\n".join(lines),
+        "due_date": c.get("target_date"),
+        "created_at": c.get("created_at"),
+        "status": "evaluated",
+        "assignee": dict(assignee) if assignee else None,
+        "assigner": dict(assigner) if assigner else None,
+        "evaluation": {
+            "completion_quality_score": 5, "timeliness_score": 5,
+            "initiative_score": 5, "coordination_score": 5,
+            "weighted_average": c["score"],
+            "remarks": "Automatic top score: this committee task was not automated in the approved proposal.",
+            "evaluated_at": c.get("created_at"),
+        },
+    }
+
+
+def _special_ratings(db, uid: int, window) -> list:
+    """This person's special-task ratings (0-5) in the window, including
+    top-score committee credits."""
+    ratings = [r["weighted_average"] for r in db.execute(
+        """SELECT ste.weighted_average, t.end_date, t.start_date, t.created_at
+           FROM special_task_evaluations ste
+           JOIN tasks t ON t.id = ste.task_id
+           JOIN task_assignments ta ON ta.task_id = t.id
+           WHERE ta.user_id=? AND ste.weighted_average IS NOT NULL""", (uid,)).fetchall()
+        if task_in_window(window, r)]
+    ratings += [r["score"] for r in db.execute(
+        """SELECT c.score, e.target_date, e.created_at FROM event_committee_credits c
+           JOIN events e ON e.id = c.event_id WHERE c.user_id=?""", (uid,)).fetchall()
+        if in_window(window, r["target_date"], r["created_at"])]
+    return ratings
+
+
 def _event_evaluation_row(event_row, db):
     """Format an event with its evaluations for appraisal view."""
     d = dict(event_row)
@@ -256,8 +319,10 @@ def list_special_tasks(db=Depends(get_db), user=Depends(require_appraisal_view),
     ).fetchall() if task_in_window(window, r)]
     visible = _visible_personnel_ids(db, user)
     out = []
-    for r in rows:
-        shaped = _special_task_row(r, db)
+    shaped_rows = [_special_task_row(r, db) for r in rows]
+    shaped_rows += [_credit_row(c, db) for c in _committee_credits(db, window)]
+    shaped_rows.sort(key=lambda s: str(s.get("created_at") or ""), reverse=True)
+    for shaped in shaped_rows:
         if visible is not None:
             assignee = shaped.get("assignee")
             if not assignee or assignee["id"] not in visible:
@@ -470,13 +535,7 @@ def compute_badges(db, uid: int, window) -> list:
                           on_time, target, tier)
 
     # Special task ratings for tasks assigned to this person.
-    ratings = [r["weighted_average"] for r in db.execute(
-        """SELECT ste.weighted_average, t.end_date, t.start_date, t.created_at
-           FROM special_task_evaluations ste
-           JOIN tasks t ON t.id = ste.task_id
-           JOIN task_assignments ta ON ta.task_id = t.id
-           WHERE ta.user_id=? AND ste.weighted_average IS NOT NULL""", (uid,)).fetchall()
-        if task_in_window(window, r)]
+    ratings = _special_ratings(db, uid, window)
     avg_rating = sum(ratings) / len(ratings) if ratings else 0
 
     # Events this person organized and how attendees rated them.
@@ -622,13 +681,7 @@ def compute_badges(db, uid: int, window) -> list:
                       on_time, target, tier)
 
     # Special-task ratings (0-5) for tasks assigned to this person.
-    ratings = [r["weighted_average"] for r in db.execute(
-        """SELECT ste.weighted_average, t.end_date, t.start_date, t.created_at
-           FROM special_task_evaluations ste
-           JOIN tasks t ON t.id = ste.task_id
-           JOIN task_assignments ta ON ta.task_id = t.id
-           WHERE ta.user_id=? AND ste.weighted_average IS NOT NULL""", (uid,)).fetchall()
-        if task_in_window(window, r)]
+    ratings = _special_ratings(db, uid, window)
     avg_rating = sum(ratings) / len(ratings) if ratings else 0
 
     # Events this person organized and how evaluators rated them.

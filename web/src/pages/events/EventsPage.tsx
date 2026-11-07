@@ -7,7 +7,7 @@ import { modals } from '@mantine/modals';
 import { IconArrowsMaximize, IconDots, IconFileTypePdf, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  api, CURRENT_YEAR, depedByDay, depedRangeLabel, isoDate, parseEventDate, parseIsoDate, qk, useSession, useUser,
+  api, approvalMessage, CURRENT_YEAR, depedByDay, depedRangeLabel, isoDate, parseEventDate, parseIsoDate, qk, useSession, useUser,
   type EventRecord, type SchoolYearFilter,
 } from '@tasknet/shared';
 import { AppCalendar } from '../../components/AppCalendar';
@@ -47,14 +47,7 @@ export function useEventActions() {
   return {
     async approve(e: EventRecord) {
       try {
-        const res = await api.events.approve(e.id);
-        const created = res.special_tasks_created ?? 0;
-        const skipped = (res.special_tasks_skipped ?? []).join(', ');
-        notifySuccess([
-          'Event approved.',
-          created > 0 ? `${created} TWG special task${created === 1 ? '' : 's'} assigned.` : '',
-          skipped ? `Not assigned (no matching TaskNet user): ${skipped}.` : '',
-        ].filter(Boolean).join(' '));
+        notifySuccess(approvalMessage(await api.events.approve(e.id)));
         await refresh();
       } catch (err) {
         notifyError(err);

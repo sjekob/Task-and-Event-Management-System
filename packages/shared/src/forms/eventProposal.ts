@@ -1,6 +1,6 @@
 // The event proposal form as plain data, shared by the web and mobile forms:
 // load from an event, validate, and turn back into the API payload.
-import type { EventInput, EventRecord } from '../types';
+import type { EventInput, EventRecord, ProposalReading, SavedReading } from '../types';
 import { MONTHS_LONG } from '../utils/dates';
 import { parseJson } from '../utils/eventFormat';
 
@@ -10,6 +10,10 @@ export const PROPOSAL_STEPS = [
 
 export const NATURES = ['Curricular', 'Co-curricular', 'Extra-curricular'] as const;
 
+/** Attendance perimeter around a pinned venue (metres). */
+export const DEFAULT_VENUE_RADIUS = 100;
+export const VENUE_RADIUS_RANGE = { min: 10, max: 5000 } as const;
+
 export interface PaxRow { category: string; male: number; female: number }
 export interface PhaseRow { stage: string; activities: string }
 export interface MatrixRow { day: string; time: string; event: string; speaker: string }
@@ -18,8 +22,12 @@ export interface SnackRow { item: string; pax: string; cost: string; total: stri
 export interface ExecRow { name: string; position: string }
 export interface TwgMember {
   name: string; designation: string; tor: string; output: string;
-  /** create a special task for this member when the event is approved */
+  /**
+   * Ticked: a pending special task for this member when the event is approved.
+   * Not ticked: no task; the member is credited the top score instead.
+   */
   automate: boolean;
+  /** the member's TaskNet account (needed for either the task or the top score) */
   userId: number | null;
   userName: string | null;
 }
@@ -32,6 +40,10 @@ export interface ProposalForm {
   /** "October 1, 2026" — month in words, as the calendar parses it */
   targetDate: string;
   venue: string;
+  /** venue pin for attendance geofencing; null = not pinned (time window only) */
+  venuePin: { lat: number; lng: number } | null;
+  /** perimeter radius around the pin, metres */
+  venueRadius: number;
   budget: string;
   fundSource: string;
   focalName: string;
@@ -50,6 +62,8 @@ export interface ProposalForm {
   monitoring: string;
   indicators: string[];
   signatories: Signatory[];
+  /** set when the proposal was filled from an uploaded file; saved with drafts */
+  reading: SavedReading | null;
 }
 
 export const emptyPhase = (): PhaseRow => ({ stage: '', activities: '' });
@@ -120,9 +134,10 @@ export function proposalFromEvent(e?: EventRecord | null): ProposalForm {
   const twg = rows(e?.twg_groups, (g) => {
     const members = Array.isArray(g.members) ? (g.members as Row[]).map((m) => {
       const automate = m.automate_special_task === true;
+      const userId = typeof m.user_id === 'number' ? m.user_id : null;
       return {
         name: str(m.name), designation: str(m.designation), tor: str(m.tor), output: str(m.output),
-        automate, userId: typeof m.user_id === 'number' ? m.user_id : null, userName: automate ? str(m.name) : null,
+        automate, userId, userName: userId != null ? str(m.user_name) || str(m.name) : null,
       };
     }) : [];
     return { title: str(g.title), members: members.length ? members : [emptyMember()] };
@@ -148,6 +163,9 @@ export function proposalFromEvent(e?: EventRecord | null): ProposalForm {
     nature: e?.nature || 'Co-curricular',
     targetDate: e?.target_date ?? '',
     venue: e?.venue ?? '',
+    venuePin: e?.venue_latitude != null && e?.venue_longitude != null
+      ? { lat: e.venue_latitude, lng: e.venue_longitude } : null,
+    venueRadius: e?.venue_radius_m ?? DEFAULT_VENUE_RADIUS,
     budget: e?.proposed_budget ?? '',
     fundSource: e?.fund_source ?? '',
     focalName: e?.focal_name ?? '',
@@ -169,6 +187,98 @@ export function proposalFromEvent(e?: EventRecord | null): ProposalForm {
     monitoring: e?.monitoring_criteria ?? '',
     indicators: indicators.length ? indicators : [''],
     signatories,
+    reading: savedReading(e?.proposal_reading),
+  };
+}
+
+function savedReading(raw: string | null | undefined): SavedReading | null {
+  const r = parseJson<Partial<SavedReading> | null>(raw, null);
+  if (!r || typeof r !== 'object' || !Array.isArray(r.sections)) return null;
+  return {
+    files: Array.isArray(r.files) ? r.files.map(String) : [],
+    method: str(r.method),
+    sections: r.sections,
+    warnings: Array.isArray(r.warnings) ? r.warnings.map(String) : [],
+    notes: Array.isArray(r.notes) ? r.notes.map(String) : [],
+    read_at: str(r.read_at),
+  };
+}
+
+/**
+ * Wizard state filled from an uploaded proposal (see api.events.readProposal).
+ * Whatever the reader found replaces the blank defaults; anything it missed
+ * keeps the defaults so the proponent fills it in. Committee members all start
+ * unticked: the proponent chooses which tasks to automate.
+ * Returns extra notes about things that didn't fit the form.
+ */
+export function proposalFromReading(r: ProposalReading, files: string[], base: ProposalForm = proposalFromEvent(null)):
+  { form: ProposalForm; notes: string[] } {
+  const x = r.form;
+  const notes: string[] = [];
+  const pick = (v: string, d: string) => (v && v.trim() ? v.trim() : d);
+  const list = <T>(v: T[], d: T[]) => (v.length ? v : d);
+
+  let participants = base.participants;
+  if (x.participants.length) {
+    const rows = x.participants.map((p) => ({ category: p.category, male: p.male || 0, female: p.female || 0 }));
+    if (rows.length > 2) {
+      // The form has two participant rows: keep the first, fold the rest into the second.
+      const rest = rows.slice(1);
+      rows.splice(1, rows.length, {
+        category: rest.map((p) => p.category).join(' / '),
+        male: rest.reduce((a, p) => a + p.male, 0), female: rest.reduce((a, p) => a + p.female, 0),
+      });
+      notes.push(`The proposal lists ${x.participants.length} participant groups; groups 2–${x.participants.length} were combined into the second row.`);
+    }
+    participants = [rows[0], rows[1] ?? base.participants[1]];
+  }
+
+  const signatories = base.signatories.map((s) => {
+    const hit = x.signatories.find((g) => g.role.toLowerCase() === s.role.toLowerCase());
+    return hit ? { ...s, name: hit.name, title: hit.title || s.title } : s;
+  });
+
+  const twg: TwgGroup[] = x.twg
+    .filter((g) => g.members.length)
+    .map((g) => ({
+      title: g.title,
+      members: g.members.map((m) => ({
+        name: m.name, designation: m.designation, tor: m.tor, output: m.output,
+        automate: false, userId: m.user_id, userName: m.user_name,
+      })),
+    }));
+
+  return {
+    notes,
+    form: {
+      ...base,
+      title: pick(x.title, base.title),
+      nature: (NATURES as readonly string[]).includes(x.nature) ? x.nature : base.nature,
+      targetDate: pick(x.targetDate, base.targetDate),
+      venue: pick(x.venue, base.venue),
+      budget: pick(x.budget, base.budget),
+      fundSource: pick(x.fundSource, base.fundSource),
+      focalName: pick(x.focalName, base.focalName),
+      focalRole: pick(x.focalRole, base.focalRole),
+      focalContact: pick(x.focalContact, base.focalContact),
+      participants,
+      outputs: list(x.outputs.filter((o) => o.trim()), base.outputs),
+      rationale: pick(x.rationale, base.rationale),
+      objectives: pick(x.objectives, base.objectives),
+      phases: list(x.phases, base.phases),
+      matrix: list(x.matrix, base.matrix),
+      materials: list(x.materials, base.materials),
+      snacks: list(x.snacks, base.snacks),
+      exec: list(x.exec, base.exec),
+      twg: list(twg, base.twg),
+      monitoring: pick(x.monitoring, base.monitoring),
+      indicators: list(x.indicators.filter((i) => i.trim()), base.indicators),
+      signatories,
+      reading: {
+        files, method: r.method, sections: r.sections, warnings: r.warnings, notes,
+        read_at: new Date().toISOString(),
+      },
+    },
   };
 }
 
@@ -180,6 +290,9 @@ export function proposalPayload(f: ProposalForm): EventInput {
     nature: f.nature,
     target_date: f.targetDate,
     venue: f.venue,
+    venue_latitude: f.venuePin?.lat ?? null,
+    venue_longitude: f.venuePin?.lng ?? null,
+    venue_radius_m: f.venuePin ? Math.round(f.venueRadius) : null,
     proposed_budget: f.budget,
     fund_source: f.fundSource,
     focal_name: f.focalName,
@@ -206,12 +319,14 @@ export function proposalPayload(f: ProposalForm): EventInput {
       title: g.title,
       members: g.members.map((m) => ({
         name: m.name, designation: m.designation, tor: m.tor, output: m.output,
-        automate_special_task: m.automate, ...(m.automate ? { user_id: m.userId } : {}),
+        automate_special_task: m.automate,
+        ...(m.userId != null ? { user_id: m.userId, user_name: m.userName } : {}),
       })),
     }))),
     monitoring_criteria: f.monitoring,
     indicators: JSON.stringify(f.indicators.map((label) => ({ label }))),
     comments: JSON.stringify({ signatories: f.signatories }),
+    proposal_reading: f.reading ? JSON.stringify(f.reading) : null,
   };
 }
 

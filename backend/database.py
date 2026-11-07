@@ -596,6 +596,20 @@ CREATE TABLE IF NOT EXISTS events (
     expected_attendees  INTEGER
 );
 
+-- Venue pin + attendance perimeter (geofence). All three NULL = not pinned:
+-- attendance is then checked by time window only. Added in place so existing
+-- databases get the columns on the next start.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_latitude  DOUBLE PRECISION
+    CHECK (venue_latitude BETWEEN -90 AND 90);
+ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_longitude DOUBLE PRECISION
+    CHECK (venue_longitude BETWEEN -180 AND 180);
+ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_radius_m  INTEGER
+    CHECK (venue_radius_m BETWEEN 10 AND 5000);
+-- What the proposal reader found when the proposal was filled from a file
+-- (JSON: files, method, sections, warnings, notes, read_at), so a reopened
+-- draft shows the same "Read from …" summary. NULL when typed by hand.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS proposal_reading TEXT;
+
 -- DepEd school-calendar reference layer (seeded once on a fresh database;
 -- later edits/deletions by the principal stick).
 CREATE TABLE IF NOT EXISTS deped_calendar_events (
@@ -740,6 +754,24 @@ CREATE TABLE IF NOT EXISTS special_task_evaluations (
     UNIQUE(task_id)
 );
 
+-- Working-committee (TWG) members the proponent did NOT choose to automate:
+-- no special task is created for them; on approval they're credited the top
+-- special-task score (5.0) for that event instead. Counted with special-task
+-- ratings in the appraisal.
+CREATE TABLE IF NOT EXISTS event_committee_credits (
+    id           {_PK},
+    event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    committee    TEXT,
+    designation  TEXT,
+    tor          TEXT,
+    output       TEXT,
+    score        DOUBLE PRECISION NOT NULL DEFAULT 5.0 CHECK(score BETWEEN 0 AND 5),
+    created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(event_id, user_id)
+);
+
 -- Per-user in-app notifications triggered by task assignments and event posts.
 CREATE TABLE IF NOT EXISTS notifications (
     id         {_PK},
@@ -801,6 +833,10 @@ CREATE TABLE IF NOT EXISTS event_attendance (
     special_task_id    INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
     UNIQUE(event_id, activity_index, user_id)
 );
+-- Distance (m) from the pinned venue at each accepted scan; NULL when the
+-- event had no pin.
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS time_in_distance_m  DOUBLE PRECISION;
+ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS time_out_distance_m DOUBLE PRECISION;
 """
 
 

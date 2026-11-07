@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  api, formatActivityMatrix, formatCommittee, formatDate, formatMethodology, formatMoney, formatOutputs,
+  api, approvalMessage, formatActivityMatrix, formatCommittee, formatDate, formatMethodology, formatMoney, formatOutputs,
   formatParticipants, formatTwg, hasContent, parseEventDate, qk, useSession, useUser, type EventRecord,
 } from '@tasknet/shared';
 import { EventStatusPill } from '@/components/cards';
@@ -55,12 +55,7 @@ export default function EventDetailScreen() {
   };
 
   const approve = () => run('approve', async () => {
-    const res = await api.events.approve(e.id);
-    const created = res.special_tasks_created ?? 0;
-    const skipped = (res.special_tasks_skipped ?? []).join(', ');
-    return ['Event approved.',
-      created > 0 ? `${created} TWG special task${created === 1 ? '' : 's'} assigned.` : '',
-      skipped ? `Not assigned (no matching TaskNet user): ${skipped}.` : ''].filter(Boolean).join(' ');
+    return approvalMessage(await api.events.approve(e.id));
   }, 'Event approved.');
   const disable = async () => {
     if (await confirm('Disable event', `Disable "${e.title}"?`, 'Disable', true)) await run('disable', () => api.events.disable(e.id), 'Event disabled');

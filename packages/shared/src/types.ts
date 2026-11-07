@@ -293,7 +293,19 @@ export interface EventRecord {
   creator_role?: string | null;
   department?: string | null;
   expected_attendees?: number | null;
+  /** venue pin + attendance perimeter; all null when the venue isn't pinned */
+  venue_latitude?: number | null;
+  venue_longitude?: number | null;
+  venue_radius_m?: number | null;
+  /** JSON SavedReading: the proposal reader's summary when filled from a file */
+  proposal_reading?: string | null;
 }
+
+/** A pinned venue: scans are accepted within radius_m metres of it. */
+export interface VenueLocation { latitude: number; longitude: number; radius_m: number }
+
+/** GET /api/events/geocode */
+export interface GeocodeResult { name: string; latitude: number; longitude: number }
 
 export type EventInput = Partial<Omit<EventRecord, 'id' | 'created_by' | 'created_at' |
   'creator_name' | 'creator_role'>> & { title: string };
@@ -337,6 +349,10 @@ export interface AttendanceActivity {
   event_id: number;
   event_title: string;
   venue?: string | null;
+  /** set when the venue is pinned: scans must come from inside this perimeter */
+  venue_location?: VenueLocation | null;
+  /** how much of the device's GPS accuracy the server allows for (m) */
+  gps_tolerance_max_m?: number;
   activity_index: number;
   activity: { day?: string; time?: string; event?: string; speaker?: string };
   has_special_task: boolean;
@@ -352,6 +368,8 @@ export interface AttendanceScanResult {
   timestamp: string;
   message: string;
   redirect_to_evaluation: boolean;
+  /** metres from the pinned venue (null when not pinned) */
+  distance_m?: number | null;
   record: AttendanceRecord | null;
 }
 
@@ -360,6 +378,7 @@ export interface AttendanceQrCodes {
   event_id: number;
   title: string;
   venue?: string | null;
+  venue_location?: VenueLocation | null;
   activities: {
     index: number; day?: string; time?: string; event?: string; speaker?: string;
     special_task_title?: string | null; schedule_readable: boolean;
@@ -403,6 +422,9 @@ export interface SpecialTask {
   created_at?: string | null;
   status: string;
   evaluation?: SpecialTaskEvaluation | null;
+  /** a top-score credit for committee work that wasn't automated (not a real task) */
+  auto_credit?: boolean;
+  event_id?: number;
 }
 
 export interface EventEvaluation {
@@ -584,3 +606,47 @@ export interface CertificationMeta {
   issuer_name?: string | null; acronym?: string | null;
 }
 export type EducationOptions = Record<string, string[]>;
+
+// ── Proposal reader (Add Event upload) ────────────────────────────────────────
+
+/** What the server read from an uploaded proposal; field names follow ProposalForm. */
+export interface ProposalReadingForm {
+  title: string; nature: string; targetDate: string; venue: string; time: string;
+  budget: string; fundSource: string; focalName: string; focalRole: string; focalContact: string;
+  participants: { category: string; male: number; female: number }[];
+  outputs: string[]; rationale: string; objectives: string;
+  phases: { stage: string; activities: string }[];
+  matrix: { day: string; time: string; event: string; speaker: string }[];
+  materials: { item: string; qty: string; cost: string; total: string }[];
+  snacks: { item: string; pax: string; cost: string; total: string }[];
+  exec: { name: string; position: string }[];
+  twg: { title: string; members: {
+    name: string; designation: string; tor: string; output: string;
+    user_id: number | null; user_name: string | null;
+  }[] }[];
+  monitoring: string; indicators: string[];
+  signatories: { role: string; name: string; title: string }[];
+}
+
+/**
+ * The reader's summary kept with a proposal (events.proposal_reading), so a
+ * reopened draft shows the same "Read from …" panel. The form fields
+ * themselves are saved as usual.
+ */
+export interface SavedReading {
+  files: string[];
+  method: string;
+  sections: ProposalReading['sections'];
+  warnings: string[];
+  /** extra notes from filling the form (e.g. participant groups combined) */
+  notes: string[];
+  read_at: string;
+}
+
+export interface ProposalReading {
+  form: ProposalReadingForm;
+  /** docx | pdf-text | ocr */
+  method: string;
+  sections: { label: string; found: boolean; fields: string[] }[];
+  warnings: string[];
+}

@@ -296,8 +296,8 @@ function SpecialTasks({ tasks }: { tasks: SpecialTask[] }) {
                 {filtered.map((t) => {
                   const rated = isRated(t);
                   return (
-                    <Table.Tr key={t.id}>
-                      <Table.Td c="dimmed">ST{String(t.id).padStart(3, '0')}</Table.Td>
+                    <Table.Tr key={`${t.auto_credit ? 'c' : 't'}${t.id}`}>
+                      <Table.Td c="dimmed">{t.auto_credit ? 'TS' : 'ST'}{String(t.id).padStart(3, '0')}</Table.Td>
                       <Table.Td>
                         <Group gap={8} wrap="nowrap">
                           <UserAvatar name={t.assignee?.full_name ?? '?'} size={26} />
@@ -305,7 +305,10 @@ function SpecialTasks({ tasks }: { tasks: SpecialTask[] }) {
                         </Group>
                       </Table.Td>
                       <Table.Td c="dimmed">{dept(t) || '—'}</Table.Td>
-                      <Table.Td><Text size="sm" lineClamp={1} maw={260}>{t.title}</Text></Table.Td>
+                      <Table.Td>
+                        <Text size="sm" lineClamp={1} maw={260}>{t.title}</Text>
+                        {t.auto_credit && <Text size="11px" c="green.7">Top score: committee task not automated</Text>}
+                      </Table.Td>
                       <Table.Td c="dimmed">{t.assigner?.full_name ?? '—'}</Table.Td>
                       <Table.Td c="dimmed">{shortDate(t.due_date)}</Table.Td>
                       <Table.Td c={rated ? 'green.7' : 'dimmed'}>{rated ? shortDate(t.created_at) : '—'}</Table.Td>

@@ -4,8 +4,8 @@ import type {
   AttendanceScanResult,
   CertificateFile, CertificateSet, CertificationCatalogItem, CertificationMeta, Comment,
   DashboardData, DateCheck, DepedEntry, Department, EducationOptions, EventForAppraisal,
-  EventInput, EventRecord, GradeLevel, LeaderboardEntry, LoginResult, Page, Report,
-  PublicEvent, ReportStatus, ReportSubmission, Role, SchoolYear, SchoolYearFilter, SessionUser, SkillMeta, SpecialTask,
+  EventInput, EventRecord, GeocodeResult, GradeLevel, LeaderboardEntry, LoginResult, Page, Report,
+  ProposalReading, PublicEvent, ReportStatus, ReportSubmission, Role, SchoolYear, SchoolYearFilter, SessionUser, SkillMeta, SpecialTask,
   SubjectMeta, Task, TaskCategory, TaskInput, TaskTemplate, User,
 } from '../types';
 
@@ -293,7 +293,23 @@ export const schoolYears = {
 export interface ApproveResult {
   special_tasks_created?: number;
   special_tasks_skipped?: string[];
+  /** committee members not automated → top score, no task */
+  top_scores_credited?: number;
+  top_scores_skipped?: string[];
   [k: string]: unknown;
+}
+
+/** The toast after approving: tasks assigned, top scores credited, who was missed. */
+export function approvalMessage(res: ApproveResult): string {
+  const created = res.special_tasks_created ?? 0;
+  const credited = res.top_scores_credited ?? 0;
+  const missed = [...(res.special_tasks_skipped ?? []), ...(res.top_scores_skipped ?? [])];
+  return [
+    'Event approved.',
+    created > 0 ? `${created} committee special task${created === 1 ? '' : 's'} assigned.` : '',
+    credited > 0 ? `${credited} committee member${credited === 1 ? '' : 's'} credited the top score.` : '',
+    missed.length ? `No matching TaskNet account (nothing assigned or credited): ${missed.join(', ')}.` : '',
+  ].filter(Boolean).join(' ');
 }
 
 export const events = {
@@ -309,6 +325,18 @@ export const events = {
     { fallback: 'Failed to approve event' }),
   disable: (id: number) => http.patch(`/api/events/${id}/disable`, undefined, { fallback: 'Failed to disable event' }),
   enable: (id: number) => http.patch(`/api/events/${id}/enable`, undefined, { fallback: 'Failed to enable event' }),
+  /** Read a proposal file (one Word/PDF, or page photos in order) into wizard fields. Saves nothing. */
+  readProposal: (files: { file: UploadFile; filename: string }[]) => {
+    const form = new FormData();
+    for (const { file, filename } of files) {
+      if (typeof Blob !== 'undefined' && file instanceof Blob) form.append('files', file, filename);
+      else form.append('files', file as unknown as Blob);
+    }
+    return http.upload<ProposalReading>('/api/events/read-proposal', form, { fallback: 'Could not read the proposal file' });
+  },
+  /** Places matching a venue name or address (OpenStreetMap, via the server). */
+  geocode: (q: string) => http.get<GeocodeResult[]>('/api/events/geocode',
+    { query: { q }, fallback: 'Could not search the map' }),
   checkDate: (targetDate: string, excludeId?: number) => http.get<DateCheck>('/api/events/date-check',
     { query: { target_date: targetDate, exclude_id: excludeId }, fallback: 'Failed to check the date' }),
 
@@ -318,7 +346,8 @@ export const events = {
   attendanceActivity: (eventId: number, index: number) => http.get<AttendanceActivity>(
     `/api/events/${eventId}/attendance/activities/${index}`, { fallback: 'Could not load this activity' }),
   scanAttendance: (eventId: number, body: {
-    activity_index: number; action: string; code: string; latitude?: number | null; longitude?: number | null;
+    activity_index: number; action: string; code: string;
+    latitude?: number | null; longitude?: number | null; accuracy?: number | null;
   }) => http.post<AttendanceScanResult>(`/api/events/${eventId}/attendance/scan`, body,
     { fallback: 'Could not record your attendance' }),
   evaluateActivity: (eventId: number, index: number, body: Record<string, unknown>) =>

@@ -33,12 +33,12 @@ function parseQr(data: string): Parsed | null {
   return null;
 }
 
-/** Best effort: the server uses it to confirm presence, but a scan still counts without it. */
+/** Sent with every scan; events with a pinned venue reject scans without it or from outside the perimeter. */
 async function currentPosition() {
   try {
     const perm = await Location.requestForegroundPermissionsAsync();
     if (!perm.granted) return null;
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
     return pos.coords;
   } catch {
     return null;
@@ -79,7 +79,7 @@ export default function ScanScreen() {
       const pos = await currentPosition();
       const result = await api.events.scanAttendance(qr.eventId, {
         activity_index: qr.index, action: qr.action, code: qr.code,
-        latitude: pos?.latitude ?? null, longitude: pos?.longitude ?? null,
+        latitude: pos?.latitude ?? null, longitude: pos?.longitude ?? null, accuracy: pos?.accuracy ?? null,
       });
       void qc.invalidateQueries({ queryKey: qk.attendance(qr.eventId, qr.index) });
       setState({ step: 'result', result, eventId: qr.eventId, index: qr.index });
