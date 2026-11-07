@@ -32,6 +32,8 @@ export const APPRAISAL_STATUS: Record<string, [string, string]> = {
   not_submitted: ['Not Submitted', '#EF4444'],
   pending: ['Pending', '#F59E0B'],
   pending_approval: ['Pending Approval', '#F59E0B'],
+  revisions_requested: ['Revisions Requested', '#EA580C'],
+  rejected: ['Rejected', '#DC2626'],
   awaiting_ratings: ['Awaiting Ratings', '#F59E0B'],
   approved: ['Approved', '#3B82F6'],
   draft: ['Draft', '#9CA3AF'],

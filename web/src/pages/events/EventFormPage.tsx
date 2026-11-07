@@ -6,17 +6,20 @@ import {
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { modals } from '@mantine/modals';
-import { IconAlertTriangle, IconArrowLeft, IconCircleMinus, IconFileUpload, IconPlus, IconSearch, IconUsersGroup } from '@tabler/icons-react';
+import {
+  IconAlertTriangle, IconArrowLeft, IconCircleMinus, IconFileUpload, IconPlus, IconSearch, IconSend, IconUsersGroup,
+} from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api, canSaveAsDraft, emptyExec, emptyMaterial, emptyMatrixRow, emptyMember, emptyPhase, emptySnack,
-  firstProposalIssue, isoDate, longDate, NATURES, parseEventDate, proposalFromEvent, proposalFromReading, proposalPayload,
+  firstProposalIssue, isoDate, isReturnedEvent, longDate, NATURES, parseEventDate, proposalFromEvent, proposalFromReading, proposalPayload,
   PROPOSAL_STEPS, qk, roleLabel, startOfDay, titleCase, useSession, type EventRecord, type ProposalForm,
   type ProposalReading, type TwgMember, type User,
 } from '@tasknet/shared';
 import { ErrorState, notifyError, notifySuccess, PageLoader, UserAvatar } from '../../components/ui';
 import { MemberAccount, ProposalDropArea, ReadingSummary } from './ProposalUpload';
 import { VenueMapPicker } from '../../components/VenueMap';
+import { ReturnedBanner } from './EventReview';
 
 export function EventFormPage() {
   const { id } = useParams();
@@ -48,6 +51,8 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
   const [checkingDate, setCheckingDate] = useState(false);
   const [linking, setLinking] = useState<{ g: number; m: number; repick: boolean; automate: boolean } | null>(null);
   const editing = !!event;
+  /** sent back by the approver: saving keeps it returned, submitting resubmits it */
+  const returned = isReturnedEvent(event?.status);
   const draftable = canSaveAsDraft(event?.status);
   // New proposals start at the file upload; editing goes straight to the form.
   const [uploading, setUploading] = useState(!event);
@@ -141,7 +146,9 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
       if (event) await api.events.update(event.id, payload);
       else await api.events.create(payload);
       persisted.current = true;
-      notifySuccess(asDraft ? 'Saved as draft.' : editing ? 'Event updated successfully!' : 'Event proposal submitted for approval!');
+      notifySuccess(asDraft ? (returned ? 'Changes saved. Resubmit when the revisions are done.' : 'Saved as draft.')
+        : returned ? 'Proposal resubmitted for approval!'
+          : editing ? 'Event updated successfully!' : 'Event proposal submitted for approval!');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: qk.allEvents }),
         queryClient.invalidateQueries({ queryKey: qk.dashboard }),
@@ -449,6 +456,15 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
   return (
     <Box className="tn-proposal">
       {header}
+      {returned && event && (
+        <Box mb="md">
+          <ReturnedBanner event={event} action={(
+            <Button color="ink.8" loading={submitting} leftSection={<IconSend size={16} />} onClick={() => void submit(false)}>
+              Resubmit for approval
+            </Button>
+          )} />
+        </Box>
+      )}
       {form.reading && (
         <ReadingSummary reading={form.reading} form={form}
           onMember={setMember} onJump={setStep} onReplace={() => setUploading(true)}
@@ -459,9 +475,9 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
       <Group justify="space-between" className="tn-proposal-footer" wrap="nowrap">
         {step > 0 ? <Button variant="default" w={120} onClick={() => setStep(step - 1)}>Back</Button> : <span />}
         <Group gap={12} wrap="nowrap">
-          {draftable && <Button variant="default" disabled={submitting} onClick={() => void submit(true)}>Save as Draft</Button>}
+          {draftable && <Button variant="default" disabled={submitting} onClick={() => void submit(true)}>{returned ? 'Save changes' : 'Save as Draft'}</Button>}
           <Button color="ink.8" miw={150} loading={submitting} onClick={() => (last ? void submit(false) : setStep(step + 1))}>
-            {!last ? 'Next →' : editing ? 'Save Changes' : 'Submit Proposal'}
+            {!last ? 'Next →' : returned ? 'Resubmit for approval' : editing ? 'Save Changes' : 'Submit Proposal'}
           </Button>
         </Group>
       </Group>

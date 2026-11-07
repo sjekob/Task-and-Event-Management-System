@@ -1,7 +1,7 @@
 export * from './types';
 export * from './api/client';
 export * as api from './api/endpoints';
-export type { UploadFile, TaskPageQuery, SuggestionQuery, AuditQuery, SchoolYearInput, ApproveResult } from './api/endpoints';
+export type { UploadFile, TaskPageQuery, SuggestionQuery, AuditQuery, SchoolYearInput, ApproveResult, ReviewResult } from './api/endpoints';
 export { approvalMessage } from './api/endpoints';
 export * from './SessionProvider';
 export * from './queryKeys';

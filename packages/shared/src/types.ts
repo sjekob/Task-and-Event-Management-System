@@ -244,7 +244,22 @@ export interface DashboardData {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
-export type EventStatus = 'pending_approval' | 'approved' | 'disabled' | 'draft';
+export type EventStatus = 'pending_approval' | 'approved' | 'disabled' | 'draft' | 'rejected' | 'revisions_requested';
+
+/** Sent back by the approver; the proponent revises and resubmits. */
+export const RETURNED_EVENT_STATUSES: readonly EventStatus[] = ['rejected', 'revisions_requested'];
+export const isReturnedEvent = (status?: string | null) => status === 'rejected' || status === 'revisions_requested';
+
+/** One approver decision on a proposal (GET /api/events/{id} → reviews, newest first). */
+export interface EventReview {
+  id: number;
+  decision: 'approved' | 'rejected' | 'revisions_requested';
+  comment?: string | null;
+  created_at: string;
+  reviewer_id?: number | null;
+  reviewer_name?: string | null;
+  reviewer_role?: string | null;
+}
 
 /** One Activity Matrix row (events.activity_matrix is a JSON array of these). */
 export interface ActivityRow {
@@ -299,6 +314,8 @@ export interface EventRecord {
   venue_radius_m?: number | null;
   /** JSON SavedReading: the proposal reader's summary when filled from a file */
   proposal_reading?: string | null;
+  /** review history, newest first (single-event fetch only) */
+  reviews?: EventReview[];
 }
 
 /** A pinned venue: scans are accepted within radius_m metres of it. */

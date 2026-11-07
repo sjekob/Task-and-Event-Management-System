@@ -166,3 +166,11 @@ body {
 .tn-reading-line + .tn-reading-line {
   border-top: 1px solid #EEF2F6;
 }
+
+/* Approver's comment quoted in the "returned" banner */
+.tn-review-quote {
+  background: rgba(255, 255, 255, 0.7);
+  border-left: 3px solid currentColor;
+  border-radius: 6px;
+  padding: 10px 12px;
+}

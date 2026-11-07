@@ -7,7 +7,8 @@ import { modals } from '@mantine/modals';
 import { IconArrowsMaximize, IconDots, IconFileTypePdf, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  api, approvalMessage, CURRENT_YEAR, depedByDay, depedRangeLabel, isoDate, parseEventDate, parseIsoDate, qk, useSession, useUser,
+  api, approvalMessage, CURRENT_YEAR, depedByDay, depedRangeLabel, isoDate, isReturnedEvent, parseEventDate, parseIsoDate, qk,
+  useSession, useUser,
   type EventRecord, type SchoolYearFilter,
 } from '@tasknet/shared';
 import { AppCalendar } from '../../components/AppCalendar';
@@ -15,6 +16,7 @@ import { SchoolYearPicker } from '../../components/SchoolYearPicker';
 import { notifyError, notifySuccess, PageLoader } from '../../components/ui';
 import { printProposal } from '../../lib/printProposal';
 import { EventCalendarView } from './EventCalendarView';
+import { openReviewModal, type SendBack } from './EventReview';
 import { colors } from '../../theme';
 
 const STATUS_PILL: Record<string, [string, string]> = {
@@ -22,6 +24,8 @@ const STATUS_PILL: Record<string, [string, string]> = {
   pending_approval: ['Pending', '#ED8936'],
   disabled: ['Disabled', '#E53E3E'],
   draft: ['Draft', '#718096'],
+  revisions_requested: ['Revisions requested', '#DD6B20'],
+  rejected: ['Rejected', '#E53E3E'],
 };
 
 export function EventStatusPill({ status }: { status: string }) {
@@ -61,6 +65,18 @@ export function useEventActions() {
       onConfirm: () => void run(() => api.events.disable(e.id), 'Event disabled'),
     }),
     enable: (e: EventRecord) => run(() => api.events.enable(e.id), 'Event re-enabled'),
+    /** Reject or request revisions: asks for the (required) comment first. */
+    review: (e: EventRecord, decision: SendBack) => openReviewModal(e, decision, async (comment) => {
+      try {
+        const res = decision === 'rejected' ? await api.events.reject(e.id, comment) : await api.events.requestRevisions(e.id, comment);
+        notifySuccess(res.message);
+        await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: qk.event(e.id) })]);
+        return true;
+      } catch (err) {
+        notifyError(err);
+        return false;
+      }
+    }),
     deleteDraft: (e: EventRecord) => modals.openConfirmModal({
       title: 'Delete Draft',
       children: <Text size="sm">Delete &quot;{e.title.trim() || 'Untitled Draft'}&quot;? This cannot be undone.</Text>,
@@ -99,7 +115,9 @@ export function EventsPage() {
   const isPrincipal = canApprove && !canManage; // oversight only: approves, doesn't propose
 
   const all = events.data ?? [];
-  const active = all.filter((e) => e.status !== 'disabled' && e.status !== 'draft');
+  // Returned proposals (rejected / revisions requested) are off the calendar and out of the active lists.
+  const active = all.filter((e) => e.status !== 'disabled' && e.status !== 'draft' && !isReturnedEvent(e.status));
+  const returned = all.filter((e) => isReturnedEvent(e.status) && (isPrincipal || e.created_by === user.id));
   const shown = tab === 'mine' ? active.filter((e) => e.created_by === user.id) : active;
   const disabled = all.filter((e) => e.status === 'disabled');
   const drafts = all.filter((e) => e.status === 'draft' && e.created_by === user.id);
@@ -148,9 +166,19 @@ export function EventsPage() {
           menu={isPrincipal && canApprove ? (
             <>
               <Menu.Item c="#48BB78" onClick={() => void actions.approve(e)}>Approve</Menu.Item>
-              <Menu.Item color="red" onClick={() => actions.disable(e)}>Disable</Menu.Item>
+              <Menu.Item color="orange" onClick={() => actions.review(e, 'revisions_requested')}>Request revisions</Menu.Item>
+              <Menu.Item color="red" onClick={() => actions.review(e, 'rejected')}>Reject</Menu.Item>
+              <Menu.Divider />
+              <Menu.Item color="gray" onClick={() => actions.disable(e)}>Disable</Menu.Item>
             </>
           ) : canManage ? <Menu.Item onClick={() => navigate(`/events/${e.id}/edit`)}>Edit</Menu.Item> : null} />
+      ))}
+      {section(isPrincipal ? 'Returned to Proponents' : 'Returned for Revision', returned, (e) => (
+        <EventCard key={e.id} event={e} onOpen={() => open(e)} onPrint={() => void actions.print(e)}
+          right={!isPrincipal && canManage && e.created_by === user.id && (
+            <Button variant="subtle" color="orange" size="compact-sm"
+              onClick={(ev) => { ev.stopPropagation(); navigate(`/events/${e.id}/edit`); }}>Revise &amp; resubmit</Button>
+          )} />
       ))}
       {tab === 'all' && section('Disabled Events', disabled, (e) => (
         <EventCard key={e.id} event={e} disabled onOpen={() => open(e)} onPrint={() => void actions.print(e)}

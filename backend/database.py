@@ -589,7 +589,8 @@ CREATE TABLE IF NOT EXISTS events (
     indicators          TEXT,
     comments            TEXT,
     status              TEXT NOT NULL DEFAULT 'pending_approval'
-        CHECK(status IN ('pending_approval','approved','disabled','draft')),
+        CHECK(status IN ('pending_approval','approved','disabled','draft',
+                         'rejected','revisions_requested')),
     created_by          INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     department          TEXT,
@@ -605,6 +606,18 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_longitude DOUBLE PRECISION
     CHECK (venue_longitude BETWEEN -180 AND 180);
 ALTER TABLE events ADD COLUMN IF NOT EXISTS venue_radius_m  INTEGER
     CHECK (venue_radius_m BETWEEN 10 AND 5000);
+-- Principal's review decisions added 'rejected' and 'revisions_requested'.
+-- Widen an existing database's status check once (fresh ones get it above).
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conrelid = 'events'::regclass AND conname = 'events_status_check'
+                     AND pg_get_constraintdef(oid) LIKE '%revisions_requested%') THEN
+        ALTER TABLE events DROP CONSTRAINT IF EXISTS events_status_check;
+        ALTER TABLE events ADD CONSTRAINT events_status_check CHECK (status IN
+            ('pending_approval','approved','disabled','draft','rejected','revisions_requested'));
+    END IF;
+END $$;
 -- What the proposal reader found when the proposal was filled from a file
 -- (JSON: files, method, sections, warnings, notes, read_at), so a reopened
 -- draft shows the same "Read from …" summary. NULL when typed by hand.
@@ -837,6 +850,19 @@ CREATE TABLE IF NOT EXISTS event_attendance (
 -- event had no pin.
 ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS time_in_distance_m  DOUBLE PRECISION;
 ALTER TABLE event_attendance ADD COLUMN IF NOT EXISTS time_out_distance_m DOUBLE PRECISION;
+
+-- The approver's decisions on an event proposal, newest last (Event Reviews).
+-- A proposal can be reviewed several times: revisions requested, resubmitted,
+-- then approved.
+CREATE TABLE IF NOT EXISTS event_reviews (
+    id          {_PK},
+    event_id    INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    reviewer_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decision    TEXT NOT NULL CHECK(decision IN ('approved','rejected','revisions_requested')),
+    comment     TEXT,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_event_reviews_event ON event_reviews(event_id);
 """
 
 

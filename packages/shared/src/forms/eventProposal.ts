@@ -395,4 +395,5 @@ export function firstProposalIssue(f: ProposalForm, dateIssue?: string | null): 
 }
 
 /** Approved/disabled proposals aren't silently demoted back to draft. */
-export const canSaveAsDraft = (status?: string | null) => !status || status === 'draft' || status === 'pending_approval';
+export const canSaveAsDraft = (status?: string | null) =>
+  !status || status === 'draft' || status === 'pending_approval' || status === 'rejected' || status === 'revisions_requested';

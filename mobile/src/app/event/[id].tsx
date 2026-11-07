@@ -6,12 +6,13 @@ import QRCode from 'react-native-qrcode-svg';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api, approvalMessage, formatActivityMatrix, formatCommittee, formatDate, formatMethodology, formatMoney, formatOutputs,
-  formatParticipants, formatTwg, hasContent, parseEventDate, qk, useSession, useUser, type EventRecord,
+  formatDateTime, formatParticipants, formatTwg, hasContent, isReturnedEvent, parseEventDate, parseTimestamp, qk,
+  useSession, useUser, type EventRecord, type EventReview,
 } from '@tasknet/shared';
 import { EventStatusPill } from '@/components/cards';
 import {
-  Button, Card, confirm, ErrorView, Gap, IconButton, InfoLine, Loading, notifyError, notifySuccess, Row, Screen,
-  SectionHeader, Segmented, T,
+  Button, Card, confirm, ErrorView, Field, Gap, IconButton, InfoLine, Loading, notifyError, notifySuccess, Pill, Row,
+  Screen, SectionHeader, Segmented, T,
 } from '@/components/ui';
 import { WEB_BASE } from '@/lib/api';
 import { shareProposal } from '@/lib/printProposal';
@@ -26,6 +27,7 @@ export default function EventDetailScreen() {
   const event = useQuery({ queryKey: qk.event(eventId), queryFn: () => api.events.get(eventId) });
   const [busy, setBusy] = useState<string | null>(null);
   const [qr, setQr] = useState<'attendance' | 'evaluation' | null>(null);
+  const [review, setReview] = useState<'rejected' | 'revisions_requested' | null>(null);
 
   if (event.isPending) return <Loading />;
   if (event.isError) return <ErrorView error={event.error} onRetry={() => event.refetch()} />;
@@ -57,6 +59,25 @@ export default function EventDetailScreen() {
   const approve = () => run('approve', async () => {
     return approvalMessage(await api.events.approve(e.id));
   }, 'Event approved.');
+  const sendBack = async (decision: 'rejected' | 'revisions_requested', comment: string) => {
+    setBusy(decision);
+    try {
+      const res = decision === 'rejected' ? await api.events.reject(e.id, comment) : await api.events.requestRevisions(e.id, comment);
+      notifySuccess(res.message);
+      setReview(null);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: qk.event(eventId) }),
+        qc.invalidateQueries({ queryKey: qk.allEvents }),
+        qc.invalidateQueries({ queryKey: qk.dashboard }),
+      ]);
+    } catch (err) {
+      notifyError(err);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const returned = isReturnedEvent(e.status);
+  const latest = returned ? ((e.reviews ?? []).find((r) => r.decision === e.status) ?? e.reviews?.[0]) : undefined;
   const disable = async () => {
     if (await confirm('Disable event', `Disable "${e.title}"?`, 'Disable', true)) await run('disable', () => api.events.disable(e.id), 'Event disabled');
   };
@@ -78,6 +99,16 @@ export default function EventDetailScreen() {
     <>
       <Stack.Screen options={{ title: 'Event' }} />
       <Screen onRefresh={() => event.refetch()}>
+        {returned && (
+          <Card style={{ borderLeftWidth: 4, borderLeftColor: e.status === 'rejected' ? colors.red : '#DD6B20', marginBottom: 12 }}>
+            <T v="h3">{e.status === 'rejected' ? 'This proposal was rejected' : 'Revisions requested'}</T>
+            {latest?.comment ? <T style={{ marginTop: 6, lineHeight: 21 }}>{latest.comment}</T> : null}
+            {latest ? <T v="muted" style={{ marginTop: 6 }}>{latest.reviewer_name ?? 'Approver'} · {formatDateTime(parseTimestamp(latest.created_at))}</T> : null}
+            {isOwner && canManage && (
+              <T v="muted" style={{ marginTop: 8 }}>Open TaskNet on a computer to revise the proposal and resubmit it for approval.</T>
+            )}
+          </Card>
+        )}
         <Card>
           <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <T v="h2" style={{ flex: 1 }}>{e.title || 'Untitled event'}</T>
@@ -94,6 +125,8 @@ export default function EventDetailScreen() {
 
         <View style={{ gap: 8, marginTop: 12 }}>
           {canApprove && pending && <Button title="Approve event" kind="success" icon="checkmark-circle-outline" loading={busy === 'approve'} onPress={() => void approve()} />}
+          {canApprove && pending && <Button title="Request revisions" kind="outline" icon="return-down-back-outline" onPress={() => setReview('revisions_requested')} />}
+          {canApprove && pending && <Button title="Reject" kind="danger" icon="close-circle-outline" onPress={() => setReview('rejected')} />}
           {canApprove && !canManage && pending && <Button title="Disable event" kind="danger" icon="ban-outline" loading={busy === 'disable'} onPress={() => void disable()} />}
           {canApprove && e.status === 'disabled' && <Button title="Re-enable event" kind="outline" icon="refresh-outline" loading={busy === 'enable'}
             onPress={() => void run('enable', () => api.events.enable(e.id), 'Event re-enabled')} />}
@@ -109,7 +142,16 @@ export default function EventDetailScreen() {
             <Card><T style={{ lineHeight: 21 }}>{fmt(raw!)}</T></Card>
           </View>
         ))}
+
+        {(e.reviews?.length ?? 0) > 0 && (
+          <View>
+            <SectionHeader title="Review history" />
+            <Card style={{ gap: 12 }}>{e.reviews!.map((r) => <ReviewRow key={r.id} review={r} />)}</Card>
+          </View>
+        )}
       </Screen>
+      <ReviewSheet decision={review} title={e.title} busy={busy === review}
+        onClose={() => setReview(null)} onSubmit={(c) => review && void sendBack(review, c)} />
       <QrSheet event={e} kind={qr} onClose={() => setQr(null)} />
     </>
   );
@@ -179,5 +221,51 @@ function QrBlock({ value, caption }: { value: string; caption: string }) {
       <T style={{ fontWeight: '700', textAlign: 'center' }}>{caption}</T>
       <T v="small" selectable style={{ textAlign: 'center' }}>{value}</T>
     </View>
+  );
+}
+
+const DECISION: Record<EventReview['decision'], [string, string]> = {
+  approved: ['Approved', '#2F855A'],
+  revisions_requested: ['Revisions requested', '#C05621'],
+  rejected: ['Rejected', '#C53030'],
+};
+
+function ReviewRow({ review: r }: { review: EventReview }) {
+  const [label, color] = DECISION[r.decision];
+  return (
+    <View style={{ gap: 4 }}>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Pill label={label} color={color} />
+        <T v="muted">{formatDateTime(parseTimestamp(r.created_at))}</T>
+      </Row>
+      <T v="muted">{r.reviewer_name ?? 'Approver'}</T>
+      {r.comment ? <T style={{ lineHeight: 21 }}>{r.comment}</T> : null}
+    </View>
+  );
+}
+
+/** Reject / Request revisions: the comment is required before it can be sent. */
+function ReviewSheet({ decision, title, busy, onClose, onSubmit }: {
+  decision: 'rejected' | 'revisions_requested' | null; title: string; busy: boolean;
+  onClose: () => void; onSubmit: (comment: string) => void;
+}) {
+  const [comment, setComment] = useState('');
+  const reject = decision === 'rejected';
+  return (
+    <Modal visible={!!decision} transparent animationType="slide" onRequestClose={onClose} onShow={() => setComment('')}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }} onPress={onClose}>
+        <Pressable style={{ backgroundColor: colors.card, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 18, gap: 10 }}
+          onPress={() => undefined}>
+          <T v="h3">{reject ? 'Reject proposal' : 'Request revisions'}</T>
+          <T v="muted">{title}</T>
+          <Field label={reject ? 'Reason for rejecting' : 'What should be revised?'} value={comment} onChangeText={setComment}
+            multiline numberOfLines={5} maxLength={4000} style={{ minHeight: 110, textAlignVertical: 'top' }}
+            placeholder={reject ? 'Explain why the proposal is rejected' : 'List what the proponent should change'} />
+          <Button title={reject ? 'Reject proposal' : 'Request revisions'} kind={reject ? 'danger' : 'primary'}
+            disabled={!comment.trim()} loading={busy} onPress={() => onSubmit(comment.trim())} />
+          <Button title="Cancel" kind="outline" onPress={onClose} />
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }

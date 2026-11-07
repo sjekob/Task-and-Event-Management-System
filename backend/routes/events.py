@@ -14,8 +14,8 @@ import proposal_reader
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from typing import Any, Optional
 from database import get_db, create_notification
-from auth import (get_current_user, require_event_manager, require_event_approver,
-                  has_permission)
+from auth import (ROLE_PERMISSIONS, get_current_user, require_event_manager,
+                  require_event_approver, has_permission)
 from date_utils import parse_event_date
 from school_calendar import resolve_window, in_window
 from routes.deped_calendar import mandatory_on, conflict_warning
@@ -250,7 +250,18 @@ def get_event(event_id: int, db=Depends(get_db), user=Depends(get_current_user))
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Event not found")
-    return _event_row(row, db)
+    d = _event_row(row, db)
+    d["reviews"] = _reviews(db, event_id)
+    return d
+
+
+def _reviews(db, event_id: int) -> list:
+    """The approver's decisions on this proposal, newest first."""
+    return [dict(r) for r in db.execute(
+        """SELECT r.id, r.decision, r.comment, r.created_at, r.reviewer_id,
+                  u.full_name AS reviewer_name, u.role AS reviewer_role
+           FROM event_reviews r LEFT JOIN users u ON u.id = r.reviewer_id
+           WHERE r.event_id=? ORDER BY r.created_at DESC, r.id DESC""", (event_id,)).fetchall()]
 
 
 class EventCreateBody(BaseModel):
@@ -321,6 +332,9 @@ class EventCreateBody(BaseModel):
 
 
 CREATE_STATUSES = ('draft', 'pending_approval')
+# Sent back by the approver: the proponent revises and resubmits.
+RETURNED_STATUSES = ('rejected', 'revisions_requested')
+IN_REVIEW_STATUSES = ('pending_approval',) + RETURNED_STATUSES
 DEFAULT_RADIUS_M = 100
 
 
@@ -345,8 +359,8 @@ def list_events(db=Depends(get_db), user=Depends(get_current_user),
         # Drafts: only the creator sees them
         if status == "draft" and not is_mine:
             continue
-        # Pending: only the creator or principal/admin sees them
-        if status == "pending_approval" and not is_mine and not can_see_all_pending:
+        # Pending / sent back: only the creator or principal/admin sees them
+        if status in IN_REVIEW_STATUSES and not is_mine and not can_see_all_pending:
             continue
         result.append(_event_row(r, db))
     return result
@@ -404,17 +418,20 @@ def create_event(body: EventCreateBody, db=Depends(get_db),
 
 
 @router.put("/{event_id}")
-def update_event(event_id: int, body: EventCreateBody, db=Depends(get_db),
+def update_event(event_id: int, body: EventCreateBody, request: Request, db=Depends(get_db),
                  user=Depends(require_event_manager)):
     uid = int(user["sub"])
     role = user["role"]
-    row = db.execute("SELECT created_by FROM events WHERE id=?", (event_id,)).fetchone()
+    row = db.execute("SELECT created_by, title, status FROM events WHERE id=?", (event_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Event not found")
     if role not in ("admin",) and row["created_by"] != uid:
         raise HTTPException(403, "You can only edit events you created")
     if body.status == 'pending_approval':
         _validate_target_date(db, body.target_date, exclude_id=event_id)
+    resubmitted = row["status"] in RETURNED_STATUSES and body.status == 'pending_approval'
+    if row["status"] in RETURNED_STATUSES and body.status == 'draft':
+        body.status = row["status"]  # saving a returned proposal keeps it returned until resubmitted
     if body.status in CREATE_STATUSES:
         db.execute(
             """UPDATE events SET
@@ -455,6 +472,14 @@ def update_event(event_id: int, body: EventCreateBody, db=Depends(get_db),
              body.comments,
              body.venue_latitude, body.venue_longitude, body.venue_radius_m, body.proposal_reading, event_id)
         )
+    if resubmitted:
+        audit.record(db, user, "event.resubmitted", "event", event_id,
+                     f"Resubmitted event {body.title}",
+                     changes={"status": [row["status"], "pending_approval"]}, request=request)
+        for a in _approver_ids(db):
+            if a != uid:
+                create_notification(db, a, "event", f"Proposal resubmitted: {body.title}",
+                                    "Revised and submitted again for approval.", event_id)
     db.commit()
     row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
     return _event_row(row, db)
@@ -577,11 +602,16 @@ def _create_twg_special_tasks(db, event_id: int) -> dict:
 @router.patch("/{event_id}/approve")
 def approve_event(event_id: int, request: Request, db=Depends(get_db),
                   user=Depends(require_event_approver)):
-    ev = db.execute("SELECT title, status FROM events WHERE id=?", (event_id,)).fetchone()
+    ev = db.execute("SELECT title, status, created_by FROM events WHERE id=?", (event_id,)).fetchone()
     if not ev:
         raise HTTPException(404, "Event not found")
     db.execute("UPDATE events SET status='approved' WHERE id=?", (event_id,))
     _audit_status(db, user, request, event_id, ev, "approved", "Approved event")
+    if ev["status"] != "approved":  # approving again doesn't log a second decision
+        _record_review(db, event_id, user, "approved", None)
+        if ev["created_by"] and ev["created_by"] != int(user["sub"]):
+            create_notification(db, ev["created_by"], "event", f"Event approved: {ev['title']}",
+                                "Your event proposal was approved.", event_id)
     tasks = _create_twg_special_tasks(db, event_id)
     db.commit()
     return {"message": "Event approved",
@@ -589,6 +619,56 @@ def approve_event(event_id: int, request: Request, db=Depends(get_db),
             "special_tasks_skipped": tasks["skipped"],
             "top_scores_credited": len(tasks["credited"]),
             "top_scores_skipped": tasks["uncredited"]}
+
+
+class ReviewBody(BaseModel):
+    comment: Optional[str] = Field(default=None, max_length=4000)
+
+
+def _record_review(db, event_id: int, user: dict, decision: str, comment: Optional[str]):
+    db.execute("INSERT INTO event_reviews (event_id, reviewer_id, decision, comment) VALUES (?,?,?,?)",
+               (event_id, int(user["sub"]), decision, comment))
+
+
+def _approver_ids(db) -> list:
+    roles = [r for r, perms in ROLE_PERMISSIONS.items() if "approve_events" in perms]
+    marks = ",".join("?" for _ in roles)
+    return [r["id"] for r in db.execute(
+        f"SELECT id FROM users WHERE is_active=1 AND role IN ({marks})", tuple(roles)).fetchall()]
+
+
+def _send_back(db, request: Request, user: dict, event_id: int, body: ReviewBody,
+               decision: str, audit_summary: str, notif_title: str) -> dict:
+    """Reject or request revisions: pending proposals only, comment required.
+    Creates no special tasks or credits."""
+    comment = (body.comment or "").strip()
+    if not comment:
+        raise HTTPException(400, "Please enter a comment so the proponent knows what to change.")
+    ev = db.execute("SELECT title, status, created_by FROM events WHERE id=?", (event_id,)).fetchone()
+    if not ev:
+        raise HTTPException(404, "Event not found")
+    if ev["status"] != "pending_approval":
+        raise HTTPException(409, "Only proposals that are pending approval can be reviewed.")
+    db.execute("UPDATE events SET status=? WHERE id=?", (decision, event_id))
+    _record_review(db, event_id, user, decision, comment)
+    _audit_status(db, user, request, event_id, ev, decision, audit_summary)
+    if ev["created_by"]:
+        create_notification(db, ev["created_by"], "event", f"{notif_title}: {ev['title']}", comment, event_id)
+    db.commit()
+    return {"message": f"{notif_title}.", "status": decision, "reviews": _reviews(db, event_id)}
+
+
+@router.patch("/{event_id}/reject")
+def reject_event(event_id: int, body: ReviewBody, request: Request, db=Depends(get_db),
+                 user=Depends(require_event_approver)):
+    return _send_back(db, request, user, event_id, body, "rejected", "Rejected event", "Event rejected")
+
+
+@router.patch("/{event_id}/request-revisions")
+def request_event_revisions(event_id: int, body: ReviewBody, request: Request, db=Depends(get_db),
+                            user=Depends(require_event_approver)):
+    return _send_back(db, request, user, event_id, body, "revisions_requested",
+                      "Requested revisions on event", "Revisions requested")
 
 
 def _require_event_control(db, event_id: int, user: dict):

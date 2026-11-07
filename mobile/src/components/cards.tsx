@@ -14,6 +14,8 @@ export const EVENT_STATUS: Record<string, [string, string]> = {
   pending_approval: ['Pending', '#C05621'],
   disabled: ['Disabled', '#C53030'],
   draft: ['Draft', '#4A5568'],
+  revisions_requested: ['Revisions requested', '#C05621'],
+  rejected: ['Rejected', '#C53030'],
 };
 
 export function EventStatusPill({ status }: { status: string }) {

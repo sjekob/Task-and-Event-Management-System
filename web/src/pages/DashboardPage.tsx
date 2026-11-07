@@ -11,6 +11,7 @@ import {
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  isReturnedEvent,
   api, daysUntil, depedByDay, depedRangeLabel, dueState, formatDue, isoDate, isTaskOverdue,
   MONTHS_LONG, MONTHS_SHORT, parseEventDate, qk, startOfDay, taskDeadline, useSession, useUser,
   type DashboardData, type EventRecord, type SessionUser, type Task,
@@ -91,7 +92,7 @@ export function DashboardPage() {
   const eventsByDay = useMemo(() => {
     const map = new Map<string, EventRecord[]>();
     for (const e of events.data ?? []) {
-      if (e.status === 'disabled' || e.status === 'draft') continue;
+      if (e.status === 'disabled' || e.status === 'draft' || isReturnedEvent(e.status)) continue;
       const d = parseEventDate(e.target_date);
       if (d) map.set(isoDate(d), [...(map.get(isoDate(d)) ?? []), e]);
     }

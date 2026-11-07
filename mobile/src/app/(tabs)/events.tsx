@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { FlatList, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { api, parseEventDate, qk, startOfDay, useSession, type EventRecord } from '@tasknet/shared';
+import { api, isReturnedEvent, parseEventDate, qk, startOfDay, useSession, type EventRecord } from '@tasknet/shared';
 import { EventCard } from '@/components/cards';
 import { Empty, ErrorView, Loading, Segmented } from '@/components/ui';
 import { colors } from '@/theme';
 
-type Filter = 'upcoming' | 'pending' | 'past' | 'mine';
+type Filter = 'upcoming' | 'pending' | 'returned' | 'past' | 'mine';
 const time = (e: EventRecord) => parseEventDate(e.target_date)?.getTime() ?? Number.MAX_SAFE_INTEGER;
 
 export default function EventsScreen() {
@@ -17,15 +17,19 @@ export default function EventsScreen() {
   const today = startOfDay(new Date()).getTime();
   const all = events.data ?? [];
   const pending = all.filter((e) => e.status === 'pending_approval');
+  // Sent back by the approver: the proponent's to revise (approvers see them all).
+  const returned = all.filter((e) => isReturnedEvent(e.status) && (can('approve_events') || e.created_by === user?.id));
   const lists: Record<Filter, EventRecord[]> = {
     upcoming: all.filter((e) => e.status === 'approved' && time(e) >= today).sort((a, b) => time(a) - time(b)),
     pending,
+    returned,
     past: all.filter((e) => e.status === 'approved' && time(e) < today).sort((a, b) => time(b) - time(a)),
     mine: all.filter((e) => e.created_by === user?.id).sort((a, b) => time(b) - time(a)),
   };
   const options: { value: Filter; label: string; count?: number }[] = [
     { value: 'upcoming', label: 'Upcoming' },
     ...(can('approve_events') ? [{ value: 'pending' as const, label: 'Pending', count: pending.length }] : []),
+    ...(returned.length ? [{ value: 'returned' as const, label: 'Returned', count: returned.length }] : []),
     { value: 'past', label: 'Past' },
     ...(can('manage_events') ? [{ value: 'mine' as const, label: 'Mine' }] : []),
   ];
@@ -42,7 +46,8 @@ export default function EventsScreen() {
               renderItem={({ item }) => <EventCard event={item} />}
               onRefresh={() => void events.refetch()} refreshing={events.isRefetching}
               ListEmptyComponent={<Empty title="No events" icon="calendar-outline"
-                message={filter === 'pending' ? 'No proposals are waiting for approval.' : undefined} />} />
+                message={filter === 'pending' ? 'No proposals are waiting for approval.'
+                  : filter === 'returned' ? 'No proposals were sent back for revision.' : undefined} />} />
           )}
     </View>
   );

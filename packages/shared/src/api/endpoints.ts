@@ -4,7 +4,7 @@ import type {
   AttendanceScanResult,
   CertificateFile, CertificateSet, CertificationCatalogItem, CertificationMeta, Comment,
   DashboardData, DateCheck, DepedEntry, Department, EducationOptions, EventForAppraisal,
-  EventInput, EventRecord, GeocodeResult, GradeLevel, LeaderboardEntry, LoginResult, Page, Report,
+  EventInput, EventRecord, EventReview, EventStatus, GeocodeResult, GradeLevel, LeaderboardEntry, LoginResult, Page, Report,
   ProposalReading, PublicEvent, ReportStatus, ReportSubmission, Role, SchoolYear, SchoolYearFilter, SessionUser, SkillMeta, SpecialTask,
   SubjectMeta, Task, TaskCategory, TaskInput, TaskTemplate, User,
 } from '../types';
@@ -299,6 +299,8 @@ export interface ApproveResult {
   [k: string]: unknown;
 }
 
+export interface ReviewResult { message: string; status: EventStatus; reviews: EventReview[] }
+
 /** The toast after approving: tasks assigned, top scores credited, who was missed. */
 export function approvalMessage(res: ApproveResult): string {
   const created = res.special_tasks_created ?? 0;
@@ -323,6 +325,12 @@ export const events = {
   remove: (id: number) => http.delete(`/api/events/${id}`, { fallback: 'Failed to delete event' }),
   approve: (id: number) => http.patch<ApproveResult>(`/api/events/${id}/approve`, undefined,
     { fallback: 'Failed to approve event' }),
+  /** Approver: send a pending proposal back as rejected; the comment is required. */
+  reject: (id: number, comment: string) => http.patch<ReviewResult>(`/api/events/${id}/reject`, { comment },
+    { fallback: 'Failed to reject the event' }),
+  /** Approver: ask the proponent to revise and resubmit; the comment is required. */
+  requestRevisions: (id: number, comment: string) => http.patch<ReviewResult>(`/api/events/${id}/request-revisions`,
+    { comment }, { fallback: 'Failed to request revisions' }),
   disable: (id: number) => http.patch(`/api/events/${id}/disable`, undefined, { fallback: 'Failed to disable event' }),
   enable: (id: number) => http.patch(`/api/events/${id}/enable`, undefined, { fallback: 'Failed to enable event' }),
   /** Read a proposal file (one Word/PDF, or page photos in order) into wizard fields. Saves nothing. */

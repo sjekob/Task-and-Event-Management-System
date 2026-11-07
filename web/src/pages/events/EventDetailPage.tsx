@@ -5,16 +5,18 @@ import {
   SimpleGrid, Stack, Table, Text, ThemeIcon, Title, Tooltip,
 } from '@mantine/core';
 import {
-  IconArrowLeft, IconBan, IconBulb, IconCalendarEvent, IconCategory, IconChecklist, IconCircleCheck,
+  IconArrowBackUp, IconArrowLeft, IconBan, IconCircleX, IconHistory, IconBulb, IconCalendarEvent, IconCategory, IconChecklist, IconCircleCheck,
   IconFlag, IconHierarchy2, IconId, IconListCheck, IconMapPin, IconPencil, IconPigMoney, IconPrinter,
   IconQrcode, IconRoute, IconSignature, IconTimeline, IconUser, IconUsersGroup, IconWallet, IconCash,
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  api, formatMoney, hasContent, listItems, parseJson, parseParticipants, qk, useSession, useUser, type EventRecord,
+  api, formatMoney, hasContent, isReturnedEvent, listItems, parseJson, parseParticipants, qk, useSession, useUser,
+  type EventRecord,
 } from '@tasknet/shared';
 import { ErrorState, PageLoader } from '../../components/ui';
+import { ReturnedBanner, ReviewHistory } from './EventReview';
 import { VenueMap } from '../../components/VenueMap';
 import { EventStatusPill, useEventActions } from './EventsPage';
 import { colors } from '../../theme';
@@ -181,7 +183,8 @@ export function EventDetailPage() {
   const pending = e.status === 'pending_approval';
   const showApprove = canApprove && pending;
   const showDisable = canApprove && !canManage && pending;
-  const showEdit = canManage && (pending || e.status === 'draft') && e.created_by === user.id;
+  const returned = isReturnedEvent(e.status);
+  const showEdit = canManage && (pending || e.status === 'draft' || returned) && e.created_by === user.id;
   const showQr = e.status === 'approved' && (canApprove || e.created_by === user.id);
 
   const sections: [string, ReactNode, ReactNode][] = [];
@@ -241,6 +244,14 @@ export function EventDetailPage() {
 
   return (
     <Box maw={1100} mx="auto">
+      {returned && (
+        <Box mb="md">
+          <ReturnedBanner event={e} action={showEdit && (
+            <Button color={e.status === 'rejected' ? 'red' : 'orange'} leftSection={<IconPencil size={16} />}
+              onClick={() => navigate(`/events/${e.id}/edit`)}>Revise &amp; resubmit</Button>
+          )} />
+        </Box>
+      )}
       <Panel>
         <Group align="flex-start" wrap="nowrap" gap={14}>
           <Tooltip label="Back to events">
@@ -262,8 +273,10 @@ export function EventDetailPage() {
         <Divider my={16} />
         <Group gap={10}>
           {showApprove && <Button color="green" leftSection={<IconCircleCheck size={18} />} onClick={() => void actions.approve(e)}>Approve event</Button>}
+          {showApprove && <Button variant="light" color="orange" leftSection={<IconArrowBackUp size={18} />} onClick={() => actions.review(e, 'revisions_requested')}>Request revisions</Button>}
+          {showApprove && <Button variant="light" color="red" leftSection={<IconCircleX size={18} />} onClick={() => actions.review(e, 'rejected')}>Reject</Button>}
           {showDisable && <Button variant="outline" color="red" leftSection={<IconBan size={18} />} onClick={() => actions.disable(e)}>Disable event</Button>}
-          {showEdit && <Button variant="default" leftSection={<IconPencil size={18} />} onClick={() => navigate(`/events/${e.id}/edit`)}>Edit proposal</Button>}
+          {showEdit && <Button variant="default" leftSection={<IconPencil size={18} />} onClick={() => navigate(`/events/${e.id}/edit`)}>{returned ? 'Revise proposal' : 'Edit proposal'}</Button>}
           {showQr && <Button variant="default" leftSection={<IconQrcode size={18} />} onClick={() => setQrOpen(true)}>Attendance QR codes</Button>}
           <Button variant="default" leftSection={<IconPrinter size={18} />} onClick={() => void actions.print(e)}>Print proposal</Button>
         </Group>
@@ -340,6 +353,12 @@ export function EventDetailPage() {
           </Panel>
         </Box>
       ))}
+
+      {(e.reviews?.length ?? 0) > 0 && (
+        <Box mt="md">
+          <DetailCard icon={<IconHistory size={18} />} title="Review history"><ReviewHistory reviews={e.reviews!} /></DetailCard>
+        </Box>
+      )}
 
       {qrOpen && <AttendanceQrModal eventId={e.id} onClose={() => setQrOpen(false)} />}
     </Box>
