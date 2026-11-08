@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FlatList, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { api, isReturnedEvent, parseEventDate, qk, startOfDay, useSession, type EventRecord } from '@tasknet/shared';
+import { api, isReturnedEvent, LIVE_EVENT_QUERY, parseEventDate, qk, startOfDay, useSession, type EventRecord } from '@tasknet/shared';
 import { EventCard } from '@/components/cards';
 import { Empty, ErrorView, Loading, Segmented } from '@/components/ui';
 import { colors } from '@/theme';
@@ -12,7 +12,7 @@ const time = (e: EventRecord) => parseEventDate(e.target_date)?.getTime() ?? Num
 export default function EventsScreen() {
   const { can, user } = useSession();
   const [filter, setFilter] = useState<Filter>('upcoming');
-  const events = useQuery({ queryKey: qk.events(), queryFn: () => api.events.list() });
+  const events = useQuery({ queryKey: qk.events(), queryFn: () => api.events.list(), ...LIVE_EVENT_QUERY });
 
   const today = startOfDay(new Date()).getTime();
   const all = events.data ?? [];

@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   api, isTaskSubmitted, parseEventDate, qk, roleLabel, startOfDay, taskDeadline, useSession, useUser, type Task,
+  LIVE_EVENT_QUERY,
 } from '@tasknet/shared';
 import { EventCard, TaskCard } from '@/components/cards';
 import { Button, Empty, ErrorView, Loading, Row, Screen, SectionHeader, StatTile, T } from '@/components/ui';
@@ -13,7 +14,8 @@ const byDeadline = (a: Task, b: Task) =>
 export default function HomeScreen() {
   const user = useUser();
   const { can } = useSession();
-  const dash = useQuery({ queryKey: qk.dashboard, queryFn: api.dashboard.get });
+  // Home's upcoming events stay current.
+  const dash = useQuery({ queryKey: qk.dashboard, queryFn: api.dashboard.get, ...LIVE_EVENT_QUERY });
 
   if (dash.isPending) return <Loading />;
   if (dash.isError) return <ErrorView error={dash.error} onRetry={() => dash.refetch()} />;

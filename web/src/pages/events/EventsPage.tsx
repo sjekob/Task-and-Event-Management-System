@@ -7,7 +7,7 @@ import { modals } from '@mantine/modals';
 import { IconArrowsMaximize, IconDots, IconFileTypePdf, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  api, approvalMessage, CURRENT_YEAR, depedByDay, depedRangeLabel, isoDate, isReturnedEvent, parseEventDate, parseIsoDate, qk,
+  api, approvalMessage, CURRENT_YEAR, LIVE_EVENT_QUERY, depedByDay, depedRangeLabel, isoDate, isReturnedEvent, parseEventDate, parseIsoDate, qk,
   useSession, useUser,
   type EventRecord, type SchoolYearFilter,
 } from '@tasknet/shared';
@@ -102,8 +102,9 @@ export function EventsPage() {
   const actions = useEventActions();
 
   const schoolYear = filter.schoolYear === 'current' ? undefined : filter.schoolYear;
-  const events = useQuery({ queryKey: qk.events(schoolYear), queryFn: () => api.events.list(schoolYear) });
-  const deped = useQuery({ queryKey: qk.deped(), queryFn: () => api.depedCalendar.list() });
+  // List, side calendar and expanded calendar stay current (LIVE_EVENT_QUERY).
+  const events = useQuery({ queryKey: qk.events(schoolYear), queryFn: () => api.events.list(schoolYear), ...LIVE_EVENT_QUERY });
+  const deped = useQuery({ queryKey: qk.deped(), queryFn: () => api.depedCalendar.list(), ...LIVE_EVENT_QUERY });
 
   // Dashboard links: /events?open=12 opens that proposal.
   const openId = Number(params.get('open'));

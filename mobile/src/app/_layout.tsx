@@ -1,10 +1,11 @@
 import '@/lib/api';
 
 import { useEffect } from 'react';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionProvider, useSession } from '@tasknet/shared';
 import { colors } from '@/theme';
 
@@ -14,7 +15,18 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
 });
 
+// React Native has no window focus: tell React Query when the app comes back
+// to the foreground, so live screens refetch at once (and polling pauses in
+// the background).
+function onAppStateChange(status: AppStateStatus) {
+  if (Platform.OS !== 'web') focusManager.setFocused(status === 'active');
+}
+
 export default function RootLayout() {
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    return () => sub.remove();
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <SessionProvider>

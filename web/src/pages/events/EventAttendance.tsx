@@ -1,7 +1,7 @@
 import { Badge, Box, Group, Loader, Stack, Table, Text } from '@mantine/core';
 import { IconCircleCheck } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { api, formatDistance, parseTimestamp, titleCase, type AttendanceList } from '@tasknet/shared';
+import { api, formatDistance, LIVE_EVENT_QUERY, parseTimestamp, titleCase, type AttendanceList } from '@tasknet/shared';
 
 /** "1:42 PM" from a school-local "YYYY-MM-DD HH:MM:SS" (scan times are stored in school time). */
 function clock(raw?: string | null) {
@@ -14,7 +14,7 @@ function clock(raw?: string | null) {
  * (people without a TaskNet account, marked "Guest").
  */
 export function EventAttendance({ eventId }: { eventId: number }) {
-  const q = useQuery({ queryKey: ['attendance-list', eventId], queryFn: () => api.events.attendanceList(eventId) });
+  const q = useQuery({ queryKey: ['attendance-list', eventId], queryFn: () => api.events.attendanceList(eventId), ...LIVE_EVENT_QUERY });
   if (q.isPending) return <Group justify="center" py="md"><Loader size="sm" /></Group>;
   if (q.isError) return <Text size="sm" c="red">{(q.error as Error).message}</Text>;
   const data: AttendanceList = q.data;

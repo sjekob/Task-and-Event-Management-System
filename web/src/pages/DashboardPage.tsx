@@ -11,7 +11,7 @@ import {
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  isReturnedEvent,
+  isReturnedEvent, LIVE_EVENT_QUERY,
   api, daysUntil, depedByDay, depedRangeLabel, dueState, formatDue, isoDate, isTaskOverdue,
   MONTHS_LONG, MONTHS_SHORT, parseEventDate, qk, startOfDay, taskDeadline, useSession, useUser,
   type DashboardData, type EventRecord, type SessionUser, type Task,
@@ -81,9 +81,10 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [month, setMonth] = useState(() => new Date());
 
-  const dash = useQuery({ queryKey: qk.dashboard, queryFn: api.dashboard.get });
-  const events = useQuery({ queryKey: qk.events(), queryFn: () => api.events.list() });
-  const deped = useQuery({ queryKey: qk.deped(), queryFn: () => api.depedCalendar.list() });
+  // The principal's pending-approval list and the dashboard calendar stay current.
+  const dash = useQuery({ queryKey: qk.dashboard, queryFn: api.dashboard.get, ...LIVE_EVENT_QUERY });
+  const events = useQuery({ queryKey: qk.events(), queryFn: () => api.events.list(), ...LIVE_EVENT_QUERY });
+  const deped = useQuery({ queryKey: qk.deped(), queryFn: () => api.depedCalendar.list(), ...LIVE_EVENT_QUERY });
 
   // Approvers (principal/admin) receive no tasks; only task creators have a Task Manager.
   const isApprover = !can('receive_tasks');

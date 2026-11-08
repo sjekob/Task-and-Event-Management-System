@@ -12,7 +12,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  api, formatMoney, hasContent, isApprovedEvent, isReturnedEvent, listItems, parseJson, parseParticipants, qk, useSession, useUser,
+  api, formatMoney, hasContent, isApprovedEvent, LIVE_EVENT_QUERY, isReturnedEvent, listItems, parseJson, parseParticipants, qk, useSession, useUser,
   type EventRecord,
 } from '@tasknet/shared';
 import { ErrorState, PageLoader } from '../../components/ui';
@@ -173,7 +173,7 @@ export function EventDetailPage() {
   const { can } = useSession();
   const actions = useEventActions();
   const [qrOpen, setQrOpen] = useState(false);
-  const event = useQuery({ queryKey: qk.event(Number(id)), queryFn: () => api.events.get(Number(id)) });
+  const event = useQuery({ queryKey: qk.event(Number(id)), queryFn: () => api.events.get(Number(id)), ...LIVE_EVENT_QUERY });
 
   if (event.isPending) return <PageLoader />;
   if (event.isError) return <ErrorState error={event.error} onRetry={() => event.refetch()} />;

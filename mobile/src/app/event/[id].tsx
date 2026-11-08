@@ -6,7 +6,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api, approvalMessage, formatActivityMatrix, formatCommittee, formatDate, formatMethodology, formatMoney, formatOutputs,
-  formatDateTime, formatParticipants, formatTwg, hasContent, isReturnedEvent, parseEventDate, parseTimestamp, qk,
+  formatDateTime, formatParticipants, LIVE_EVENT_QUERY, formatTwg, hasContent, isReturnedEvent, parseEventDate, parseTimestamp, qk,
   useSession, useUser, type EventRecord, type EventReview,
 } from '@tasknet/shared';
 import { EventStatusPill } from '@/components/cards';
@@ -24,7 +24,7 @@ export default function EventDetailScreen() {
   const user = useUser();
   const { can } = useSession();
   const qc = useQueryClient();
-  const event = useQuery({ queryKey: qk.event(eventId), queryFn: () => api.events.get(eventId) });
+  const event = useQuery({ queryKey: qk.event(eventId), queryFn: () => api.events.get(eventId), ...LIVE_EVENT_QUERY });
   const [busy, setBusy] = useState<string | null>(null);
   const [qr, setQr] = useState<'attendance' | 'evaluation' | null>(null);
   const [review, setReview] = useState<'rejected' | 'revisions_requested' | null>(null);

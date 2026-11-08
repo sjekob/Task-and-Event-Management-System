@@ -12,7 +12,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api, canSaveAsDraft, emptyExec, emptyMaterial, emptyMatrixRow, emptyMember, emptyPhase, emptySnack,
-  firstProposalIssue, isoDate, isReturnedEvent, longDate, NATURES, parseEventDate, proposalFromEvent, proposalFromReading, proposalPayload,
+  firstProposalIssue, isoDate, isReturnedEvent, longDate, NO_LIVE_REFRESH, NATURES, parseEventDate, proposalFromEvent, proposalFromReading, proposalPayload,
   PROPOSAL_STEPS, qk, roleLabel, startOfDay, titleCase, useSession, type EventRecord, type ProposalForm,
   type ProposalReading, type TwgMember, type User,
 } from '@tasknet/shared';
@@ -23,7 +23,8 @@ import { ReturnedBanner } from './EventReview';
 
 export function EventFormPage() {
   const { id } = useParams();
-  const existing = useQuery({ queryKey: qk.event(Number(id)), queryFn: () => api.events.get(Number(id)), enabled: !!id });
+  // The wizard is loaded once: no polling or focus refetch while it's being edited.
+  const existing = useQuery({ queryKey: qk.event(Number(id)), queryFn: () => api.events.get(Number(id)), enabled: !!id, ...NO_LIVE_REFRESH });
   if (id && existing.isPending) return <PageLoader />;
   if (id && existing.isError) return <ErrorState error={existing.error} onRetry={() => existing.refetch()} />;
   return <ProposalEditor key={id ?? 'new'} event={existing.data ?? null} />;
@@ -112,7 +113,7 @@ function ProposalEditor({ event }: { event: EventRecord | null }) {
   }, [event, draftable, registerDraftSaver, queryClient]);
 
   // ── Target date: taken days + server conflict check ──
-  const allEvents = useQuery({ queryKey: qk.events('all'), queryFn: () => api.events.list('all') });
+  const allEvents = useQuery({ queryKey: qk.events('all'), queryFn: () => api.events.list('all'), ...NO_LIVE_REFRESH });
   const taken = useMemo(() => new Set((allEvents.data ?? [])
     .filter((e) => e.id !== event?.id && (e.status === 'approved' || e.status === 'pending_approval'))
     .map((e) => parseEventDate(e.target_date)).filter((d): d is Date => !!d).map(isoDate)), [allEvents.data, event?.id]);
