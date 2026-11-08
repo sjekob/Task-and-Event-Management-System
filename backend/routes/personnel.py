@@ -7,6 +7,8 @@ from auth import (get_current_user, require_personnel_manager, require_personnel
                   hash_password, has_permission, _held_roles)
 from qualifications import get_qualifications, education_options
 import audit
+import store
+from routes.sections import advisory_of, section_label
 
 router = APIRouter(tags=["Personnel"])
 
@@ -22,12 +24,20 @@ def _user_row(row, db):
     d["grade_level"] = gl["grade_level"] if gl else None
     d.update(get_qualifications(db, d["id"]))
     d["subjects"] = [dict(r) for r in db.execute(
-        """SELECT s.subject_name AS subject, gl.grade_level
+        """SELECT s.subject_name AS subject, gl.grade_level, us.subject_id, us.grade_level_id
            FROM user_subjects us
            JOIN subjects s ON s.id = us.subject_id
            LEFT JOIN grade_levels gl ON gl.id = us.grade_level_id
            WHERE us.user_id=?""", (d["id"],)
     ).fetchall()]
+    # The sections each subject is taught in (a subject teacher's load).
+    load = db.execute("""SELECT st.subject_id, sec.id, sec.name, sec.grade_level_id FROM section_teachers st
+                         JOIN sections sec ON sec.id = st.section_id WHERE st.user_id=?""", (d["id"],)).fetchall()
+    for sub_row in d["subjects"]:
+        sub_row["sections"] = [{"id": r["id"], "name": r["name"]} for r in load
+                               if r["subject_id"] == sub_row["subject_id"]
+                               and (sub_row["grade_level_id"] is None or r["grade_level_id"] == sub_row["grade_level_id"])]
+    d["advisory_section"] = advisory_of(db, d["id"])
     ct = db.execute(
         "SELECT coordinator_type FROM coordinator_type WHERE user_id=?", (d["id"],)
     ).fetchone()
@@ -49,6 +59,19 @@ def _user_row(row, db):
     return d
 
 
+def _can_toggle_status(db, user: dict, uid: int) -> bool:
+    """Whether [user] may (de)activate account [uid]. The client only displays this."""
+    if not has_permission(user, "deactivate_personnel") or uid == int(user["sub"]):
+        return False
+    held = _held_roles(db, uid)
+    return not (held and held[1] & {"principal", "admin"}) or has_permission(user, "manage_personnel")
+
+
+def _with_toggle(d: dict, db, user: dict) -> dict:
+    d["can_toggle_status"] = _can_toggle_status(db, user, d["id"])
+    return d
+
+
 def _delegation(db, uid: int) -> dict:
     """The account/delegation fields an audit entry compares before and after."""
     u = db.execute("""SELECT u.role, u.is_active, u.date_of_appointment, gl.grade_level
@@ -64,6 +87,11 @@ def _delegation(db, uid: int) -> dict:
     dean = db.execute("""SELECT gl.grade_level FROM dean_assignment da
                          LEFT JOIN grade_levels gl ON gl.id = da.grade_level_id
                          WHERE da.user_id=?""", (uid,)).fetchone()
+    adv = advisory_of(db, uid)
+    teaching = sorted(f"{r['subject']} ({r['grade_level']} - {r['name']})" for r in db.execute(
+        """SELECT sub.subject_name AS subject, gl.grade_level, sec.name FROM section_teachers st
+           JOIN sections sec ON sec.id = st.section_id JOIN grade_levels gl ON gl.id = sec.grade_level_id
+           JOIN subjects sub ON sub.id = st.subject_id WHERE st.user_id=?""", (uid,)).fetchall())
     subjects = sorted(
         f"{r['subject']} ({r['grade_level']})" if r["grade_level"] else r["subject"]
         for r in db.execute("""SELECT s.subject_name AS subject, gl.grade_level
@@ -78,6 +106,8 @@ def _delegation(db, uid: int) -> dict:
         "coordinator_type": ct["coordinator_type"] if ct else None,
         "dean_grade_level": dean["grade_level"] if dean else None,
         "subjects": "; ".join(subjects) or None,
+        "teaching_sections": "; ".join(teaching) or None,
+        "advisory_class": section_label(adv) if adv else None,
         "active": bool(u["is_active"]),
     }
 
@@ -89,26 +119,26 @@ def list_personnel(search: str = "", limit: int = 0, offset: int = 0,
                    db=Depends(get_db), user=Depends(get_current_user)):
     q = f"%{search}%"
     where = ("FROM users u WHERE u.role != 'admin' "
-             "AND (u.full_name LIKE ? OR u.username LIKE ? OR u.email LIKE ? "
+             "AND (u.full_name ILIKE ? OR u.username ILIKE ? OR u.email ILIKE ? "
              "OR EXISTS (SELECT 1 FROM user_skills us JOIN skills s ON s.id=us.skill_id "
-             "WHERE us.user_id=u.id AND s.skill_name LIKE ?) "
+             "WHERE us.user_id=u.id AND s.skill_name ILIKE ?) "
              "OR EXISTS (SELECT 1 FROM certificate_files cf "
              "JOIN certifications c ON c.id=cf.certification_id "
              "WHERE cf.user_id=u.id AND cf.status IN ('submitted','verified') "
-             "AND c.cert_name LIKE ?) "
+             "AND c.cert_name ILIKE ?) "
              "OR EXISTS (SELECT 1 FROM education_background eb "
-             "WHERE eb.user_id=u.id AND eb.specialization LIKE ?))")
+             "WHERE eb.user_id=u.id AND eb.specialization ILIKE ?))")
     params = [q, q, q, q, q, q]
     order = " ORDER BY u.role, u.full_name"
     if limit and limit > 0:
         total = db.execute(f"SELECT COUNT(*) {where}", params).fetchone()[0]
         rows = db.execute(f"SELECT u.* {where}{order} LIMIT ? OFFSET ?",
                           params + [limit, offset]).fetchall()
-        items = [_user_row(r, db) for r in rows]
+        items = [_with_toggle(_user_row(r, db), db, user) for r in rows]
         return {"items": items, "total": total, "limit": limit, "offset": offset,
                 "has_more": offset + len(items) < total}
     rows = db.execute(f"SELECT u.* {where}{order}", params).fetchall()
-    return [_user_row(r, db) for r in rows]
+    return [_with_toggle(_user_row(r, db), db, user) for r in rows]
 
 
 @router.get("/api/personnel/meta/grade-levels")
@@ -162,31 +192,6 @@ def get_education_options_meta(user=Depends(get_current_user)):
     return education_options()
 
 
-@router.get("/api/personnel/meta/departments")
-def get_departments_meta(db=Depends(get_db), user=Depends(get_current_user)):
-    return [dict(r) for r in
-            db.execute("SELECT * FROM departments ORDER BY department_name").fetchall()]
-
-
-class DepartmentBody(BaseModel):
-    department_name: str
-
-
-@router.post("/api/personnel/departments", status_code=201)
-def create_department(body: DepartmentBody, request: Request, db=Depends(get_db),
-                      user=Depends(require_personnel_manager)):
-    name = body.department_name.strip()
-    if not name:
-        raise HTTPException(400, "Department name is required")
-    cur = db.execute("INSERT OR IGNORE INTO departments (department_name) VALUES (?)", (name,))
-    if cur.rowcount:
-        audit.record(db, user, "department.create", "department", cur.lastrowid,
-                     f"Created department {name}", request=request)
-    db.commit()
-    row = db.execute("SELECT * FROM departments WHERE department_name=?", (name,)).fetchone()
-    return dict(row)
-
-
 @router.get("/api/personnel/{uid}")
 def get_personnel(uid: int, db=Depends(get_db), user=Depends(get_current_user)):
     row = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
@@ -222,16 +227,11 @@ def create_personnel(body: PersonnelCreateBody, request: Request, db=Depends(get
         raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
     pw = hash_password(body.password)
     try:
-        db.execute(
-            """INSERT INTO users (username, password_hash, first_name, middle_name,
-               last_name, suffix, role, grade_level_id, email, date_of_appointment)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (body.username, pw, body.first_name, body.middle_name,
-             body.last_name, body.suffix, body.role, body.grade_level_id,
-             body.email,
-             body.date_of_appointment.isoformat() if body.date_of_appointment else None)
-        )
-        new_id = db.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone()["id"]
+        new_id = store.create_user(db, {
+            "username": body.username, "password_hash": pw, "role": body.role,
+            "first_name": body.first_name, "middle_name": body.middle_name, "last_name": body.last_name,
+            "suffix": body.suffix, "grade_level_id": body.grade_level_id, "email": body.email,
+            "date_of_appointment": body.date_of_appointment.isoformat() if body.date_of_appointment else None})
         audit.record(db, user, "account.create", "user", new_id,
                      f"Created account {body.username} as {body.role}",
                      changes=audit.diff({}, _delegation(db, new_id)), request=request)
@@ -262,24 +262,14 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
         raise HTTPException(404, "User not found")
     before = _delegation(db, uid)
 
-    fields, vals = [], []
-    for col, val in [
-        ("role", body.role),
-        ("grade_level_id", body.grade_level_id),
-        ("date_of_appointment",
-         body.date_of_appointment.isoformat() if body.date_of_appointment else None),
-    ]:
-        if val is not None:
-            fields.append(f"{col}=?")
-            vals.append(val)
-
-    if body.password:
-        fields.append("password_hash=?")
-        vals.append(hash_password(body.password))
-
+    fields = {k: v for k, v in {
+        "role": body.role,
+        "grade_level_id": body.grade_level_id,
+        "date_of_appointment": body.date_of_appointment.isoformat() if body.date_of_appointment else None,
+        "password_hash": hash_password(body.password) if body.password else None,
+    }.items() if v is not None}
     if fields:
-        vals.append(uid)
-        db.execute(f"UPDATE users SET {', '.join(fields)} WHERE id=?", vals)
+        store.update_user(db, uid, fields)
         db.commit()
 
     if body.coordinator_type is not None:
@@ -309,8 +299,9 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
         if body.also_teaching is not None and primary_role != "teacher":
             if body.also_teaching:
                 db.execute(
-                    """INSERT OR IGNORE INTO user_roles (user_id, role_id)
-                       SELECT ?, id FROM roles WHERE roles='teacher'""", (uid,))
+                    """INSERT INTO user_roles (user_id, role_id)
+                       SELECT ?, id FROM roles WHERE roles='teacher'
+                       ON CONFLICT DO NOTHING""", (uid,))
             else:
                 db.execute(
                     """DELETE FROM user_roles WHERE user_id=?
@@ -332,6 +323,7 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
 class SubjectEntry(BaseModel):
     grade_level_id: Optional[int] = None
     subject: str
+    section_ids: List[int] = []   # the sections this subject is taught in
 
 
 class SubjectsUpdateBody(BaseModel):
@@ -352,12 +344,22 @@ def update_personnel_subjects(uid: int, body: SubjectsUpdateBody, request: Reque
     if unknown:
         raise HTTPException(400, f"Unknown subject: {', '.join(unknown)}")
     before = _delegation(db, uid)
+    sections = {r["id"]: r for r in db.execute("SELECT id, name, grade_level_id FROM sections").fetchall()}
     db.execute("DELETE FROM user_subjects WHERE user_id=?", (uid,))
+    db.execute("DELETE FROM section_teachers WHERE user_id=?", (uid,))
     for s in body.subjects:
         if s.subject.strip():
             db.execute(
-                "INSERT OR IGNORE INTO user_subjects (user_id, subject_id, grade_level_id) "
-                "VALUES (?,?,?)", (uid, known[s.subject.strip()], s.grade_level_id))
+                "INSERT INTO user_subjects (user_id, subject_id, grade_level_id) "
+                "VALUES (?,?,?) ON CONFLICT DO NOTHING", (uid, known[s.subject.strip()], s.grade_level_id))
+            for sid in s.section_ids:
+                sec = sections.get(sid)
+                if not sec:
+                    raise HTTPException(400, "A chosen section no longer exists")
+                if s.grade_level_id is not None and sec["grade_level_id"] != s.grade_level_id:
+                    raise HTTPException(400, f"Section {sec['name']} is not in that grade level")
+                db.execute("INSERT INTO section_teachers (section_id, user_id, subject_id) VALUES (?,?,?) "
+                           "ON CONFLICT DO NOTHING", (sid, uid, known[s.subject.strip()]))
     changes = audit.diff(before, _delegation(db, uid))
     if changes:
         audit.record(db, user, "personnel.subjects", "user", uid, "Changed subject-grade assignments",
@@ -375,11 +377,10 @@ def toggle_personnel_status(uid: int, request: Request, db=Depends(get_db),
     if uid == int(user["sub"]):
         raise HTTPException(403, "You can't deactivate your own account")
     # Only the principal/admin may (de)activate principal or admin accounts.
-    held = _held_roles(db, uid)
-    if held and held[1] & {"principal", "admin"} and not has_permission(user, "manage_personnel"):
+    if not _can_toggle_status(db, user, uid):
         raise HTTPException(403, "Only the Principal or Admin can change this account's status")
     new_status = 0 if row["is_active"] else 1
-    db.execute("UPDATE users SET is_active=? WHERE id=?", (new_status, uid))
+    store.update_user(db, uid, {"is_active": new_status})
     audit.record(db, user, "account.reactivate" if new_status else "account.deactivate", "user", uid,
                  "Reactivated account" if new_status else "Deactivated account",
                  changes={"active": [not new_status, bool(new_status)]}, request=request)

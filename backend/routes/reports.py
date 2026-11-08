@@ -1,5 +1,7 @@
 import datetime
-from fastapi import APIRouter, HTTPException, Depends, UploadFile
+from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile
+import audit
+import store
 from pydantic import BaseModel
 from typing import Optional
 from database import connect_db
@@ -19,7 +21,8 @@ class SubmitReportRequest(BaseModel):
 
 
 @router.post("/api/tasks/{task_id}/reports")
-def submit_report(task_id: int, req: SubmitReportRequest, user=Depends(get_current_user)):
+def submit_report(task_id: int, req: SubmitReportRequest, request: Request,
+                  user=Depends(get_current_user)):
     db = connect_db()
     uid = int(user["sub"])
 
@@ -31,24 +34,10 @@ def submit_report(task_id: int, req: SubmitReportRequest, user=Depends(get_curre
         db.close()
         raise HTTPException(403, "Not assigned to this task")
 
-    db.execute(
-        """INSERT INTO reports
-           (task_id, personnel_id, report_title, report_description,
-            report_type, report_link_url, report_date, report_status)
-           VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP,'Pending')
-           ON CONFLICT(task_id, personnel_id) DO UPDATE SET
-               report_title=excluded.report_title,
-               report_description=excluded.report_description,
-               report_type=excluded.report_type,
-               report_link_url=excluded.report_link_url,
-               report_date=CURRENT_TIMESTAMP,
-               report_status='Pending'""",
-        (task_id, uid, req.report_title, req.report_description,
-         req.report_type, req.report_link_url)
-    )
-    report_id = db.execute(
-        "SELECT id FROM reports WHERE task_id=? AND personnel_id=?", (task_id, uid)
-    ).fetchone()["id"]
+    # Resubmitting replaces the earlier submission; it goes to whoever assigned the task.
+    receiver_id = assigned["assigned_by"]
+    report_id = store.save_report(db, task_id, uid, req.report_title, description=req.report_description,
+                                  link_url=req.report_link_url, kind=req.report_type, receiver_id=receiver_id)
 
     db.execute(
         """INSERT INTO task_log (submission_date, personnel_id, task_id)
@@ -58,25 +47,17 @@ def submit_report(task_id: int, req: SubmitReportRequest, user=Depends(get_curre
         (uid, task_id)
     )
 
-    receiver_id = assigned["assigned_by"]
-    db.execute(
-        """INSERT INTO submission_log
-           (status, date_of_submission, sender_personnel_id, report_id, receiver_personnel_id)
-           VALUES ('Pending', CURRENT_TIMESTAMP, ?, ?, ?)
-           ON CONFLICT(report_id) DO UPDATE SET
-               status='Pending',
-               date_of_submission=CURRENT_TIMESTAMP,
-               receiver_personnel_id=excluded.receiver_personnel_id""",
-        (uid, report_id, receiver_id)
-    )
 
+    audit.record(db, user, "report.submit", "task", task_id,
+                 f"Submitted work: {req.report_title}", request=request)
     db.commit()
     db.close()
     return {"message": "Report submitted", "report_id": report_id, "receiver_id": receiver_id}
 
 
 @router.post("/api/tasks/{task_id}/reports/upload")
-async def submit_report_file(task_id: int, file: UploadFile, user=Depends(get_current_user)):
+async def submit_report_file(task_id: int, file: UploadFile, request: Request,
+                             user=Depends(get_current_user)):
     db = connect_db()
     uid = int(user["sub"])
     report = db.execute(
@@ -88,27 +69,30 @@ async def submit_report_file(task_id: int, file: UploadFile, user=Depends(get_cu
 
     saved = await save_upload(file, prefix=f"{task_id}_{uid}_")
 
-    db.execute(
-        "UPDATE reports SET report_file_path=?, report_filename=? WHERE id=?",
-        (saved["url"], saved["name"], report["id"])
-    )
+    db.execute("UPDATE report SET file_path=?, filename=?, report_type='file' WHERE id=?",
+               (saved["url"], saved["name"], report["id"]))
+    audit.record(db, user, "report.upload", "task", task_id,
+                 f"Attached file {saved['name']} to their submission", request=request)
     db.commit()
     db.close()
     return {"message": "File uploaded", "url": saved["url"]}
 
 
 @router.delete("/api/reports/{report_id}")
-def delete_report(report_id: int, user=Depends(get_current_user)):
+def delete_report(report_id: int, request: Request, user=Depends(get_current_user)):
     db = connect_db()
     uid = int(user["sub"])
-    row = db.execute("SELECT personnel_id FROM reports WHERE id=?", (report_id,)).fetchone()
+    row = db.execute("SELECT personnel_id, task_id, report_title FROM reports WHERE id=?",
+                     (report_id,)).fetchone()
     if not row:
         db.close()
         raise HTTPException(404, "Report not found")
     if row["personnel_id"] != uid:
         db.close()
         raise HTTPException(403, "Cannot delete another user's report")
-    db.execute("DELETE FROM reports WHERE id=?", (report_id,))
+    db.execute("DELETE FROM report WHERE id=?", (report_id,))
+    audit.record(db, user, "report.unsubmit", "task", row["task_id"],
+                 f"Withdrew submission: {row['report_title']}", request=request)
     db.commit()
     db.close()
     return {"message": "Report deleted"}
@@ -170,7 +154,7 @@ class UpdateReportStatusRequest(BaseModel):
 
 
 @router.put("/api/reports/{report_id}/status")
-def update_report_status(report_id: int, req: UpdateReportStatusRequest,
+def update_report_status(report_id: int, req: UpdateReportStatusRequest, request: Request,
                          user=Depends(get_current_user)):
     db = connect_db()
     uid = int(user["sub"])
@@ -179,7 +163,7 @@ def update_report_status(report_id: int, req: UpdateReportStatusRequest,
     # Reviewers of this submission only: principal/admin, the task's creator,
     # whoever assigned the submitter, or the recorded receiver of the report.
     rep = db.execute(
-        """SELECT r.personnel_id, t.created_by, t.id AS task_id FROM reports r
+        """SELECT r.personnel_id, r.report_status, t.created_by, t.id AS task_id FROM reports r
            JOIN tasks t ON t.id = r.task_id WHERE r.id=?""", (report_id,)).fetchone()
     if not rep:
         db.close()
@@ -199,8 +183,11 @@ def update_report_status(report_id: int, req: UpdateReportStatusRequest,
         db.close()
         raise HTTPException(400, "report_status must be Completed, Pending or Missing")
 
-    db.execute("UPDATE reports SET report_status=? WHERE id=?", (req.report_status, report_id))
-    db.execute("UPDATE submission_log SET status=? WHERE report_id=?", (req.report_status, report_id))
+    db.execute("UPDATE report SET report_status=? WHERE id=?", (req.report_status, report_id))
+    if rep["report_status"] != req.report_status:
+        audit.record(db, user, f"report.{req.report_status.lower()}", "task", rep["task_id"],
+                     f"Marked {audit.user_label(db, rep['personnel_id'])}'s submission as {req.report_status}",
+                     changes={"status": [rep["report_status"], req.report_status]}, request=request)
     db.commit()
     db.close()
     return {"message": "Status updated"}

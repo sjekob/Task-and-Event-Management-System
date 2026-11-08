@@ -1,0 +1,13 @@
+.pf-card { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 28px; }
+@media (max-width: 640px) { .pf-card { padding: 18px; } }
+.pf-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px 32px; }
+@media (max-width: 1100px) { .pf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .pf-grid { grid-template-columns: minmax(0, 1fr); } .pf-grid > div { grid-column: auto !important; } }
+.pf-label { font-size: 12px; font-weight: 500; color: var(--muted); }
+.pf-value { font-size: 14px; font-weight: 600; margin-top: 6px; word-break: break-word; }
+.pf-skill { display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px; border-radius: 22px; background: #eaf1fb; border: 1px solid #bccde6; font-size: 14px; font-weight: 600; }
+.pf-subject { display: flex; align-items: center; gap: 12px; width: 220px; padding: 12px 14px; background: #f7f9fc; border: 1px solid var(--border); border-radius: 10px; }
+@media (max-width: 640px) { .pf-subject { width: 100%; } }
+.pf-cam { width: 30px; height: 30px; border-radius: 50%; background: var(--dark); color: #fff; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; }
+.pf-busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.35); border-radius: 50%; }
+.pf-cam-wrap .icon-btn { width: auto; height: auto; padding: 0; background: transparent; }

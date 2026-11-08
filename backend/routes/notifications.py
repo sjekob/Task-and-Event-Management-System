@@ -48,7 +48,7 @@ def mark_notification_read(
 ):
     uid = int(user["sub"])
     db.execute(
-        "UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?",
+        "UPDATE notification SET is_read=1 WHERE id=? AND user_id=?",
         (notif_id, uid),
     )
     db.commit()
@@ -59,7 +59,7 @@ def mark_notification_read(
 def mark_all_notifications_read(db=Depends(get_db), user=Depends(get_current_user)):
     uid = int(user["sub"])
     db.execute(
-        "UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0",
+        "UPDATE notification SET is_read=1 WHERE user_id=? AND is_read=0",
         (uid,),
     )
     db.commit()
@@ -74,7 +74,7 @@ def delete_notification(
 ):
     uid = int(user["sub"])
     db.execute(
-        "DELETE FROM notifications WHERE id=? AND user_id=?",
+        "DELETE FROM notification WHERE id=? AND user_id=?",
         (notif_id, uid),
     )
     db.commit()

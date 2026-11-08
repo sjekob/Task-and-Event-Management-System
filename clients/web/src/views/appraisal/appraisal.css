@@ -1,0 +1,17 @@
+.ap-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px; border: 1px solid #e0e0e0; background: #fff; color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; }
+.ap-tab.on { background: var(--dark); border-color: var(--dark); color: #fff; }
+.ap-count { padding: 2px 6px; border-radius: 10px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; }
+.ap-tab.on .ap-count { background: rgba(255,255,255,0.24); }
+.ap-card { background: #fff; border-radius: 12px; border: 1px solid #eeeeee; }
+.ap-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.ap-filter { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; height: 34px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; color: var(--muted); }
+.ap-filter select { border: 0; background: transparent; font-size: 13px; font-weight: 500; color: var(--text); outline: none; appearance: none; cursor: pointer; padding-right: 2px; max-width: 200px; }
+.ap-group { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 20px; border: 0; background: transparent; cursor: pointer; }
+.ap-group:hover { background: #f8fafc; }
+.ap-table th { font-size: 11px; letter-spacing: 0.5px; background: #f9fafb; }
+.ap-table td { font-size: 12.5px; }
+.ap-table td.muted { color: var(--muted); }
+.ap-badges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1100px) { .ap-badges { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .ap-badges { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 440px) { .ap-badges { grid-template-columns: minmax(0, 1fr); } }

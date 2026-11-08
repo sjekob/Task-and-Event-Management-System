@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 import certificate_reader as reader
 import audit
+import store
 import deped_profile as dp
 from auth import get_current_user, has_permission
 from database import get_db
@@ -128,21 +129,18 @@ async def analyze_certificate(file: UploadFile, db=Depends(get_db),
     path = _path_for(uid, result["sha256"], result["ext"])
     with open(path, "wb") as f:
         f.write(data)
-    cur = db.execute(
-        """INSERT INTO certificate_files
-           (user_id, certification_id, file_path, original_name, mime, sha256, extracted_text,
-            detected_title, match_confidence, certificate_no, date_issued, expiry_date, status)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending')""",
-        (uid, result["certification_id"], path, (file.filename or "")[:200], result["mime"],
-         result["sha256"], result["extracted_text"], result["detected_title"],
-         result["match_confidence"], result["certificate_no"], result["date_issued"],
-         result["expiry_date"]))
+    fid = store.insert(db, "certificate_upload", {
+        "user_id": uid, "certification_id": result["certification_id"], "file_path": path,
+        "original_name": (file.filename or "").strip()[:200] or os.path.basename(path),
+        "mime": result["mime"], "sha256": result["sha256"], "extracted_text": result["extracted_text"],
+        "detected_title": result["detected_title"], "match_confidence": result["match_confidence"],
+        "certificate_no": result["certificate_no"], "date_issued": result["date_issued"],
+        "expiry_date": result["expiry_date"], "status": "pending"})
     for chk in result["checks"]:
-        db.execute("""INSERT INTO certificate_checks
-                      (certificate_file_id, check_key, status, label, detail) VALUES (?,?,?,?,?)""",
-                   (cur.lastrowid, chk["key"], chk["status"], chk["label"], chk["detail"]))
+        db.execute("""INSERT INTO certificate_check (certificate_file_id, check_key, status, label, detail)
+                      VALUES (?,?,?,?,?)""", (fid, chk["key"], chk["status"], chk["label"], chk["detail"]))
     db.commit()
-    return _shape(db, _file_row(db, cur.lastrowid))
+    return _shape(db, _file_row(db, fid))
 
 
 class ConfirmBody(BaseModel):
@@ -165,7 +163,7 @@ def confirm_certificate(file_id: int, body: ConfirmBody, request: Request, db=De
         raise HTTPException(409, "This exact file is already on another person's profile.")
     if not db.execute("SELECT 1 FROM certifications WHERE id=?", (body.certification_id,)).fetchone():
         raise HTTPException(400, "Unknown certification")
-    db.execute("UPDATE certificate_files SET certification_id=?, status='submitted' WHERE id=?",
+    db.execute("UPDATE certificate_upload SET certification_id=?, status='submitted' WHERE id=?",
                (body.certification_id, file_id))
     shaped = _shape(db, _file_row(db, file_id))
     audit.record(db, user, "certificate.submit", "certificate", file_id,
@@ -187,7 +185,7 @@ def delete_certificate(file_id: int, request: Request, db=Depends(get_db),
         audit.record(db, user, "certificate.remove", "certificate", file_id,
                      f"Removed certificate {title}",
                      changes={"status": [row["status"], "removed"]}, request=request)
-    db.execute("DELETE FROM certificate_files WHERE id=?", (file_id,))
+    db.execute("DELETE FROM certificate_upload WHERE id=?", (file_id,))
     db.commit()
     if not db.execute("SELECT 1 FROM certificate_files WHERE file_path=?", (row["file_path"],)).fetchone():
         try:
@@ -242,10 +240,8 @@ def review_certificate(file_id: int, body: ReviewBody, request: Request, db=Depe
         raise HTTPException(409, "The owner hasn't added this certificate yet")
     if row["user_id"] == int(user["sub"]):
         raise HTTPException(403, "You can't verify your own certificate")
-    db.execute(
-        """UPDATE certificate_files SET status=?, review_note=?, reviewed_by=?,
-           reviewed_at=CURRENT_TIMESTAMP WHERE id=?""",
-        (body.status, (body.note or "").strip() or None, int(user["sub"]), file_id))
+    db.execute("""UPDATE certificate_upload SET status=?, review_note=?, reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP
+                  WHERE id=?""", (body.status, (body.note or "").strip() or None, int(user["sub"]), file_id))
     shaped = _shape(db, _file_row(db, file_id))
     changes = {"status": [row["status"], body.status]}
     if body.note and body.note.strip():

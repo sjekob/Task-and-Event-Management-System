@@ -95,3 +95,10 @@ frontend/android/local.properties
 .history
 coverage/
 app.*.symbols
+
+# ── Node / React / Expo ───────────────────────────────────────────────────────
+node_modules/
+dist/
+.expo/
+web-build/
+*.tsbuildinfo

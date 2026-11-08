@@ -72,14 +72,16 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     "admin": {
         "create_tasks", "assign_tasks", "review_submissions", "manage_personnel",
         "view_personnel", "deactivate_personnel", "review_certificates", "view_audit",
-        "manage_events", "approve_events", "manage_school_years", "manage_templates",
+        "manage_events", "approve_events", "manage_school_years", "manage_deped_calendar", "manage_templates",
+        "post_school_calendar",
         "view_appraisal", "evaluate_appraisal", "view_all_appraisals", "view_all_tasks",
         "moderate",
     },
     "principal": {
         "create_tasks", "assign_tasks", "review_submissions", "manage_personnel",
         "view_personnel", "deactivate_personnel", "review_certificates", "view_audit",
-        "approve_events", "manage_school_years", "manage_templates",
+        "approve_events", "manage_school_years", "manage_deped_calendar", "manage_templates",
+        "post_school_calendar",
         "view_appraisal", "evaluate_appraisal", "view_all_appraisals", "view_all_tasks",
         "moderate",
     },
@@ -94,6 +96,8 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     "registrar": {
         "create_tasks", "assign_tasks", "receive_tasks", "manage_events",
         "view_personnel", "deactivate_personnel", "review_certificates",
+        # post_school_calendar: scan the school calendar into automated tasks.
+        "post_school_calendar",
     },
     "teacher": {"receive_tasks", "manage_events", "view_appraisal"},
 }
@@ -104,6 +108,15 @@ _ASSIGN_ORDER = ["teacher", "dean", "coordinator", "registrar", "principal"]
 
 def permissions_for(role: str) -> list[str]:
     return sorted(ROLE_PERMISSIONS.get(role, set()))
+
+
+def session_permissions(db, uid: int, role: str) -> list[str]:
+    """What a session may do: its role's permissions, plus advise_section when
+    the person advises a class (that is a duty of the person, not of a role)."""
+    perms = set(ROLE_PERMISSIONS.get(role, set()))
+    if db.execute("SELECT 1 FROM sections WHERE adviser_id=?", (uid,)).fetchone():
+        perms.add("advise_section")
+    return sorted(perms)
 
 
 def assignable_roles_for(role: str) -> list[str]:
@@ -222,6 +235,9 @@ require_event_manager = require_permission(
     "manage_events", "Principal accounts are for oversight only and cannot create events")
 require_event_approver = require_permission(
     "approve_events", "Only the Principal or Admin can approve events")
+# DepEd school-calendar entries and the compliance tasks generated from them.
+require_deped_manager = require_permission(
+    "manage_deped_calendar", "Only the Principal or Admin can manage the DepEd calendar")
 
 
 def require_admin_or_principal(user=Depends(get_current_user)):

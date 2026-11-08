@@ -1,0 +1,51 @@
+/* Dialogs, menus, toasts, alerts and loading states. */
+/* ── Dialogs ── */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; animation: fade 0.12s; }
+.modal {
+  background: #fff; border-radius: 16px; box-shadow: var(--shadow-lg); width: 100%; max-width: 520px; max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column; animation: pop 0.14s ease-out;
+}
+.modal.wide { max-width: 760px; }
+.modal.xwide { max-width: 980px; }
+.modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 20px 22px 8px; }
+.modal-title { font-size: 18px; font-weight: 700; margin: 0; }
+.modal-sub { font-size: 13px; color: var(--text-2); margin-top: 2px; }
+.modal-body { padding: 8px 22px 16px; overflow-y: auto; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 22px 18px; border-top: 1px solid var(--border); }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+
+.menu { position: absolute; right: 0; top: calc(100% + 4px); background: #fff; border-radius: 10px; box-shadow: var(--shadow-lg); min-width: 170px; padding: 6px; z-index: 40; border: 1px solid var(--border); }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; background: transparent; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; text-align: left; }
+.menu button:hover { background: var(--surface-2); }
+.menu button.danger { color: var(--red); }
+
+/* ── Toasts ── */
+.toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.toast { background: #323232; color: #fff; padding: 12px 18px; border-radius: 8px; box-shadow: var(--shadow-lg); font-size: 14px; max-width: min(560px, calc(100vw - 32px)); animation: pop 0.15s; }
+.toast.error { background: var(--red-dark); }
+.toast.success { background: var(--green-dark); }
+
+/* ── Feedback ── */
+.alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; font-size: 13px; }
+.alert.red { background: var(--red-bg); color: var(--red-dark); }
+.alert.amber { background: var(--amber-bg); color: #92400e; }
+.alert.blue { background: var(--blue-bg); color: var(--blue-dark); }
+.alert.green { background: var(--green-bg); color: var(--green-dark); }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 40px 16px; color: var(--muted); }
+.empty svg { color: #b0b7c3; }
+.spinner { width: 22px; height: 22px; border: 2.5px solid rgba(37,99,235,0.2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+.spinner.light { border-color: rgba(255,255,255,0.3); border-top-color: #fff; }
+.spinner.sm { width: 14px; height: 14px; border-width: 2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.center-fill { display: flex; align-items: center; justify-content: center; padding: 48px; }
+.progress { height: 6px; background: #e5e7eb; border-radius: 6px; overflow: hidden; }
+.progress > div { height: 100%; background: var(--accent); border-radius: 6px; }
+
+/* ── Skeleton ── */
+.bone { background: linear-gradient(90deg, #e8eef7 25%, #f3f6fb 50%, #e8eef7 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 8px; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.tooltip {
+  position: fixed; z-index: 300; width: max-content; max-width: 260px; padding: 8px 12px; border-radius: 8px; background: var(--dark); color: #fff;
+  font-size: 11.5px; line-height: 1.4; white-space: pre-line; pointer-events: none; box-shadow: var(--shadow-lg); animation: fade 0.1s;
+}

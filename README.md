@@ -3,21 +3,38 @@
 A full-stack task management system for educational institutions.
 
 ## Tech Stack
-- **Frontend**: HTML/CSS/JS (Flutter-inspired UI)  
+- **Web**: React + TypeScript (Vite) in `clients/web`
+- **Mobile**: React Native (Expo) in `clients/mobile`
+- **Shared**: TypeScript models, services and controllers (MVC) in `clients/shared`
 - **Backend**: FastAPI (Python)
-- **Database**: SQLite
+- **Database**: PostgreSQL (docker compose; `backend/tools/sqlite_to_postgres.py` imports an old `tasknet.db`)
 
 ## Quick Start
 
+With Docker Desktop running, one command starts PostgreSQL, the backend and the web app:
+
 ```bash
-chmod +x start.sh
-./start.sh
+docker compose up -d --build
 ```
 
-Then open `frontend/index.html` in your browser.
+- Web app: http://localhost:5173
+- API: http://localhost:8000 (docs at http://localhost:8000/docs)
 
-> **Note**: The frontend connects to `http://localhost:8000` by default.  
-> If deploying, update the `API` constant in `frontend/index.html`.
+After changing frontend code, rebuild just the web app with `docker compose up -d --build web`.
+
+For frontend development with instant reload, stop the `web` container
+(`docker compose stop web`) and run the dev server instead:
+
+```bash
+cd clients/web
+npm install
+npm run dev        # http://localhost:5173
+```
+
+The mobile app runs with Expo: `cd clients/mobile && npx expo start`.
+
+> **Note**: The web app calls the API gateway on port 8000 of the host it was
+> opened from. Set `VITE_API_BASE` (see `clients/web/.env.example`) to override.
 
 ## Default Accounts
 

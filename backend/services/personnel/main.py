@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from cors import get_cors_config
 from database import init_db
 from routes.personnel import router as personnel_router
+from routes.sections import router as sections_router
 
 SERVICE_PORT = int(os.getenv("PERSONNEL_SERVICE_PORT", "8002"))
 
@@ -34,6 +35,7 @@ def startup():
     init_db()
 
 
+app.include_router(sections_router)   # before personnel: /api/personnel/sections
 app.include_router(personnel_router)
 
 

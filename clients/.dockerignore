@@ -1,0 +1,6 @@
+# Keep the web image build small: no local installs, build output or the mobile app.
+**/node_modules
+**/dist
+**/.expo
+mobile
+*.log

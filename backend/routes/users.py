@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile
 import audit
+import store
 from pydantic import BaseModel, Field
 from datetime import date
 from typing import List, Optional
@@ -11,7 +12,7 @@ from database import connect_db
 from auth import (get_current_user, require_admin, require_admin_or_principal,
                   require_can_assign, hash_password, ASSIGNABLE_TO)
 from qualifications import (EducationBody, get_qualifications, set_skills,
-                            set_education, validate_education, task_timing,
+                            set_education, validate_education,
                             validate_catalog_names, score_candidates)
 
 router = APIRouter(tags=["Users"])
@@ -102,18 +103,15 @@ class SuggestionRequest(BaseModel):
 
 @router.post("/api/users/assignable/suggestions")
 def suggest_assignees(req: SuggestionRequest, user=Depends(require_can_assign)):
-    """Assignable personnel ranked by a 0-100 fit score: competency (profile
-    matching the task text), current workload, and a life-context guard for
-    off-hours tasks. See qualifications.score_candidates for the rules."""
+    """Assignable personnel ranked by a 0-100 fit score from their
+    certificates and skills (matched to the task text) and their current
+    workload. See qualifications.score_candidates for the rules."""
     db = connect_db()
     try:
         candidates = [r for r in _assignable_rows(db, user, req.target_role or "")
                       if r["is_active"]]
         task_text = " ".join(filter(None, [req.title, req.subject, req.instructions]))
-        timing = task_timing(req.start_date, req.end_date, req.due_time,
-                             req.task_category or "common")
-        return score_candidates(db, candidates, task_text, req.task_category or "common",
-                                timing)
+        return score_candidates(db, candidates, task_text)
     finally:
         db.close()
 
@@ -135,13 +133,9 @@ def create_user(req: CreateUserRequest, request: Request,
         raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
     db = connect_db()
     try:
-        db.execute(
-            "INSERT INTO users (username,password_hash,first_name,last_name,role,grade_level_id) "
-            "VALUES (?,?,?,?,?,?)",
-            (req.username, hash_password(req.password), req.first_name.strip(),
-             req.last_name.strip(), req.role, req.grade_level_id)
-        )
-        new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        new_id = store.create_user(db, {
+            "username": req.username, "password_hash": hash_password(req.password), "role": req.role,
+            "first_name": req.first_name.strip(), "last_name": req.last_name.strip(), "grade_level_id": req.grade_level_id})
         audit.record(db, user, "account.create", "user", new_id,
                      f"Created account {req.username} as {req.role}",
                      changes={"role": [None, req.role]}, request=request)
@@ -191,9 +185,6 @@ class UpdateProfileRequest(BaseModel):
     email: Optional[str] = None
     phone_number: Optional[str] = None
     birthdate: Optional[date] = None             # YYYY-MM-DD
-    number_of_children: Optional[int] = Field(None, ge=0)
-    has_elderly_or_infant_care: Optional[bool] = None
-    overtime_opt_in: Optional[bool] = None
     skills: Optional[List[str]] = None
     education: Optional[EducationBody] = None
     date_of_appointment: Optional[date] = None   # YYYY-MM-DD
@@ -205,8 +196,7 @@ class UpdateProfileRequest(BaseModel):
 # the dynamic SET clause provably safe (defense in depth).
 _PROFILE_COLUMNS = {
     "first_name", "middle_name", "last_name", "suffix", "email", "phone_number",
-    "birthdate", "number_of_children", "date_of_appointment", "address",
-    "has_elderly_or_infant_care", "overtime_opt_in",
+    "birthdate", "date_of_appointment", "address",
 }
 
 
@@ -262,7 +252,7 @@ def _set_avatar(uid: int, url: Optional[str]) -> Optional[str]:
     db = connect_db()
     try:
         old = db.execute("SELECT avatar_url FROM users WHERE id=?", (uid,)).fetchone()
-        db.execute("UPDATE users SET avatar_url=? WHERE id=?", (url, uid))
+        store.update_user(db, uid, {"avatar_url": url})
         db.commit()
         return old[0] if old else None
     finally:
@@ -356,7 +346,7 @@ def remove_my_avatar(user=Depends(get_current_user)):
 
 
 @router.put("/api/users/me/profile")
-def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user)):
+def update_my_profile(req: UpdateProfileRequest, request: Request, user=Depends(get_current_user)):
     db = connect_db()
     try:
         try:
@@ -368,9 +358,6 @@ def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user))
         uid = int(user["sub"])
         updates = {k: v for k, v in req.dict().items()
                    if v is not None and k in _PROFILE_COLUMNS}
-        for flag in ("has_elderly_or_infant_care", "overtime_opt_in"):
-            if flag in updates:
-                updates[flag] = int(bool(updates[flag]))
         today = date.today()
         if req.birthdate and req.birthdate > today:
             raise HTTPException(400, "Birthdate can't be in the future")
@@ -388,16 +375,19 @@ def update_my_profile(req: UpdateProfileRequest, user=Depends(get_current_user))
             if col in updates:
                 updates[col] = updates[col].isoformat()
         if updates:
-            # full_name is a generated column, so it follows the name parts.
-            set_clause = ", ".join(f"{k}=?" for k in updates)
-            db.execute(f"UPDATE users SET {set_clause} WHERE id=?",
-                       list(updates.values()) + [uid])
+            # full_name is derived when read, so it follows the name parts.
+            store.update_user(db, uid, updates)
         if req.skills is not None:
             set_skills(db, uid, req.skills)
         # Certifications are added only by uploading a certificate
         # (/api/certificates), so they can be checked and verified.
         if req.education is not None:
             set_education(db, uid, req.education.dict())
+        # Which parts were sent, not their values (personal details stay out of the trail).
+        sent = sorted(k for k, v in req.dict(exclude_unset=True).items() if v is not None)
+        audit.record(db, user, "account.profile", "user", uid,
+                     "Updated own profile" + (f" ({', '.join(sent)})" if sent else ""),
+                     request=request)
         db.commit()
         return {"message": "Profile updated"}
     finally:
@@ -431,9 +421,9 @@ class GradeLevelRequest(BaseModel):
 def create_grade_level(req: GradeLevelRequest, user=Depends(require_admin)):
     db = connect_db()
     try:
-        db.execute("INSERT INTO grade_levels (grade_level) VALUES (?)", (req.grade_level,))
+        new_id = db.execute("INSERT INTO grade_levels (grade_level) VALUES (?)",
+                            (req.grade_level,)).lastrowid
         db.commit()
-        new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         db.close()
         return {"id": new_id}
     except Exception as e:

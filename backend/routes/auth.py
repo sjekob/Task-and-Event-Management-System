@@ -4,9 +4,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
+import audit
 from database import db_session
 from auth import (verify_password, create_token, get_current_user,
-                  permissions_for, assignable_roles_for)
+                  session_permissions, assignable_roles_for)
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -40,6 +41,16 @@ class LoginRequest(BaseModel):
     role: Optional[str] = None  # which identity to log in as (multi-role accounts)
 
 
+def _audit_login(db, actor, action: str, user_id: int, summary: str, request: Request):
+    """Record a sign-in (or failed attempt) in the audit trail. Never blocks the
+    sign-in itself if the entry can't be written."""
+    try:
+        audit.record(db, actor, action, "user", user_id, summary, request=request)
+        db.commit()
+    except Exception:
+        pass
+
+
 @router.post("/login")
 def login(req: LoginRequest, request: Request):
     key = _rate_limit_key(request, req.username)
@@ -49,6 +60,9 @@ def login(req: LoginRequest, request: Request):
         user = db.execute("SELECT * FROM users WHERE username=?", (req.username,)).fetchone()
         if not user or not verify_password(req.password, user["password_hash"]):
             _login_failures[key].append(time.time())
+            if user:
+                _audit_login(db, None, "auth.login_failed", user["id"],
+                             "Failed sign-in attempt (wrong password)", request)
             raise HTTPException(401, "Invalid credentials")
         if not user["is_active"]:
             raise HTTPException(403, "This account has been deactivated. Please contact the principal.")
@@ -79,7 +93,13 @@ def login(req: LoginRequest, request: Request):
     else:
         active_role = roles[0]
 
+    with db_session() as db:
+        _audit_login(db, {"sub": user["id"], "role": active_role}, "auth.login", user["id"],
+                     f"Signed in as {active_role}", request)
+
     token = create_token(user["id"], active_role)
+    with db_session() as db:
+        permissions = session_permissions(db, user["id"], active_role)
     return {"token": token, "user": {
         "id": user["id"], "username": user["username"],
         "full_name": user["full_name"], "role": active_role,
@@ -87,7 +107,7 @@ def login(req: LoginRequest, request: Request):
         "grade_level_id": user["grade_level_id"],
         "available_roles": roles,
         # Decided here, not by the client: what this session may do.
-        "permissions": permissions_for(active_role),
+        "permissions": permissions,
         "assignable_roles": assignable_roles_for(active_role),
     }}
 
@@ -104,6 +124,7 @@ def me(user=Depends(get_current_user)):
         ).fetchone()
         if not u:
             raise HTTPException(404, "User not found")
+        permissions = session_permissions(db, int(user["sub"]), user.get("role", u["role"]))
         roles = [r["roles"] for r in db.execute(
             """SELECT role AS roles FROM user_held_roles
                WHERE user_id=? ORDER BY role""", (user["sub"],)
@@ -112,6 +133,6 @@ def me(user=Depends(get_current_user)):
     # The active role comes from the session token, not the stored primary role.
     d["role"] = user.get("role", d["role"])
     d["available_roles"] = roles or [d["role"]]
-    d["permissions"] = permissions_for(d["role"])
+    d["permissions"] = permissions
     d["assignable_roles"] = assignable_roles_for(d["role"])
     return d

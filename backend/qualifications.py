@@ -1,5 +1,5 @@
-"""Personnel profiling (education, skills, certifications, number of children)
-and the assignee-suggestion scoring that uses it.
+"""Personnel profiling (education, skills, certifications) and the
+assignee-suggestion scoring that uses it.
 
 Reference data (dropdown options, taxonomy, task keyword mappings) lives in
 deped_profile.py. Skills and certifications are catalogs (skills →
@@ -8,39 +8,30 @@ certification_issuers). Skills are linked through user_skills and picked from
 the catalog; a person holds a certification when they have a submitted or
 verified certificate file for it (certificate_files).
 
-When a task is being assigned each candidate gets a FIT SCORE out of 100:
+When a task is being assigned each candidate gets a FIT SCORE out of 100,
+from three things only — their certificates, their skills, and how many
+tasks they already have (the workload heat map):
 
-  Competency match   0-60  profile signals below, scaled (COMPETENCY_FULL raw
-                           points = 60)
-  Active workload    0-30  minus WORKLOAD_STEP per open task and per upcoming
-                           approved event the person is running
-  Life-context guard 0-10  minus points when the task is off-hours (weekend,
-                           before 7 AM / after 5 PM, or multi-day) and the
-                           person has children or elderly/infant
-                           care at home, unless they opted in to overtime
+  Competency   0-70  certificates and skills that match the task (scaled:
+                     COMPETENCY_FULL raw points = 70)
+  Workload     0-30  minus WORKLOAD_STEP per assigned task not yet submitted
+                     in the current school year
 
-A person is flagged with a burden level (low / moderate / high) from their
-workload and any life-context conflict, so the assigner sees it before
-choosing them.
+A person is flagged with a burden level (low / moderate / high) from that
+workload, so the assigner sees it before choosing them. Education is shown
+on the profile but does not count toward the score.
 
 Competency signals, scored against the task text (title + subject +
-instructions). Strong signals (they make a person a "match"):
+instructions):
 
-  + SPECIALIZATION_WEIGHT     area of specialization fits the task (primary key)
   + CERT_WEIGHT  * match      a certification named in the task, or (x0.8)
                               a task its keywords say it suits (Standard First
                               Aid -> "clinic", "sports fest"); scaled by credibility
   + SKILL_WEIGHT * match      a skill named in the task, or (x0.8) a task its
                               keywords say it suits (Sports Coaching -> "intramurals")
-
-Supporting signals:
-
   + CERT_CATEGORY_WEIGHT      a held certification's category maps to the task
                               (e.g. Health & Safety → events, drills, clinic)
   + SKILL_CATEGORY_WEIGHT     a held skill's category maps to the task
-  + attainment bonus          evaluator / research chair / committee-head tasks
-  + POSTGRAD_*                governance, planning and report-drafting tasks
-  + ELEMENTARY_DEGREE_WEIGHT  BEEd holders on curriculum tasks
 
 `match` is the fraction of a name's keywords found in the task text, so
 "Standard First Aid" partly matches a task mentioning "first aid training".
@@ -53,14 +44,10 @@ from pydantic import BaseModel
 
 import deped_profile as dp
 
-SPECIALIZATION_WEIGHT = 12.0
 CERT_WEIGHT = 15.0
 SKILL_WEIGHT = 10.0
 CERT_CATEGORY_WEIGHT = 6.0
 SKILL_CATEGORY_WEIGHT = 4.0
-POSTGRAD_FOCUS_WEIGHT = 8.0       # postgraduate focus named in the task
-POSTGRAD_GOVERNANCE_WEIGHT = 5.0  # any postgraduate focus on a governance task
-ELEMENTARY_DEGREE_WEIGHT = 3.0
 MIN_MATCH = 0.5            # a name counts once half its keywords appear
 KEYWORD_MATCH = 0.8        # task fits one of the item's keywords (vs. naming it)
 
@@ -76,15 +63,11 @@ CREDIBILITY_LABEL = {
     "submitted": "pending review",
 }
 
-COMPETENCY_MAX = 60
-COMPETENCY_FULL = 20.0     # raw competency points that earn the full 60
+COMPETENCY_MAX = 70
+COMPETENCY_FULL = 20.0     # raw competency points that earn the full 70
 WORKLOAD_MAX = 30
-WORKLOAD_STEP = 6          # per open task / upcoming event
-LIFE_MAX = 10
-CHILDREN_GUARD = 5         # off-hours task, has children
-CARE_GUARD = 5             # off-hours task, elderly/infant care at home
-DAY_START, DAY_END = 7, 17  # regular school hours (24h clock)
-HIGH_BURDEN_ITEMS = 4      # open tasks + events that make the burden "high"
+WORKLOAD_STEP = 6          # per assigned task not yet submitted
+HIGH_BURDEN_ITEMS = 4      # open tasks that make the burden "high"
 
 _STOPWORDS = {
     "the", "and", "for", "with", "from", "into", "this", "that", "are", "was",
@@ -158,7 +141,7 @@ def _id(db, table: str, column: str, name: str) -> Optional[int]:
 
 def _get_or_create(db, table: str, column: str, name: str) -> int:
     # Name columns are COLLATE NOCASE, so "first aid" reuses "First Aid".
-    db.execute(f"INSERT OR IGNORE INTO {table} ({column}) VALUES (?)", (name,))
+    db.execute(f"INSERT INTO {table} ({column}) VALUES (?) ON CONFLICT DO NOTHING", (name,))
     return _id(db, table, column, name)
 
 
@@ -171,7 +154,7 @@ def _set_keywords(db, table: str, owner_id: int, keywords,
     for kw in have - wanted:
         db.execute(f"DELETE FROM {table} WHERE {owner_col}=? AND keyword=?", (owner_id, kw))
     for kw in wanted - have:
-        db.execute(f"INSERT OR IGNORE INTO {table} ({owner_col}, keyword) VALUES (?,?)",
+        db.execute(f"INSERT INTO {table} ({owner_col}, keyword) VALUES (?,?) ON CONFLICT DO NOTHING",
                    (owner_id, kw))
 
 
@@ -179,35 +162,34 @@ def seed_taxonomy(db):
     """Upsert the DepEd taxonomy. Existing catalog items only get blanks filled,
     so it is safe to run on every startup. Caller owns the commit."""
     for name, (desc, kws, _skills) in dp.SKILL_CATEGORIES.items():
-        db.execute("""INSERT INTO skill_categories (category_name, description) VALUES (?,?)
-                      ON CONFLICT(category_name) DO UPDATE SET description=excluded.description""",
-                   (name, desc))
+        db.execute("""INSERT INTO skill_category (category_name, description) VALUES (?,?)
+                      ON CONFLICT(category_name) DO UPDATE SET description=excluded.description""", (name, desc))
         _set_keywords(db, "skill_category_keywords",
                       _id(db, "skill_categories", "category_name", name), kws)
     for name, kws in dp.CERTIFICATION_CATEGORIES.items():
-        db.execute("INSERT OR IGNORE INTO certification_categories (category_name) VALUES (?)",
+        db.execute("INSERT INTO certification_categories (category_name) VALUES (?) "
+                   "ON CONFLICT DO NOTHING",
                    (name,))
         _set_keywords(db, "certification_category_keywords",
                       _id(db, "certification_categories", "category_name", name), kws)
     for name, acronym in dp.CERTIFICATION_ISSUERS:
-        db.execute("""INSERT INTO certification_issuers (issuer_name, acronym) VALUES (?,?)
+        db.execute("""INSERT INTO certification_issuer (issuer_name, acronym) VALUES (?,?)
                       ON CONFLICT(issuer_name) DO UPDATE
-                      SET acronym=COALESCE(acronym, excluded.acronym)""", (name, acronym))
+                      SET acronym=COALESCE(certification_issuer.acronym, excluded.acronym)""", (name, acronym))
 
     for cat, (_d, _k, skills) in dp.SKILL_CATEGORIES.items():
         cat_id = _id(db, "skill_categories", "category_name", cat)
         for s in skills:
-            db.execute("""INSERT INTO skills (skill_name, category_id) VALUES (?,?)
+            db.execute("""INSERT INTO skill (skill_name, category_id) VALUES (?,?)
                           ON CONFLICT(skill_name) DO UPDATE
-                          SET category_id=COALESCE(category_id, excluded.category_id)""",
-                       (s, cat_id))
+                          SET category_id=COALESCE(skill.category_id, excluded.category_id)""", (s, cat_id))
     for name, cat, issuer in dp.CERTIFICATIONS:
-        db.execute("""INSERT INTO certifications (cert_name, category_id, issuer_id) VALUES (?,?,?)
+        db.execute("""INSERT INTO certification (cert_name, category_id, issuer_id) VALUES (?,?,?)
                       ON CONFLICT(cert_name) DO UPDATE
-                      SET category_id=COALESCE(category_id, excluded.category_id),
-                          issuer_id=COALESCE(issuer_id, excluded.issuer_id)""",
+                      SET category_id=COALESCE(certification.category_id, excluded.category_id),
+                          issuer_id=COALESCE(certification.issuer_id, excluded.issuer_id)""",
                    (name, _id(db, "certification_categories", "category_name", cat),
-                    _id(db, "certification_issuers", "issuer_name", issuer)))
+                    _id(db, "certification_issuer", "issuer_name", issuer)))
 
     # What tasks each catalog skill / certification suits.
     for name, kws in dp.SKILL_KEYWORDS.items():
@@ -220,34 +202,6 @@ def seed_taxonomy(db):
             _set_keywords(db, "certification_keywords", cid, kws, owner_col="certification_id")
 
 
-def migrate_legacy_catalog(db):
-    """Earlier builds kept a free-text skills.category and
-    certifications.issuing_body; map them onto the taxonomy tables, then drop
-    the old columns. Caller owns the commit."""
-    skill_cols = [r[1] for r in db.execute("PRAGMA table_info(skills)")]
-    cert_cols = [r[1] for r in db.execute("PRAGMA table_info(certifications)")]
-    if "category" not in skill_cols and "issuing_body" not in cert_cols:
-        return
-    seed_taxonomy(db)
-    if "category" in skill_cols:
-        for sid, old in db.execute(
-                "SELECT id, category FROM skills WHERE category IS NOT NULL").fetchall():
-            new = dp.LEGACY_SKILL_CATEGORY.get(old, old)
-            db.execute("UPDATE skills SET category_id=COALESCE(category_id, ?) WHERE id=?",
-                       (_get_or_create(db, "skill_categories", "category_name", new), sid))
-        db.execute("ALTER TABLE skills DROP COLUMN category")
-    if "issuing_body" in cert_cols:
-        for cid, body in db.execute(
-                "SELECT id, issuing_body FROM certifications WHERE issuing_body IS NOT NULL"
-        ).fetchall():
-            body = dp.LEGACY_ISSUER_ALIASES.get(body, body)
-            row = db.execute("SELECT id FROM certification_issuers "
-                             "WHERE issuer_name=? OR acronym=?", (body, body)).fetchone()
-            iid = row[0] if row else _get_or_create(db, "certification_issuers",
-                                                    "issuer_name", body)
-            db.execute("UPDATE certifications SET issuer_id=COALESCE(issuer_id, ?) WHERE id=?",
-                       (iid, cid))
-        db.execute("ALTER TABLE certifications DROP COLUMN issuing_body")
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
@@ -332,9 +286,10 @@ def set_skills(db, uid: int, skills: Iterable[str]):
     validate_catalog_names first). Caller owns the commit."""
     db.execute("DELETE FROM user_skills WHERE user_id=?", (uid,))
     for s in clean_list(skills):
-        sid = _id(db, "skills", "skill_name", s)
+        sid = _id(db, "skill", "skill_name", s)
         if sid is not None:
-            db.execute("INSERT OR IGNORE INTO user_skills (user_id, skill_id) VALUES (?,?)",
+            db.execute("INSERT INTO user_skills (user_id, skill_id) VALUES (?,?) "
+                       "ON CONFLICT DO NOTHING",
                        (uid, sid))
 
 
@@ -360,6 +315,7 @@ def set_education(db, uid: int, education: dict):
     Call validate_education first. Caller owns the commit."""
     vals = {f: ((education[f] or "").strip() or None)
             for f in _EDU_FIELDS if education.get(f) is not None}
+    from store import set_education as store_education
     if not vals:
         return
     # A postgraduate focus only applies from "With Master's Units" up.
@@ -371,10 +327,7 @@ def set_education(db, uid: int, education: dict):
         attainment = row[0] if row else None
     if attainment not in dp.HIGHEST_ATTAINMENT[1:]:
         vals["postgraduate_focus"] = None
-    db.execute("INSERT OR IGNORE INTO education_background (user_id) VALUES (?)", (uid,))
-    db.execute(
-        f"UPDATE education_background SET {', '.join(f'{k}=?' for k in vals)}, "
-        "updated_at=CURRENT_TIMESTAMP WHERE user_id=?", list(vals.values()) + [uid])
+    store_education(db, uid, vals)
 
 
 # ── Suggestion scoring ────────────────────────────────────────────────────────
@@ -391,57 +344,6 @@ def _open_task_count(db, uid: int, window=None) -> int:
                              WHERE r.task_id=ta.task_id AND r.personnel_id=ta.user_id)""",
         (uid,)).fetchall()
     return sum(1 for r in rows if window is None or task_in_window(window, r))
-
-
-def _upcoming_event_count(db, uid: int) -> int:
-    """Approved events this person proposed/runs that haven't happened yet."""
-    from date_utils import parse_event_date
-    today = date.today()
-    n = 0
-    for (target,) in db.execute(
-            "SELECT target_date FROM events WHERE created_by=? AND status='approved'", (uid,)):
-        d = parse_event_date(target) if target else None
-        if d and d >= today:
-            n += 1
-    return n
-
-
-def _parse_day(value: Optional[str]) -> Optional[date]:
-    try:
-        return datetime.strptime((value or "").strip()[:10], "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
-def _parse_hour(value: Optional[str]) -> Optional[float]:
-    v = (value or "").strip().upper()
-    for fmt in ("%I:%M %p", "%H:%M", "%I %p"):
-        try:
-            t = datetime.strptime(v, fmt)
-            return t.hour + t.minute / 60
-        except ValueError:
-            continue
-    return None
-
-
-def task_timing(start_date: Optional[str], end_date: Optional[str],
-                due_time: Optional[str], task_category: str = "common") -> dict:
-    """Why a task falls outside regular duties (for the life-context guard):
-    {off_hours: [reasons], multi_day, weekend, late}."""
-    start, end = _parse_day(start_date), _parse_day(end_date)
-    hour = _parse_hour(due_time)
-    days = [d for d in (start, end) if d]
-    weekend = any(d.weekday() >= 5 for d in days)
-    multi_day = bool(start and end and (end - start).days >= 1)
-    late = hour is not None and (hour >= DAY_END or hour < DAY_START)
-    why = []
-    if weekend:
-        why.append("on a weekend")
-    if late:
-        why.append("outside school hours")
-    if multi_day:
-        why.append("spans several days")
-    return {"off_hours": why, "weekend": weekend, "late": late, "multi_day": multi_day}
 
 
 def _item_keywords(db, table: str, owner_col: str, name_table: str, name_col: str) -> dict:
@@ -484,13 +386,11 @@ def _category_keywords(db, table: str) -> dict:
     return out
 
 
-def score_candidates(db, candidates: List[dict], task_text: str,
-                     task_category: str = "common", timing: Optional[dict] = None) -> List[dict]:
+def score_candidates(db, candidates: List[dict], task_text: str) -> List[dict]:
     """Return the candidates (dicts with at least `id`) enriched with their
-    profile, fit score (0-100) and its three parts, `reasons` (why they fit),
+    profile, fit score (0-100) and its two parts, `reasons` (why they fit),
     `load_factors` and a burden level, best fit first."""
     task_words = keywords(task_text)
-    timing = timing or task_timing(None, None, None, task_category)
     from school_calendar import resolve_window
     window = resolve_window(db, "current")
     skill_cat_kw = _category_keywords(db, "skill_categories")
@@ -498,32 +398,13 @@ def score_candidates(db, candidates: List[dict], task_text: str,
     skill_kw = _item_keywords(db, "skill_keywords", "skill_id", "skills", "skill_name")
     cert_kw = _item_keywords(db, "certification_keywords", "certification_id",
                              "certifications", "cert_name")
-    leadership_task = _fits(dp.LEADERSHIP_KEYWORDS, task_words)
-    governance_task = _fits(dp.GOVERNANCE_KEYWORDS, task_words)
-    curriculum_task = _fits(dp.CURRICULUM_KEYWORDS, task_words)
 
     out = []
     for cand in candidates:
         uid = cand["id"]
         prof = get_qualifications(db, uid)
-        edu = prof["education"]
-        life = db.execute(
-            """SELECT number_of_children, has_elderly_or_infant_care, overtime_opt_in
-               FROM users WHERE id=?""", (uid,)).fetchone()
-        children = life[0] or 0
-        has_care, opt_in = bool(life[1]), bool(life[2])
         open_tasks = _open_task_count(db, uid, window)
-        upcoming_events = _upcoming_event_count(db, uid)
         score, reasons, load = 0.0, [], []
-
-        # Strong signals
-        spec = edu.get("specialization")
-        spec_match = bool(spec) and (
-            _fits(dp.SPECIALIZATIONS.get(spec, []), task_words)
-            or _match(spec, task_words) == 1.0)
-        if spec_match:
-            score += SPECIALIZATION_WEIGHT
-            reasons.append(f"Specialization: {spec}")
 
         # Certifications count by credibility (see CREDIBILITY_WEIGHT); the
         # reason says how credible each one is.
@@ -574,79 +455,29 @@ def score_candidates(db, candidates: List[dict], task_text: str,
                     if label == "certification":
                         related_certs.extend(n for n, _ in entries)
 
-        attainment = edu.get("highest_attainment")
-        if leadership_task and attainment in dp.HIGHEST_ATTAINMENT:
-            bonus = dp.ATTAINMENT_BONUS[dp.HIGHEST_ATTAINMENT.index(attainment)]
-            if bonus:
-                score += bonus
-                reasons.append(f"{attainment} — suited to evaluator/committee lead roles")
-
-        focus = edu.get("postgraduate_focus")
-        if focus:
-            if _match(focus, task_words) >= MIN_MATCH:
-                score += POSTGRAD_FOCUS_WEIGHT
-                reasons.append(f"Postgraduate focus: {focus}")
-            elif governance_task:
-                score += POSTGRAD_GOVERNANCE_WEIGHT
-                reasons.append(f"Postgraduate focus ({focus}) — governance/planning task")
-
-        if curriculum_task and edu.get("undergraduate_degree") in dp.ELEMENTARY_DEGREES:
-            score += ELEMENTARY_DEGREE_WEIGHT
-            reasons.append(f"{edu['undergraduate_degree']} — elementary curriculum training")
-
-        # ── Fit score: competency 0-60 + workload 0-30 + life context 0-10 ──
+        # ── Fit score: competency 0-70 + workload 0-30 ──
         competency = round(min(COMPETENCY_MAX, max(0.0, score) / COMPETENCY_FULL
                                * COMPETENCY_MAX), 1)
-
-        items = open_tasks + upcoming_events
-        workload = max(0, WORKLOAD_MAX - WORKLOAD_STEP * items)
+        workload = max(0, WORKLOAD_MAX - WORKLOAD_STEP * open_tasks)
         if open_tasks:
             load.append(f"{open_tasks} open {'task' if open_tasks == 1 else 'tasks'}")
-        if upcoming_events:
-            load.append(f"runs {upcoming_events} upcoming "
-                        f"{'event' if upcoming_events == 1 else 'events'}")
-
-        life_points, conflicts = LIFE_MAX, []
-        off = timing["off_hours"]
-        if off and not opt_in:
-            if children:
-                life_points -= CHILDREN_GUARD
-                conflicts.append(f"{children} {'child' if children == 1 else 'children'} "
-                                 f"(off-hours task)")
-            if has_care:
-                life_points -= CARE_GUARD
-                conflicts.append("family care at home (off-hours task)")
-        elif off and opt_in and (children or has_care):
-            reasons.append("Opted in to tasks beyond regular hours")
-        load.extend(conflicts)
-
-        if items >= HIGH_BURDEN_ITEMS or (conflicts and items >= 2) or len(conflicts) == 2:
-            burden = "high"
-        elif items >= 2 or conflicts:
-            burden = "moderate"
-        else:
-            burden = "low"
+        burden = "high" if open_tasks >= HIGH_BURDEN_ITEMS else "moderate" if open_tasks >= 2 else "low"
 
         out.append({
             **cand,
             **prof,
-            "number_of_children": children,
             "open_tasks": open_tasks,
             "matched_skills": matched_skills,
             "matched_certifications": matched_certs,
             "related_certifications": related_certs,
-            "specialization_match": spec_match,
-            "is_match": bool(spec_match or matched_skills or matched_certs),
-            "score": round(competency + workload + life_points, 1),
-            "fit": {"competency": competency, "workload": workload,
-                    "life_context": life_points},
-            "upcoming_events": upcoming_events,
+            "is_match": bool(matched_skills or matched_certs),
+            "score": round(competency + workload, 1),
+            "fit": {"competency": competency, "workload": workload},
             "burden": burden,
-            "off_hours": off,
             "reasons": reasons,
             "load_factors": load,
         })
-    # People whose profile fits the task come first (ordered by fit score, so
-    # workload and life context decide between them); the rest follow.
+    # People whose certificates or skills fit the task come first (ordered by
+    # fit score, so workload decides between them); the rest follow.
     out.sort(key=lambda d: (d["fit"]["competency"] <= 0, -d["score"], d.get("full_name") or ""))
     return out

@@ -8,7 +8,7 @@ Service map:
                    /api/certificates
   8002  personnel  /api/personnel
   8003  tasks      /api/tasks, /api/templates, /api/reports, /api/comments, /uploads
-  8004  events     /api/events
+  8004  events     /api/events, /api/deped-calendar
   8005  appraisal  /api/appraisal, /api/dashboard
 """
 import os
@@ -41,11 +41,13 @@ ROUTE_MAP: list[tuple[str, str]] = [
     ("/api/task-types",  AUTH_URL),
     ("/api/personnel",   PERSONNEL_URL),
     ("/api/templates",   TASKS_URL),
+    ("/api/upload",      TASKS_URL),   # task attachment files
     ("/api/reports",     TASKS_URL),
     ("/api/comments",    TASKS_URL),
     ("/api/tasks",       TASKS_URL),
     ("/uploads",         TASKS_URL),
     ("/api/events",      EVENTS_URL),
+    ("/api/deped-calendar", EVENTS_URL),
     ("/api/appraisal",   APPRAISAL_URL),
     ("/api/dashboard",   APPRAISAL_URL),
 ]
@@ -129,7 +131,7 @@ async def health():
 
 @app.api_route(
     "/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
 async def proxy(request: Request, path: str):
     url_path = request.url.path
@@ -156,7 +158,9 @@ async def proxy(request: Request, path: str):
 
     body = await request.body()
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    # Reading a proposal from page photos runs OCR on each page, which can take a while.
+    timeout = 180.0 if url_path.endswith("/read-proposal") else 30.0
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.request(
             method=request.method,
             url=dest,

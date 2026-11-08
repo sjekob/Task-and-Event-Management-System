@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 import audit
+import store
 from pydantic import BaseModel
 from typing import Optional, List
 from database import connect_db, create_notification
@@ -64,7 +65,10 @@ def _task_row(row, db, current_user_id: int, current_role: str):
         ).fetchone()
         d["submission_status"] = "submitted" if log else "pending"
 
-    if current_role in TASK_CREATORS or current_role == "admin":
+    # Anyone whose assignments it holds reviews them, e.g. a teacher advising a section.
+    assigner = db.execute("SELECT 1 FROM task_assignments WHERE task_id=? AND assigned_by=? AND user_id<>?",
+                          (d["id"], current_user_id, current_user_id)).fetchone() is not None
+    if current_role in TASK_CREATORS or current_role == "admin" or assigner:
         # The task's creator (and principal/admin) track everyone assigned; a
         # coordinator/dean who only delegated part of it tracks the people they
         # assigned. "Submitted" = a task_log entry or a report, as on My Tasks.
@@ -141,7 +145,14 @@ def list_tasks(user=Depends(get_current_user), search: str = "",
         raise HTTPException(400, str(e))
     role = user["role"]
 
-    if assigned:
+    if scope == "advisory":
+        # An adviser's tab: the calendar tasks whose submissions they review —
+        # their section's subject teachers, whose assignments they hold.
+        q = """SELECT DISTINCT t.* FROM tasks t
+               JOIN task_assignments ta ON ta.task_id=t.id
+               WHERE ta.assigned_by=? AND ta.user_id<>?"""
+        params = [uid, uid]
+    elif assigned:
         # Only tasks targeted at the identity (role) the user is logged in as —
         # plus legacy untargeted assignments (target_role IS NULL).
         q = """SELECT DISTINCT t.* FROM tasks t
@@ -160,11 +171,11 @@ def list_tasks(user=Depends(get_current_user), search: str = "",
         else:
             q = "SELECT * FROM tasks WHERE created_by=?"
             params = [uid]
-    elif role in ("coordinator", "dean"):
+    elif role in ("coordinator", "dean", "registrar"):
         q = """SELECT DISTINCT t.* FROM tasks t
                LEFT JOIN task_assignments ta ON ta.task_id=t.id
-               WHERE (ta.user_id=? OR t.created_by=?)"""
-        params = [uid, uid]
+               WHERE (ta.user_id=? OR t.created_by=? OR ta.assigned_by=?)"""
+        params = [uid, uid, uid]
     else:
         q = """SELECT DISTINCT t.* FROM tasks t
                JOIN task_assignments ta ON ta.task_id=t.id
@@ -174,7 +185,7 @@ def list_tasks(user=Depends(get_current_user), search: str = "",
     # Column prefix differs between the joined queries (alias t) and the plain ones.
     pref = "t." if "task_assignments" in q else ""
     if search:
-        q += f" AND {pref}title LIKE ?"
+        q += f" AND {pref}title ILIKE ?"
         params.append(f"%{search}%")
     if category:
         q += f" AND {pref}task_category=?"
@@ -346,11 +357,7 @@ def _assign_users(db, task_id: int, uid: int, role: str, user_ids, target_role,
                 or (role == "dean" and person["grade_level_id"] != dean_grade)):
             skipped.append(assign_uid)
             continue
-        try:
-            db.execute(
-                "INSERT INTO task_assignments (task_id, user_id, assigned_by, target_role) "
-                "VALUES (?,?,?,?)", (task_id, assign_uid, uid, row_target))
-        except Exception:
+        if not store.assign(db, task_id, assign_uid, uid, row_target):
             skipped.append(assign_uid)  # already assigned
             continue
         added.append(assign_uid)
@@ -362,35 +369,49 @@ def _assign_users(db, task_id: int, uid: int, role: str, user_ids, target_role,
     return added, skipped
 
 
+_ATTACHMENT_TYPES = ("file", "link", "gdrive", "youtube")
+
+
+def _add_attachments(db, task_id: int, attachments) -> None:
+    """Store the links/files attached to a task. The app sends the kind as
+    `attachment_type`; older clients sent `type`."""
+    for att in (attachments or []):
+        kind = att.get("attachment_type") or att.get("type")
+        if kind not in _ATTACHMENT_TYPES:
+            kind = "link"
+        if not att.get("url"):
+            continue
+        db.execute(
+            "INSERT INTO task_attachments (task_id, attachment_type, name, url) VALUES (?,?,?,?)",
+            (task_id, kind, (att.get("name") or "").strip() or att.get("url"), att.get("url"))
+        )
+
+
 @router.post("/api/tasks")
-def create_task(req: CreateTaskRequest, user=Depends(require_task_creator)):
+def create_task(req: CreateTaskRequest, request: Request, user=Depends(require_task_creator)):
     db = connect_db()
     uid = int(user["sub"])
     role = user["role"]
 
     category = req.task_category if req.task_category in ('common', 'special') else 'common'
-    db.execute(
-        """INSERT INTO tasks
-           (title, subject, task_category, task_type_id, start_date, end_date, due_time,
-            instructions, created_by, points_early, points_ontime, points_late24, points_after24)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (req.title, req.subject, category, req.task_type_id, req.start_date, req.end_date,
-         req.due_time, req.instructions, uid,
-         req.points_early, req.points_ontime, req.points_late24, req.points_after24)
-    )
-    task_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    task_id = store.create_task(db, {
+        "title": req.title, "subject": req.subject, "task_category": category, "task_type_id": req.task_type_id,
+        "start_date": req.start_date, "end_date": req.end_date, "due_time": req.due_time,
+        "instructions": req.instructions, "created_by": uid, "points_early": req.points_early,
+        "points_ontime": req.points_ontime, "points_late24": req.points_late24, "points_after24": req.points_after24})
 
     # Which identity these assignees receive the task as (see _assign_users).
     target_role = req.target_role if req.target_role and can_assign(role, req.target_role) else None
     _assign_users(db, task_id, uid, role, req.assigned_user_ids, target_role,
                   req.title, req.instructions or "")
 
-    for att in (req.attachments or []):
-        db.execute(
-            "INSERT INTO task_attachments (task_id, attachment_type, name, url) VALUES (?,?,?,?)",
-            (task_id, att.get("type"), att.get("name"), att.get("url"))
-        )
+    _add_attachments(db, task_id, req.attachments)
 
+    audit.record(db, user, "task.create", "task", task_id,
+                 f"Created {'special task' if category == 'special' else 'task'} {req.title}",
+                 changes={"assigned": [None, len(req.assigned_user_ids or [])],
+                          "due": [None, req.end_date]},
+                 request=request)
     db.commit()
     db.close()
     return {"id": task_id, "message": "Task created"}
@@ -405,10 +426,13 @@ class UpdateTaskRequest(BaseModel):
     due_time: Optional[str] = None
     instructions: Optional[str] = None
     status: Optional[str] = None
+    # Attachments added while editing (existing ones are kept).
+    attachments: Optional[List[dict]] = None
 
 
 @router.put("/api/tasks/{task_id}")
-def update_task(task_id: int, req: UpdateTaskRequest, user=Depends(require_task_creator)):
+def update_task(task_id: int, req: UpdateTaskRequest, request: Request,
+                user=Depends(require_task_creator)):
     db = connect_db()
     try:
         require_task_owner(db, task_id, user)
@@ -418,17 +442,27 @@ def update_task(task_id: int, req: UpdateTaskRequest, user=Depends(require_task_
     if req.status is not None and req.status not in ("active", "disabled"):
         db.close()
         raise HTTPException(400, "status must be 'active' or 'disabled'")
-    fields, vals = [], []
-    for f, v in [("title", req.title), ("subject", req.subject),
-                 ("task_type_id", req.task_type_id), ("start_date", req.start_date),
-                 ("end_date", req.end_date), ("due_time", req.due_time),
-                 ("instructions", req.instructions), ("status", req.status)]:
-        if v is not None:
-            fields.append(f"{f}=?")
-            vals.append(v)
+    fields = {f: v for f, v in [("title", req.title), ("subject", req.subject),
+                                ("task_type_id", req.task_type_id), ("start_date", req.start_date),
+                                ("end_date", req.end_date), ("due_time", req.due_time),
+                                ("instructions", req.instructions), ("status", req.status)] if v is not None}
     if fields:
-        vals.append(task_id)
-        db.execute(f"UPDATE tasks SET {','.join(fields)} WHERE id=?", vals)
+        before = dict(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
+        store.update_task(db, task_id, fields)
+        after = dict(db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
+        changes = audit.diff(before, after)
+        if changes:
+            status_only = set(changes) == {"status"}
+            audit.record(db, user,
+                         f"task.{after['status']}" if status_only and after["status"] == "disabled"
+                         else "task.update", "task", task_id,
+                         ("Disabled task " if status_only and after["status"] == "disabled"
+                          else "Re-enabled task " if status_only else "Edited task ") + after["title"],
+                         changes=changes, request=request)
+    if req.attachments:
+        _add_attachments(db, task_id, req.attachments)
+        audit.record(db, user, "task.update", "task", task_id,
+                     f"Added {len(req.attachments)} attachment(s)", request=request)
     db.commit()
     db.close()
     return {"message": "Updated"}
@@ -443,7 +477,7 @@ def delete_task(task_id: int, request: Request, user=Depends(require_task_creato
         db.close()
         raise
     t = db.execute("SELECT title FROM tasks WHERE id=?", (task_id,)).fetchone()
-    db.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    db.execute("DELETE FROM task WHERE id=?", (task_id,))
     audit.record(db, user, "task.delete", "task", task_id, f"Deleted task {t['title'] if t else ''}",
                  request=request)
     db.commit()

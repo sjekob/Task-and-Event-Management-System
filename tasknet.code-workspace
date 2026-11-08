@@ -1,32 +1,29 @@
 {
   "folders": [
-    { "name": "Frontend (Flutter)", "path": "./frontend" },
+    { "name": "Web (React)",        "path": "./clients/web" },
+    { "name": "Mobile (Expo)",      "path": "./clients/mobile" },
+    { "name": "Shared (MVC core)",  "path": "./clients/shared" },
     { "name": "Backend (FastAPI)",  "path": "./backend" }
   ],
   "settings": {
     "editor.formatOnSave": true,
     "editor.defaultFormatter": null,
-    "[dart]": {
-      "editor.defaultFormatter": "Dart-Code.dart-code",
-      "editor.rulers": [80]
-    },
     "[python]": {
       "editor.defaultFormatter": "ms-python.python"
     },
     "python.defaultInterpreterPath": "./backend/venv/bin/python",
-    "dart.flutterSdkPath": null,
     "files.exclude": {
       "**/__pycache__": true,
-      "**/.dart_tool": true,
+      "**/node_modules": true,
       "**/build": false
     }
   },
   "extensions": {
     "recommendations": [
-      "Dart-Code.flutter",
-      "Dart-Code.dart-code",
       "ms-python.python",
       "ms-python.pylance",
+      "dbaeumer.vscode-eslint",
+      "expo.vscode-expo-tools",
       "tamasfe.even-better-toml",
       "humao.rest-client",
       "rangav.vscode-thunder-client",
