@@ -4,7 +4,7 @@ import {
   ActionIcon, Affix, Badge, Box, Button, Grid, Group, Menu, Paper, SegmentedControl, Stack, Text, Title, Tooltip,
 } from '@mantine/core';
 import { modals } from '@mantine/modals';
-import { IconArrowsMaximize, IconDots, IconFileTypePdf, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconArrowsMaximize, IconDots, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api, approvalMessage, CURRENT_YEAR, LIVE_EVENT_QUERY, depedByDay, depedRangeLabel, isoDate, isReturnedEvent, parseEventDate, parseIsoDate, qk,
@@ -14,7 +14,6 @@ import {
 import { AppCalendar } from '../../components/AppCalendar';
 import { SchoolYearPicker } from '../../components/SchoolYearPicker';
 import { notifyError, notifySuccess, PageLoader } from '../../components/ui';
-import { printProposal } from '../../lib/printProposal';
 import { EventCalendarView } from './EventCalendarView';
 import { openReviewModal, type SendBack } from './EventReview';
 import { colors } from '../../theme';
@@ -85,9 +84,6 @@ export function useEventActions() {
       confirmProps: { color: 'red' },
       onConfirm: () => void run(() => api.events.remove(e.id), 'Draft deleted'),
     }),
-    async print(e: EventRecord) {
-      if (!(await printProposal(e))) notifyError(new Error('Allow pop-ups for this site to print the proposal.'));
-    },
   };
 }
 
@@ -161,13 +157,13 @@ export function EventsPage() {
       </Group>
       {all.length === 0 && <Paper p={40} radius="lg"><Text ta="center" size="sm" c="#718096">No events yet.</Text></Paper>}
       {section('Upcoming / Approved Events', shown.filter((e) => e.status === 'approved'), (e) => (
-        <EventCard key={e.id} event={e} onOpen={() => open(e)} onPrint={() => void actions.print(e)} />
+        <EventCard key={e.id} event={e} onOpen={() => open(e)} />
       ))}
       {section('Completed Events', shown.filter((e) => e.status === 'completed'), (e) => (
-        <EventCard key={e.id} event={e} onOpen={() => open(e)} onPrint={() => void actions.print(e)} />
+        <EventCard key={e.id} event={e} onOpen={() => open(e)} />
       ))}
       {section('Pending Approval', shown.filter((e) => e.status === 'pending_approval'), (e) => (
-        <EventCard key={e.id} event={e} onOpen={() => open(e)} onPrint={() => void actions.print(e)}
+        <EventCard key={e.id} event={e} onOpen={() => open(e)}
           menu={isPrincipal && canApprove ? (
             <>
               <Menu.Item c="#48BB78" onClick={() => void actions.approve(e)}>Approve</Menu.Item>
@@ -179,14 +175,14 @@ export function EventsPage() {
           ) : canManage ? <Menu.Item onClick={() => navigate(`/events/${e.id}/edit`)}>Edit</Menu.Item> : null} />
       ))}
       {section(isPrincipal ? 'Returned to Proponents' : 'Returned for Revision', returned, (e) => (
-        <EventCard key={e.id} event={e} onOpen={() => open(e)} onPrint={() => void actions.print(e)}
+        <EventCard key={e.id} event={e} onOpen={() => open(e)}
           right={!isPrincipal && canManage && e.created_by === user.id && (
             <Button variant="subtle" color="orange" size="compact-sm"
               onClick={(ev) => { ev.stopPropagation(); navigate(`/events/${e.id}/edit`); }}>Revise &amp; resubmit</Button>
           )} />
       ))}
       {tab === 'all' && section('Disabled Events', disabled, (e) => (
-        <EventCard key={e.id} event={e} disabled onOpen={() => open(e)} onPrint={() => void actions.print(e)}
+        <EventCard key={e.id} event={e} disabled onOpen={() => open(e)}
           right={canManage && (
             <Button variant="subtle" color="green" size="compact-sm"
               onClick={(ev) => { ev.stopPropagation(); void actions.enable(e); }}>Enable</Button>
@@ -254,8 +250,8 @@ export function EventsPage() {
   );
 }
 
-function EventCard({ event: e, onOpen, onPrint, menu, right, disabled }: {
-  event: EventRecord; onOpen: () => void; onPrint: () => void; menu?: ReactNode; right?: ReactNode; disabled?: boolean;
+function EventCard({ event: e, onOpen, menu, right, disabled }: {
+  event: EventRecord; onOpen: () => void; menu?: ReactNode; right?: ReactNode; disabled?: boolean;
 }) {
   return (
     <Paper radius="lg" px={18} py={14} role="link" tabIndex={0} onClick={onOpen}
@@ -270,12 +266,6 @@ function EventCard({ event: e, onOpen, onPrint, menu, right, disabled }: {
           <Text size="xs" c={disabled ? '#B0B7C3' : '#718096'} mt={3} lineClamp={2}>{e.rationale || e.title}</Text>
           {!disabled && e.creator_name && <Text size="11px" c="#B0B7C3" mt={4}>By {e.creator_name}</Text>}
         </Box>
-        <Tooltip label="Print / Save as PDF">
-          <ActionIcon variant="subtle" color="gray" aria-label="Print / Save as PDF"
-            onClick={(ev) => { ev.stopPropagation(); onPrint(); }}>
-            <IconFileTypePdf size={18} />
-          </ActionIcon>
-        </Tooltip>
         {right}
         {menu && (
           <Menu position="bottom-end">

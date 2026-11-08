@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import {
   IconArrowBackUp, IconArrowLeft, IconBan, IconCircleX, IconHistory, IconUserCheck, IconBulb, IconCalendarEvent, IconCategory, IconChecklist, IconCircleCheck,
-  IconFlag, IconHierarchy2, IconId, IconListCheck, IconMapPin, IconPencil, IconPigMoney, IconPrinter,
+  IconFlag, IconHierarchy2, IconId, IconListCheck, IconMapPin, IconPencil, IconPigMoney,
   IconQrcode, IconRoute, IconSignature, IconTimeline, IconUser, IconUsersGroup, IconWallet, IconCash,
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
@@ -280,7 +280,6 @@ export function EventDetailPage() {
           {showDisable && <Button variant="outline" color="red" leftSection={<IconBan size={18} />} onClick={() => actions.disable(e)}>Disable event</Button>}
           {showEdit && <Button variant="default" leftSection={<IconPencil size={18} />} onClick={() => navigate(`/events/${e.id}/edit`)}>{returned ? 'Revise proposal' : 'Edit proposal'}</Button>}
           {showQr && <Button variant="default" leftSection={<IconQrcode size={18} />} onClick={() => setQrOpen(true)}>Attendance QR codes</Button>}
-          <Button variant="default" leftSection={<IconPrinter size={18} />} onClick={() => void actions.print(e)}>Print proposal</Button>
         </Group>
       </Panel>
 

@@ -15,7 +15,6 @@ import {
   Screen, SectionHeader, Segmented, T,
 } from '@/components/ui';
 import { WEB_BASE } from '@/lib/api';
-import { shareProposal } from '@/lib/printProposal';
 import { colors } from '@/theme';
 
 export default function EventDetailScreen() {
@@ -134,8 +133,6 @@ export default function EventDetailScreen() {
             onPress={() => void run('enable', () => api.events.enable(e.id), 'Event re-enabled')} />}
           {showQr && <Button title="Attendance QR codes" kind="outline" icon="qr-code-outline" onPress={() => setQr('attendance')} />}
           {showEvalQr && <Button title="Evaluation QR code" kind="outline" icon="star-outline" onPress={() => setQr('evaluation')} />}
-          <Button title="Print / share proposal" kind="outline" icon="print-outline" loading={busy === 'print'}
-            onPress={() => void run('print', () => shareProposal(e))} />
         </View>
 
         {sections.filter(([, raw]) => hasContent(raw)).map(([title, raw, fmt]) => (
