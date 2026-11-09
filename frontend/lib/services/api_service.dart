@@ -786,6 +786,19 @@ class ApiService {
     throw Exception(_detail(res, 'Failed to submit evaluation'));
   }
 
+  static Future<EventForAppraisal> submitPaperEvaluation(
+      int eventId, Map<String, dynamic> evalData) async {
+    final res = await _client.post(
+      Uri.parse('$baseUrl/api/appraisal/events/$eventId/paper-evaluation'),
+      headers: await _headers,
+      body: jsonEncode(evalData),
+    );
+    if (res.statusCode == 201 || res.statusCode == 200) {
+      return EventForAppraisal.fromJson(jsonDecode(res.body));
+    }
+    throw Exception(_detail(res, 'Failed to submit paper evaluation'));
+  }
+
   static Future<Map<String, dynamic>> getPerformanceSummary(
       {SchoolYearFilter filter = SchoolYearFilter.current}) async {
     final res = await _client.get(

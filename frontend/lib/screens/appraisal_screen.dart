@@ -1,5 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import '../widgets/skeleton_widgets.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -219,11 +221,23 @@ class _AppraisalScreenState extends State<AppraisalScreen> {
     _AppraisalTab.specialTasks => _SpecialTasksTab(
         tasks: _tasks, loading: _loadingTasks, error: _taskError,
         onRefresh: _loadTasks, onExport: _exportPerformanceSummary,
-        onEvaluated: (u) { setState(() { final i = _tasks.indexWhere((t) => t.id == u.id); if (i >= 0) _tasks[i] = u; }); }),
+        onEvaluated: (u) {
+          setState(() {
+            final i = _tasks.indexWhere((t) => t.id == u.id);
+            if (i >= 0) _tasks[i] = u;
+          });
+          _loadTasks();
+        }),
     _AppraisalTab.events => _EventsTab(
         events: _events, loading: _loadingEvents, error: _eventError,
         onRefresh: _loadEvents,
-        onEvaluated: (u) { setState(() { final i = _events.indexWhere((e) => e.id == u.id); if (i >= 0) _events[i] = u; }); }),
+        onEvaluated: (u) {
+          setState(() {
+            final i = _events.indexWhere((e) => e.id == u.id);
+            if (i >= 0) _events[i] = u;
+          });
+          _loadEvents();
+        }),
     _AppraisalTab.analytics => _AnalyticsTab(tasks: _tasks, events: _events),
   };
 }

@@ -988,6 +988,8 @@ class EventEvaluation {
   final int resourceScore;
   final String? feedbackComments;
   final String? dateSubmitted;
+  final String? imageUrl;
+  final bool isPaper;
 
   EventEvaluation({
     required this.id,
@@ -1001,6 +1003,8 @@ class EventEvaluation {
     required this.resourceScore,
     this.feedbackComments,
     this.dateSubmitted,
+    this.imageUrl,
+    this.isPaper = false,
   });
 
   factory EventEvaluation.fromJson(Map<String, dynamic> json) =>
@@ -1016,6 +1020,8 @@ class EventEvaluation {
         resourceScore: json['resource_score'] ?? 0,
         feedbackComments: json['feedback_comments']?.toString(),
         dateSubmitted: json['date_submitted']?.toString(),
+        imageUrl: json['image_url']?.toString(),
+        isPaper: json['is_paper'] == 1 || json['is_paper'] == true,
       );
 
   double get average =>

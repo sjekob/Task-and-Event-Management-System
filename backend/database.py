@@ -566,6 +566,8 @@ def _build_and_seed():
     _ensure_column(c, "events", "expected_attendees", "INTEGER")
     # Attendee evaluations are per activity; NULL = whole-event (public/supervisor).
     _ensure_column(c, "event_evaluations", "activity_index", "INTEGER")
+    _ensure_column(c, "event_evaluations", "image_url", "TEXT")
+    _ensure_column(c, "event_evaluations", "is_paper", "INTEGER DEFAULT 0")
     # Special tasks auto-created from attending an event activity.
     _ensure_column(c, "tasks", "source_event_id",
                    "INTEGER REFERENCES events(id) ON DELETE SET NULL")
