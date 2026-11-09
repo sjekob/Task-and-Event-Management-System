@@ -1,5 +1,5 @@
 import os
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, File, Form, Request, UploadFile
 import audit
 import store
 from pydantic import BaseModel
@@ -475,6 +475,47 @@ def evaluate_event(event_id: int, body: EventEvalBody, request: Request, db=Depe
     return _event_evaluation_row(
         db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone(), db
     )
+
+
+# ── Paper evaluations ─────────────────────────────────────────────────────────
+# An attendee filled in the printed evaluation form; staff record its ratings
+# here with a photo or scan of the form as proof (from Lok's appraisal update).
+
+@router.post("/events/{event_id}/paper-evaluation", status_code=201)
+async def submit_paper_evaluation(
+        event_id: int, request: Request,
+        image: UploadFile = File(...),
+        planning_score: int = Form(...), objectives_score: int = Form(...), personnel_score: int = Form(...),
+        time_mgmt_score: int = Form(...), engagement_score: int = Form(...), resource_score: int = Form(...),
+        evaluator_name: str = Form(""), evaluator_role: str = Form(""), evaluator_sex: str = Form(""),
+        evaluator_age_group: str = Form(""), evaluator_affiliation: str = Form(""), feedback_comments: str = Form(""),
+        db=Depends(get_db), user=Depends(require_appraisal_access)):
+    """Records a paper evaluation (six 1-5 ratings, who filled it in) with the
+    photo or scan of the form, which approvers can open from the results."""
+    from files import save_upload
+    from routes.public_evaluation import AGE_GROUPS, SEX_OPTIONS
+    row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    scores = [planning_score, objectives_score, personnel_score, time_mgmt_score, engagement_score, resource_score]
+    if not all(1 <= s <= 5 for s in scores):
+        raise HTTPException(400, "Every rating must be from 1 to 5.")
+    sex, age = evaluator_sex.strip() or None, evaluator_age_group.strip() or None
+    if sex and sex not in SEX_OPTIONS:
+        raise HTTPException(400, "Choose the evaluator's sex from the list.")
+    if age and age not in AGE_GROUPS:
+        raise HTTPException(400, "Choose the evaluator's age group from the list.")
+    if not (image.filename or "").lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".pdf")):
+        raise HTTPException(400, "Attach a photo (JPG, PNG) or a scanned PDF of the paper form.")
+    saved = await save_upload(image, prefix=f"paper_eval_{event_id}_")
+    store.add_evaluation(db, event_id, name=evaluator_name.strip()[:120] or "Paper evaluation",
+                         role=evaluator_role.strip()[:60] or "attendee", scores=scores, sex=sex, age_group=age,
+                         affiliation=evaluator_affiliation.strip()[:200] or None,
+                         feedback=feedback_comments.strip()[:2000] or None, is_paper=True, image_url=saved["url"])
+    audit.record(db, user, "event.paper_evaluation", "event", event_id,
+                 f"Recorded a paper evaluation for {row['title']}", request=request)
+    db.commit()
+    return _event_evaluation_row(db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone(), db)
 
 
 # ── Annual Faculty Performance Summary (feeds the PDF export) ─────────────────

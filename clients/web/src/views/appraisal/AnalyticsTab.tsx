@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { CalendarDays, ClipboardList, TrendingUp, Trophy, Users } from 'lucide-react';
 import { AppraisalAnalytics, AppraisalController } from '@shared/controllers/AppraisalControllers';
 import { Stat, TONE } from './common';
@@ -5,6 +6,9 @@ import { Stat, TONE } from './common';
 // Analytics tab: school-wide performance (principal/admin).
 export function AnalyticsTab({ c }: { c: AppraisalController }) {
   const a = AppraisalAnalytics.compute(c.state.tasks.items, c.state.events.items);
+  // Department or Individual performance (Lok's slide toggle).
+  const [mode, setMode] = useState<'department' | 'individual'>('department');
+  const list = mode === 'department' ? a.departments : a.individuals;
   return (
     <div className="col gap-16">
       <div className="grid-4">
@@ -29,13 +33,23 @@ export function AnalyticsTab({ c }: { c: AppraisalController }) {
       </div>
       <div className="grid-2">
         <div className="ap-card" style={{ padding: 20 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Department Performance</div>
-          {!a.departments.length ? <div className="body-md">No data yet.</div> : a.departments.map((d) => {
+          <div className="row between gap-12 wrap" style={{ marginBottom: 16 }}>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{mode === 'department' ? 'Department' : 'Individual'} Performance</span>
+            <div className="ap-slide" role="radiogroup" aria-label="Show performance by">
+              <span className="ap-slide-thumb" style={{ transform: mode === 'individual' ? 'translateX(100%)' : undefined }} />
+              <button role="radio" aria-checked={mode === 'department'} className={mode === 'department' ? 'on' : ''} onClick={() => setMode('department')}>Department</button>
+              <button role="radio" aria-checked={mode === 'individual'} className={mode === 'individual' ? 'on' : ''} onClick={() => setMode('individual')}>Individual</button>
+            </div>
+          </div>
+          {!list.length ? <div className="body-md">No data yet.</div> : list.map((d) => {
             const col = TONE[AppraisalAnalytics.deptTone(d.avg)];
+            const sub = mode === 'individual'
+              ? [d.dept, `${d.count} rated item${d.count === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
+              : `${d.count} rated item${d.count === 1 ? '' : 's'}`;
             return (
               <div key={d.name} style={{ marginBottom: 16 }}>
                 <div className="row">
-                  <div className="grow"><div style={{ fontSize: 13, fontWeight: 600 }}>{d.name}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.count} tasks evaluated</div></div>
+                  <div className="grow"><div style={{ fontSize: 13, fontWeight: 600 }}>{d.name}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{sub}</div></div>
                   <span className="row gap-4" style={{ color: col, fontSize: 13, fontWeight: 700 }}><TrendingUp size={14} />{d.avg.toFixed(1)}%</span>
                 </div>
                 <div className="progress mt-8" style={{ background: '#eeeeee' }}><div style={{ width: `${Math.min(100, d.avg)}%`, background: col }} /></div>
@@ -48,7 +62,7 @@ export function AnalyticsTab({ c }: { c: AppraisalController }) {
           {!a.performers.length ? <div className="body-md">No data yet.</div> : a.performers.map((p, i) => (
             <div key={p.name} className="row gap-10" style={{ marginBottom: 12 }}>
               <span className="avatar" style={{ width: 26, height: 26, fontSize: 10, background: AppraisalAnalytics.rankColor(i + 1) }}>#{i + 1}</span>
-              <div className="grow"><div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.count} task{p.count !== 1 ? 's' : ''}</div></div>
+              <div className="grow"><div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.count} rated item{p.count !== 1 ? 's' : ''}</div></div>
               <span style={{ fontSize: 13, fontWeight: 700, color: TONE[AppraisalAnalytics.performerTone(p.avg)] }}>{p.avg.toFixed(1)}%</span>
             </div>
           ))}

@@ -1,4 +1,4 @@
-import { ApiClient } from './ApiClient';
+import { ApiClient, FilePart } from './ApiClient';
 import { AppraisalBadge, BadgeLeader, EventForAppraisal, Json, PerformanceSummary, SchoolYearFilter, SpecialTask } from '../models';
 
 export class AppraisalService {
@@ -27,6 +27,13 @@ export class AppraisalService {
   async events(filter = SchoolYearFilter.current): Promise<EventForAppraisal[]> {
     const rows = await this.api.get<Json[]>('/api/appraisal/events', { query: filter.query, fallback: 'Failed to load events' });
     return rows.map(EventForAppraisal.fromJson);
+  }
+
+  /** Records a paper evaluation form: its ratings and details, with a photo or scan of it. */
+  async submitPaperEvaluation(eventId: number, fields: Record<string, string>, image: FilePart): Promise<EventForAppraisal> {
+    return EventForAppraisal.fromJson(await this.api.upload(`/api/appraisal/events/${eventId}/paper-evaluation`, image, {
+      field: 'image', fields, ok: [201, 200], timeoutMs: 120000, fallback: 'Failed to record the paper evaluation',
+    }));
   }
 
   async evaluateEvent(eventId: number, body: Json): Promise<EventForAppraisal> {

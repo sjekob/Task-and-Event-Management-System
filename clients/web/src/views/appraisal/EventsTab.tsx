@@ -1,10 +1,10 @@
 import { ReactNode, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { CalendarDays, ChevronRight, ClipboardCheck, ClipboardList, Info, Link2, Percent, QrCode, SlidersHorizontal, Users } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronRight, ClipboardCheck, ClipboardList, FileImage, Info, Link2, Percent, QrCode, SlidersHorizontal, Star, Users } from 'lucide-react';
 import { AppraisalController, EventAppraisal, SpecialTaskStats } from '@shared/controllers/AppraisalControllers';
 import { EventForAppraisal } from '@shared/models';
 import { IconButton, Modal } from '../../ui/kit';
-import { DemographicsDialog, EventRatingDialog, LinkDialog } from './EventDialogs';
+import { DemographicsDialog, EventRatingDialog, LinkDialog, PaperEvaluationDialog, ResultsDialog } from './EventDialogs';
 import { Chip, ErrorPanel, FilterDropdown, Stat, TONE, TabSkeleton } from './common';
 import { shareOrigin } from '../../app/shareOrigin';
 
@@ -17,6 +17,8 @@ export function EventsTab({ c }: { c: AppraisalController }) {
   const [link, setLink] = useState<EventForAppraisal | null>(null);
   const [demo, setDemo] = useState<EventForAppraisal | null>(null);
   const [results, setResults] = useState<EventForAppraisal | null>(null);
+  const [rating, setRating] = useState<EventForAppraisal | null>(null);
+  const [paper, setPaper] = useState<EventForAppraisal | null>(null);
   if (s.loading) return <TabSkeleton />;
   if (s.error) return <ErrorPanel message={s.error} onRetry={() => void c.loadEvents()} />;
   const cards = EventAppraisal.cards(s.items);
@@ -80,8 +82,14 @@ export function EventsTab({ c }: { c: AppraisalController }) {
           <div className="col gap-12 mt-16">
             <OptionCard icon={<QrCode size={20} />} title="Show QR Code" sub="Generate a QR code for attendees to scan on their devices" onClick={() => { setQr(options); setOptions(null); }} />
             <OptionCard icon={<Link2 size={20} />} title="Get Evaluation Link" sub="Copy the direct URL link to the evaluation web page" onClick={() => { setLink(options); setOptions(null); }} />
+            {c.canEvaluate && (
+              <>
+                <OptionCard icon={<FileImage size={20} />} title="Upload Paper Evaluation" sub="Upload a photo or scanned copy of a paper evaluation form to record it accurately" onClick={() => { setPaper(options); setOptions(null); }} />
+                <OptionCard icon={<Star size={20} />} title="Rate this event" sub="Give your own supervisor rating on the six criteria" onClick={() => { setRating(options); setOptions(null); }} />
+              </>
+            )}
             {options.evaluations.length > 0
-              ? <OptionCard icon={<ClipboardCheck size={20} />} title="View Results" sub={`See the ratings from ${options.evaluations.length} evaluation${options.evaluations.length === 1 ? '' : 's'}`} onClick={() => { setResults(options); setOptions(null); }} />
+              ? <OptionCard icon={<BarChart3 size={20} />} title="View Results" sub={`Aggregate summary and the ${options.evaluations.length} individual response${options.evaluations.length === 1 ? '' : 's'}`} onClick={() => { setResults(options); setOptions(null); }} />
               : <div className="caption" style={{ textAlign: 'center' }}>Results appear here once attendees submit evaluations.</div>}
           </div>
         </Modal>
@@ -99,7 +107,9 @@ export function EventsTab({ c }: { c: AppraisalController }) {
       )}
       {link && <LinkDialog event={link} onClose={() => setLink(null)} />}
       {demo && <DemographicsDialog event={demo} onClose={() => setDemo(null)} />}
-      {results && <EventRatingDialog event={results} onClose={(u) => { setResults(null); if (u) c.replaceEvent(u); }} />}
+      {results && <ResultsDialog event={results} onClose={() => setResults(null)} />}
+      {rating && <EventRatingDialog event={rating} onClose={(u) => { setRating(null); if (u) c.replaceEvent(u); }} />}
+      {paper && <PaperEvaluationDialog event={paper} onClose={(u) => { setPaper(null); if (u) c.replaceEvent(u); }} />}
     </div>
   );
 }

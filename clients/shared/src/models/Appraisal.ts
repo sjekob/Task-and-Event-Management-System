@@ -127,7 +127,21 @@ export class EventEvaluation {
         this.timeMgmtScore + this.engagementScore + this.resourceScore) / 6
     );
   }
+
+  /** Recorded from a paper form by staff, with a photo or scan of it ([imageUrl]). */
+  get isPaper() { return this.raw.is_paper === 1 || this.raw.is_paper === true; }
+  get imageUrl(): string | null { return R.optStr(this.raw.image_url); }
+  get evaluatorSex(): string | null { return R.optStr(this.raw.evaluator_sex); }
+  get evaluatorAgeGroup(): string | null { return R.optStr(this.raw.evaluator_age_group); }
+  get evaluatorAffiliation(): string | null { return R.optStr(this.raw.evaluator_affiliation); }
 }
+
+/** Who filled in an evaluation (same lists as the public form and the server). */
+export const EVALUATOR_ROLES = ['student', 'parent', 'external stakeholder', 'visitor', 'teacher', 'coordinator', 'dean', 'registrar', 'principal'];
+export const EVALUATOR_SEXES = ['Male', 'Female', 'Prefer not to say'];
+export const EVALUATOR_AGE_GROUPS = ['17 and below', '18-24', '25-34', '35-44', '45-54', '55 and above'];
+/** The 1-5 rating scale of the evaluation form. */
+export const RATING_LABELS: Record<number, string> = { 1: 'Poor', 2: 'Fair', 3: 'Good', 4: 'Very Good', 5: 'Excellent' };
 
 export const EVENT_CRITERIA: { key: keyof EventEvaluation & string; json: string; label: string }[] = [
   { key: 'planningScore', json: 'planning_score', label: 'Planning & Preparation' },
@@ -179,6 +193,17 @@ export class EventForAppraisal {
   get evidencyRate(): number {
     return (this.avgRating / 5) * 100;
   }
+
+  /** Average of each rubric criterion across the evaluations (the results' aggregate summary). */
+  get criterionAverages(): { label: string; avg: number }[] {
+    const n = this.evaluations.length;
+    return EVENT_CRITERIA.map((c) => ({
+      label: c.label,
+      avg: n ? this.evaluations.reduce((s, e) => s + Number(e[c.key]), 0) / n : 0,
+    }));
+  }
+
+  get paperCount() { return this.evaluations.filter((e) => e.isPaper).length; }
 
   get shortDate(): string {
     return this.targetDate?.split('T')[0] ?? '—';

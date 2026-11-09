@@ -418,6 +418,9 @@ CREATE TABLE IF NOT EXISTS evaluation (
     engagement_score      INTEGER NOT NULL CHECK(engagement_score BETWEEN 0 AND 5),
     resource_score        INTEGER NOT NULL CHECK(resource_score BETWEEN 0 AND 5),
     feedback_comments     TEXT,
+    -- A paper form recorded by staff, with a photo or scan of it as proof.
+    is_paper              INTEGER NOT NULL DEFAULT 0 CHECK(is_paper IN (0,1)),
+    image_url             TEXT,
     date_submitted        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 -- One public (QR) evaluation per email per event.
@@ -751,6 +754,9 @@ ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS end_time TEXT CHECK(end_tim
 -- The proponent's original proposal file, and whether they submitted it as is
 -- (without reviewing the form read from it): the approver reads the file.
 ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS proposal_file_url TEXT;
+-- Paper evaluations (a photo or scan of the filled-in form).
+ALTER TABLE IF EXISTS evaluation ADD COLUMN IF NOT EXISTS is_paper INTEGER NOT NULL DEFAULT 0 CHECK(is_paper IN (0,1));
+ALTER TABLE IF EXISTS evaluation ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS proposal_file_name TEXT;
 ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS submitted_as_file INTEGER NOT NULL DEFAULT 0 CHECK(submitted_as_file IN (0,1));
 """

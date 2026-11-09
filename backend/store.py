@@ -147,11 +147,13 @@ def claim_evaluation(db, attendance_id: int, stamp: str) -> bool:
 
 def add_evaluation(db, event_id: int, *, name: str, role: str, scores: list, sex: Optional[str] = None,
                    age_group: Optional[str] = None, account_id: Optional[int] = None, email: Optional[str] = None,
-                   feedback: Optional[str] = None, affiliation: Optional[str] = None, session: Optional[int] = None) -> int:
+                   feedback: Optional[str] = None, affiliation: Optional[str] = None, session: Optional[int] = None,
+                   is_paper: bool = False, image_url: Optional[str] = None) -> int:
     """One event evaluation; [scores] = planning, objectives, personnel, time management, engagement, resources."""
     keys = ("planning_score", "objectives_score", "personnel_score", "time_mgmt_score", "engagement_score", "resource_score")
     return insert(db, "evaluation", {
         "event_id": event_id, "evaluator_id": account_id, "evaluator_name": name, "evaluator_role": role,
         "evaluator_email": _value(email), "evaluator_sex": _value(sex), "evaluator_age_group": _value(age_group),
         "evaluator_affiliation": _value(affiliation), "activity_index": session, "feedback_comments": _value(feedback),
+        "is_paper": 1 if is_paper else 0, "image_url": _value(image_url),
         **dict(zip(keys, scores))})

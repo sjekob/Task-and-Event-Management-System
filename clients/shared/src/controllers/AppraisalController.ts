@@ -35,6 +35,8 @@ export class AppraisalController extends BaseController<AppraisalState> {
   /** Principal/admin aren't appraised themselves. */
   get showOwnBadges() { return this.user?.can('receive_tasks') ?? false; }
   get showLeaderboard() { return this.user?.can('evaluate_appraisal') ?? false; }
+  /** May rate events and record paper evaluations (the server checks the same permission). */
+  get canEvaluate() { return this.user?.can('evaluate_appraisal') ?? false; }
 
   load() {
     void this.loadSubmissions();

@@ -176,14 +176,30 @@ export class AppraisalAnalytics {
 
   static compute(tasks: SpecialTask[], events: EventForAppraisal[]) {
     const evaluated = tasks.filter((t) => t.evaluation?.weightedAverage != null);
-    const overallAvg = evaluated.length ? evaluated.reduce((a, t) => a + t.scoreOutOf100, 0) / evaluated.length : 0;
-    const uniquePersonnel = new Set(tasks.map((t) => t.assigneeId).filter((x) => x !== null)).size;
+    const ratedEvents = events.filter((e) => e.evaluations.length > 0);
+    // Every score on one 0-100 scale: rated special tasks, and each organizer's
+    // event evidency rate (Lok's combined performance).
+    const scored = [
+      ...evaluated.map((t) => ({ score: t.scoreOutOf100, person: t.assigneeName, dept: t.assigneeDepartment })),
+      ...ratedEvents.map((e) => ({ score: e.evidencyRate, person: e.organizerName, dept: e.department })),
+    ];
+    const overallAvg = scored.length ? scored.reduce((a, x) => a + x.score, 0) / scored.length : 0;
+    const named = (v: string | null | undefined) => (v ?? '').trim() && v !== '—' ? v!.trim() : null;
+    const uniquePersonnel = new Set(scored.map((x) => named(x.person)).filter(Boolean)).size;
     const eventEvalCount = events.reduce((a, e) => a + e.evaluations.length, 0);
-    const avgBy = (key: (t: SpecialTask) => string) => {
-      const m = new Map<string, number[]>();
-      for (const t of evaluated) m.set(key(t), [...(m.get(key(t)) ?? []), t.scoreOutOf100]);
-      return [...m.entries()].map(([name, v]) => ({ name, avg: v.reduce((a, b) => a + b, 0) / v.length, count: v.length })).sort((a, b) => b.avg - a.avg);
+    const avgBy = (key: (x: (typeof scored)[number]) => string | null) => {
+      const m = new Map<string, { scores: number[]; dept: string | null }>();
+      for (const x of scored) {
+        const k = key(x);
+        if (!k) continue;
+        const cur = m.get(k) ?? { scores: [], dept: named(x.dept) };
+        cur.scores.push(x.score);
+        m.set(k, cur);
+      }
+      return [...m.entries()].map(([name, v]) => ({ name, dept: v.dept, avg: v.scores.reduce((a, b) => a + b, 0) / v.scores.length, count: v.scores.length }))
+        .sort((a, b) => b.avg - a.avg);
     };
+    const people = avgBy((x) => named(x.person));
     const monthly = AppraisalAnalytics.MONTHS.map((m) => ({ month: m, scores: [] as number[] }));
     const idx: Record<number, number> = { 9: 0, 10: 1, 11: 2, 12: 3, 1: 4, 2: 5, 3: 6, 4: 7 };
     for (const t of evaluated) {
@@ -194,8 +210,11 @@ export class AppraisalAnalytics {
     }
     return {
       overallAvg, uniquePersonnel, evaluatedCount: evaluated.length, eventEvalCount,
-      departments: avgBy((t) => t.assigneeDepartment ?? 'Unknown'),
-      performers: avgBy((t) => t.assigneeName ?? 'Unknown').slice(0, 5),
+      /** Per department (special tasks and events), best first. */
+      departments: avgBy((x) => named(x.dept)),
+      /** Per person (special tasks they did, events they organized), best first: the Individual view. */
+      individuals: people,
+      performers: people.slice(0, 5),
       monthly: monthly.map((m) => ({ month: m.month, avg: m.scores.length ? Math.floor(m.scores.reduce((a, b) => a + b, 0) / m.scores.length) : 0 })),
     };
   }

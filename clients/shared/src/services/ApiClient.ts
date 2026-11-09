@@ -154,17 +154,18 @@ export class ApiClient {
   }
 
   /** Multipart upload of one file under the "file" field. */
-  upload<T = any>(path: string, file: FilePart, opts: RequestOptions & { field?: string } = {}): Promise<T> {
+  upload<T = any>(path: string, file: FilePart, opts: RequestOptions & { field?: string; fields?: Record<string, string> } = {}): Promise<T> {
     return this.uploadMany<T>(path, [file], opts);
   }
 
   /** Multipart upload of several files under one field (e.g. a proposal's page photos, in order). */
-  uploadMany<T = any>(path: string, files: FilePart[], opts: RequestOptions & { field?: string } = {}): Promise<T> {
+  uploadMany<T = any>(path: string, files: FilePart[], opts: RequestOptions & { field?: string; fields?: Record<string, string> } = {}): Promise<T> {
     return this.tracked('POST', opts, () => this.uploadNow<T>(path, files, opts));
   }
 
-  private async uploadNow<T>(path: string, files: FilePart[], opts: RequestOptions & { field?: string }): Promise<T> {
+  private async uploadNow<T>(path: string, files: FilePart[], opts: RequestOptions & { field?: string; fields?: Record<string, string> }): Promise<T> {
     const form = new FormData();
+    for (const [k, v] of Object.entries(opts.fields ?? {})) form.append(k, v);
     for (const file of files) {
       if (file.blob) {
         form.append(opts.field ?? 'file', file.blob, file.name);

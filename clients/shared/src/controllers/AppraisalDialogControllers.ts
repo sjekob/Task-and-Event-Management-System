@@ -1,5 +1,6 @@
 import { BaseController } from './BaseController';
 import { Services } from '../services';
+import { FilePart } from '../services/ApiClient';
 import { AppraisalBadge, BadgeLeader, EventForAppraisal, ipcrfRating, SchoolYearFilter, SpecialTask } from '../models';
 import { EVENT_RATING_CRITERIA } from './appraisalStats';
 
@@ -65,6 +66,65 @@ export class EventRatingController extends BaseController<{ scores: Record<strin
       return await this.services.appraisal.evaluateEvent(this.event.id, {
         evaluator_name: 'Evaluator', evaluator_role: 'Coordinator', ...this.state.scores, feedback_comments: this.state.comments.trim(),
       });
+    } finally {
+      this.setState({ submitting: false });
+    }
+  }
+}
+
+// ── Paper evaluations ────────────────────────────────────────────────────────
+
+type PaperState = {
+  image: FilePart | null;
+  name: string; role: string; sex: string; ageGroup: string; affiliation: string;
+  /** Rating per criterion (json key, e.g. planning_score), 1-5; 0 = not chosen yet. */
+  scores: Record<string, number>;
+  comments: string;
+  submitting: boolean;
+  error: string | null;
+};
+
+/**
+ * Records an evaluation that an attendee filled in on paper: a photo or scan
+ * of the form as proof, who filled it in, the six 1-5 ratings and remarks.
+ * (Ported from Lok's appraisal update.)
+ */
+export class PaperEvaluationController extends BaseController<PaperState> {
+  constructor(private readonly services: Services, readonly event: EventForAppraisal) {
+    super({
+      image: null, name: '', role: 'student', sex: '', ageGroup: '', affiliation: '',
+      scores: Object.fromEntries(EVENT_RATING_CRITERIA.map((c) => [c.key, 0])), comments: '', submitting: false, error: null,
+    });
+  }
+
+  set(patch: Partial<Pick<PaperState, 'name' | 'role' | 'sex' | 'ageGroup' | 'affiliation' | 'comments'>>) { this.setState({ ...patch, error: null }); }
+  setImage(image: FilePart | null) { this.setState({ image, error: null }); }
+  rate(key: string, v: number) { this.setState((s) => ({ scores: { ...s.scores, [key]: v }, error: null })); }
+
+  /** What's still missing (empty when it can be saved). */
+  get missing(): string[] {
+    const s = this.state;
+    const out: string[] = [];
+    if (!s.image) out.push('a photo or scan of the form');
+    const unrated = EVENT_RATING_CRITERIA.filter((c) => !(s.scores[c.key] >= 1));
+    if (unrated.length) out.push(unrated.length === EVENT_RATING_CRITERIA.length ? 'the ratings' : `${unrated.length} more rating${unrated.length === 1 ? '' : 's'}`);
+    return out;
+  }
+
+  /** Saves it; returns the event with its evaluations, or null (error in state). */
+  async submit(): Promise<EventForAppraisal | null> {
+    const s = this.state;
+    if (this.missing.length) { this.setState({ error: `Add ${this.missing.join(' and ')}.` }); return null; }
+    this.setState({ submitting: true, error: null });
+    try {
+      return await this.services.appraisal.submitPaperEvaluation(this.event.id, {
+        ...Object.fromEntries(Object.entries(s.scores).map(([k, v]) => [k, String(v)])),
+        evaluator_name: s.name.trim(), evaluator_role: s.role, evaluator_sex: s.sex, evaluator_age_group: s.ageGroup,
+        evaluator_affiliation: s.affiliation.trim(), feedback_comments: s.comments.trim(),
+      }, s.image!);
+    } catch (e) {
+      this.setState({ error: BaseController.messageOf(e, 'Could not record the paper evaluation') });
+      return null;
     } finally {
       this.setState({ submitting: false });
     }

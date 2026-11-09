@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { AppraisalController, EventAppraisal, SpecialTaskStats } from '@shared/controllers/AppraisalControllers';
 import { EventForAppraisal } from '@shared/models';
 import { Button, C, Card, Empty, IconButton, Row, T } from '../../ui/kit';
-import { DemographicsDialog, EvalLinkDialog, EventRatingDialog } from './EventDialogs';
+import { DemographicsDialog, EvalLinkDialog, EventRatingDialog, PaperEvaluationDialog, ResultsDialog } from './EventDialogs';
 import { Chip, ErrorPanel, FilterSelect, Line, Stat, StatGrid, TabSkeleton, TONE } from './common';
 
 const LEGEND = [['#16a34a', 'High (≥ 80%)'], ['#ea580c', 'Mid (50-79%)'], ['#ef4444', 'Low (< 50%)']] as const;
@@ -15,6 +15,8 @@ export function EventsTab({ c }: { c: AppraisalController }) {
   const [link, setLink] = useState<EventForAppraisal | null>(null);
   const [demo, setDemo] = useState<EventForAppraisal | null>(null);
   const [results, setResults] = useState<EventForAppraisal | null>(null);
+  const [rating, setRating] = useState<EventForAppraisal | null>(null);
+  const [paper, setPaper] = useState<EventForAppraisal | null>(null);
   const { cards, rows, titles } = useMemo(() => ({
     cards: EventAppraisal.cards(s.items),
     rows: title ? s.items.filter((e) => e.title === title) : s.items,
@@ -36,16 +38,22 @@ export function EventsTab({ c }: { c: AppraisalController }) {
       </Row>
       <FilterSelect label="All events" options={titles} selected={title} onSelect={setTitle} />
       {!rows.length ? <Empty icon="calendar" title="No events to show." /> : rows.map((e) => (
-        <EventCard key={e.id} e={e} onLink={() => setLink(e)} onDemo={() => setDemo(e)} onResults={() => setResults(e)} />
+        <EventCard key={e.id} e={e} onLink={() => setLink(e)} onDemo={() => setDemo(e)} onResults={() => setResults(e)}
+          canEvaluate={c.canEvaluate} onRate={() => setRating(e)} onPaper={() => setPaper(e)} />
       ))}
       {link && <EvalLinkDialog event={link} onClose={() => setLink(null)} />}
       {demo && <DemographicsDialog event={demo} onClose={() => setDemo(null)} />}
-      {results && <EventRatingDialog event={results} onClose={(u) => { setResults(null); if (u) c.replaceEvent(u); }} />}
+      {results && <ResultsDialog event={results} onClose={() => setResults(null)} />}
+      {rating && <EventRatingDialog event={rating} onClose={(u) => { setRating(null); if (u) c.replaceEvent(u); }} />}
+      {paper && <PaperEvaluationDialog event={paper} onClose={(u) => { setPaper(null); if (u) c.replaceEvent(u); }} />}
     </View>
   );
 }
 
-const EventCard = memo(function EventCard({ e, onLink, onDemo, onResults }: { e: EventForAppraisal; onLink: () => void; onDemo: () => void; onResults: () => void }) {
+const EventCard = memo(function EventCard({ e, onLink, onDemo, onResults, canEvaluate, onRate, onPaper }: {
+  e: EventForAppraisal; onLink: () => void; onDemo: () => void; onResults: () => void;
+  canEvaluate: boolean; onRate: () => void; onPaper: () => void;
+}) {
   const has = e.evaluations.length > 0;
   const col = has ? TONE[EventAppraisal.rateTone(e.evidencyRate)] : C.muted;
   return (
@@ -58,6 +66,8 @@ const EventCard = memo(function EventCard({ e, onLink, onDemo, onResults }: { e:
       <Row style={{ marginTop: 4 }}>
         <IconButton name="grid" label="Evaluation QR / link" color="#D92243" onPress={onLink} />
         <IconButton name="users" label="Evaluator demographics" color={has ? '#D92243' : '#bdbdbd'} onPress={onDemo} />
+        {canEvaluate && <IconButton name="camera" label="Upload paper evaluation" color="#D92243" onPress={onPaper} />}
+        {canEvaluate && <IconButton name="star" label="Rate this event" color="#D92243" onPress={onRate} />}
         <View style={{ flex: 1 }} />
         {has ? <Button size="sm" onPress={onResults}>View Results</Button> : <T size={12} color={C.muted}>No Data</T>}
       </Row>

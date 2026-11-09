@@ -1,14 +1,18 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { AppraisalAnalytics, AppraisalController } from '@shared/controllers/AppraisalControllers';
 import { C, Card, Progress, Row, T } from '../../ui/kit';
 import { Stat, StatGrid, TONE } from './common';
+import { Segmented } from './EventDialogs';
 
 /** School-wide performance (principal/admin). */
 export function AnalyticsTab({ c }: { c: AppraisalController }) {
   const tasks = c.state.tasks.items;
   const events = c.state.events.items;
   const a = useMemo(() => AppraisalAnalytics.compute(tasks, events), [tasks, events]);
+  // Department or Individual performance (Lok's toggle).
+  const [mode, setMode] = useState<'department' | 'individual'>('department');
+  const list = mode === 'department' ? a.departments : a.individuals;
   return (
     <View style={{ gap: 14 }}>
       <StatGrid>
@@ -29,12 +33,14 @@ export function AnalyticsTab({ c }: { c: AppraisalController }) {
         </Row>
       </Card>
       <Card style={{ gap: 12 }}>
-        <T weight={700}>Department Performance</T>
-        {!a.departments.length ? <T color={C.muted}>No data yet.</T> : a.departments.map((d) => {
+        <T weight={700}>{mode === 'department' ? 'Department' : 'Individual'} Performance</T>
+        <Segmented value={mode} onChange={setMode} options={[{ value: 'department', label: 'Department' }, { value: 'individual', label: 'Individual' }]} />
+        {!list.length ? <T color={C.muted}>No data yet.</T> : list.map((d) => {
           const col = TONE[AppraisalAnalytics.deptTone(d.avg)];
+          const sub = [mode === 'individual' ? d.dept : null, `${d.count} rated item${d.count === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
           return (
             <View key={d.name} style={{ gap: 4 }}>
-              <Row><View style={{ flex: 1 }}><T size={13} weight={600}>{d.name}</T><T size={11} color={C.muted}>{d.count} tasks evaluated</T></View><T size={13} weight={700} color={col}>{d.avg.toFixed(1)}%</T></Row>
+              <Row><View style={{ flex: 1 }}><T size={13} weight={600}>{d.name}</T><T size={11} color={C.muted}>{sub}</T></View><T size={13} weight={700} color={col}>{d.avg.toFixed(1)}%</T></Row>
               <Progress value={Math.min(100, d.avg) / 100} color={col} />
             </View>
           );
@@ -45,7 +51,7 @@ export function AnalyticsTab({ c }: { c: AppraisalController }) {
         {!a.performers.length ? <T color={C.muted}>No data yet.</T> : a.performers.map((p, i) => (
           <Row key={p.name} gap={10}>
             <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: AppraisalAnalytics.rankColor(i + 1), alignItems: 'center', justifyContent: 'center' }}><T size={10} weight={700} color="#fff">#{i + 1}</T></View>
-            <View style={{ flex: 1 }}><T size={13} weight={600}>{p.name}</T><T size={11} color={C.muted}>{p.count} task{p.count !== 1 ? 's' : ''}</T></View>
+            <View style={{ flex: 1 }}><T size={13} weight={600}>{p.name}</T><T size={11} color={C.muted}>{p.count} rated item{p.count !== 1 ? 's' : ''}</T></View>
             <T size={13} weight={700} color={TONE[AppraisalAnalytics.performerTone(p.avg)]}>{p.avg.toFixed(1)}%</T>
           </Row>
         ))}
