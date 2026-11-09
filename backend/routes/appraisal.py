@@ -363,6 +363,27 @@ class EventEvalBody(BaseModel):
     engagement_score: int
     resource_score: int
     feedback_comments: Optional[str] = None
+    image_url: Optional[str] = None
+    is_paper: Optional[bool] = False
+    evaluator_sex: Optional[str] = None
+    evaluator_age_group: Optional[str] = None
+    evaluator_affiliation: Optional[str] = None
+
+
+class PaperEvalBody(BaseModel):
+    evaluator_name: Optional[str] = "Paper Evaluation"
+    evaluator_role: Optional[str] = "attendee"
+    evaluator_sex: Optional[str] = None
+    evaluator_age_group: Optional[str] = None
+    evaluator_affiliation: Optional[str] = None
+    planning_score: int
+    objectives_score: int
+    personnel_score: int
+    time_mgmt_score: int
+    engagement_score: int
+    resource_score: int
+    feedback_comments: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 @router.get("/events")
@@ -420,6 +441,43 @@ def evaluate_event(event_id: int, body: EventEvalBody, db=Depends(get_db),
          body.planning_score, body.objectives_score, body.personnel_score,
          body.time_mgmt_score, body.engagement_score, body.resource_score,
          body.feedback_comments.strip() if body.feedback_comments else None)
+    )
+    db.commit()
+    return _event_evaluation_row(
+        db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone(), db
+    )
+
+
+@router.post("/events/{event_id}/paper-evaluation", status_code=201)
+def submit_paper_evaluation(event_id: int, body: PaperEvalBody, db=Depends(get_db),
+                            user=Depends(require_appraisal_access)):
+    """Submit a paper evaluation recorded with an uploaded image or scan."""
+    row = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+
+    scores = [body.planning_score, body.objectives_score, body.personnel_score,
+              body.time_mgmt_score, body.engagement_score, body.resource_score]
+    if not all(1 <= s <= 5 for s in scores):
+        raise HTTPException(400, "All scores must be between 1 and 5")
+
+    name = (body.evaluator_name or "").strip() or "Paper Attendee"
+    role = (body.evaluator_role or "").strip() or "attendee"
+
+    db.execute(
+        """INSERT INTO event_evaluations
+           (event_id, evaluator_id, evaluator_name, evaluator_role,
+            evaluator_sex, evaluator_age_group, evaluator_affiliation,
+            planning_score, objectives_score, personnel_score,
+            time_mgmt_score, engagement_score, resource_score,
+            feedback_comments, image_url, is_paper)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+        (event_id, None, name, role,
+         body.evaluator_sex, body.evaluator_age_group, body.evaluator_affiliation,
+         body.planning_score, body.objectives_score, body.personnel_score,
+         body.time_mgmt_score, body.engagement_score, body.resource_score,
+         body.feedback_comments.strip() if body.feedback_comments else None,
+         body.image_url)
     )
     db.commit()
     return _event_evaluation_row(

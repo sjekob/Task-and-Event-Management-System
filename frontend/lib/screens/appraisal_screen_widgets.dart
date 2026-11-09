@@ -371,8 +371,8 @@ class _SpecialTasksTabState extends State<_SpecialTasksTab> {
   }
 
   Widget _buildStatCards() {
-    final evaluated = widget.tasks.where((t) => t.status == 'evaluated').length;
-    final flagged = widget.tasks.where((t) => t.status == 'flagged').length;
+    final evaluated = widget.tasks.where((t) => t.evaluation != null || t.status == 'evaluated').length;
+    final flagged = widget.tasks.where((t) => t.status == 'flagged' || (t.evaluation?.weightedAverage != null && t.evaluation!.weightedAverage! < 3.0)).length;
     final departments = widget.tasks.map((t) => t.assigneeDepartment ?? '').where((d) => d.isNotEmpty).toSet().length;
     double avgScore = 0;
     final evalTasks = widget.tasks.where((t) => t.evaluation?.weightedAverage != null).toList();
@@ -521,8 +521,8 @@ class _SpecialTasksTabState extends State<_SpecialTasksTab> {
 
   Widget _buildTableRow(SpecialTask task, int idx) {
     final id = 'ST${task.id.toString().padLeft(3, '0')}';
-    final isEvaluated = task.status == 'evaluated';
-    final isFlagged = task.status == 'flagged';
+    final isEvaluated = task.status == 'evaluated' || task.evaluation != null;
+    final isFlagged = task.status == 'flagged' || (task.evaluation?.weightedAverage != null && task.evaluation!.weightedAverage! < 3.0);
     final isNotSubmitted = task.status == 'not_submitted';
 
     return Container(
@@ -803,12 +803,27 @@ class _EvaluateSpecialTaskDialogState extends State<_EvaluateSpecialTaskDialog> 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Rating (Scale 1 - 5):', style: GoogleFonts.plusJakartaSans(
           fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-      const SizedBox(height: 14),
-      _RatingDropdownRow('Quality (Q):', _quality, (v) => setState(() => _quality = v)),
-      const SizedBox(height: 14),
-      _RatingDropdownRow('Efficiency (E):', _efficiency, (v) => setState(() => _efficiency = v)),
-      const SizedBox(height: 14),
-      _RatingDropdownRow('Timeliness (T):', _timeliness, (v) => setState(() => _timeliness = v)),
+      const SizedBox(height: 12),
+      _RatingDropdownRow(
+        'Quality (Q):',
+        _quality,
+        (v) => setState(() => _quality = v),
+        description: 'Measures completeness, accuracy, and adherence to standards (e.g., thorough documentation, verified MOVs, minimal revisions needed).',
+      ),
+      const SizedBox(height: 12),
+      _RatingDropdownRow(
+        'Efficiency (E):',
+        _efficiency,
+        (v) => setState(() => _efficiency = v),
+        description: 'Measures effective utilization of resources, effort, and initiative in meeting all task requirements and objectives.',
+      ),
+      const SizedBox(height: 12),
+      _RatingDropdownRow(
+        'Timeliness (T):',
+        _timeliness,
+        (v) => setState(() => _timeliness = v),
+        description: 'Measures completion and submission on or before the set deadline (e.g., submitted early, on time, or prompt turnaround).',
+      ),
       const SizedBox(height: 16),
       Text(
         _allRated
@@ -931,12 +946,22 @@ class _ViewSpecialTaskDialog extends StatelessWidget {
                   style: GoogleFonts.plusJakartaSans(
                       fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
               const SizedBox(height: 12),
-              _ScoreReadRow('Quality (Q)', ev.completionScore),
+              _ScoreReadRow(
+                'Quality (Q)',
+                ev.completionScore,
+                description: 'Measures completeness, accuracy, and adherence to standards (e.g., thorough documentation, verified MOVs, minimal revisions needed).',
+              ),
+              _ScoreReadRow(
+                'Efficiency (E)',
+                ev.initiativeScore,
+                description: 'Measures effective utilization of resources, effort, and initiative in meeting all task requirements and objectives.',
+              ),
+              _ScoreReadRow(
+                'Timeliness (T)',
+                ev.timelinessScore,
+                description: 'Measures completion and submission on or before the set deadline (e.g., submitted early, on time, or prompt turnaround).',
+              ),
               const SizedBox(height: 8),
-              _ScoreReadRow('Efficiency (E)', ev.initiativeScore),
-              const SizedBox(height: 8),
-              _ScoreReadRow('Timeliness (T)', ev.timelinessScore),
-              const SizedBox(height: 12),
               Row(children: [
                 Expanded(child: Text('Final IPCRF Score',
                     style: GoogleFonts.plusJakartaSans(
@@ -1038,8 +1063,9 @@ class _EventsTabState extends State<_EventsTab> {
   }
 
   Widget _buildStatCards() {
-    final pending = widget.events.where((e) => e.status == 'pending_approval').length;
-    final evaluated = widget.events.where((e) => e.evaluations.isNotEmpty).length;
+    final totalEvents = widget.events.length;
+    final ratedEvents = widget.events.where((e) => e.evaluations.isNotEmpty).length;
+    final awaitingRatings = widget.events.where((e) => _effectiveStatus(e) == 'awaiting_ratings').length;
     final withEvals = widget.events.where((e) => e.evaluations.isNotEmpty).toList();
     final avgPct = withEvals.isEmpty
         ? null
@@ -1048,13 +1074,13 @@ class _EventsTabState extends State<_EventsTab> {
     final avgLabel = avgPct == null ? '—' : '${avgPct.toStringAsFixed(0)}%';
     return Row(children: [
       Expanded(child: _AppraisalStatCard(
-          value: '${widget.events.length}', label: 'Total Events',
-          subtitle: '${widget.events.length} total · $pending awaiting ratings',
+          value: '$totalEvents', label: 'Total Events',
+          subtitle: '$totalEvents total · $awaitingRatings awaiting ratings',
           icon: Icons.event_note_outlined, iconColor: AppTheme.textMuted,
           iconBg: const Color(0xFFF3F4F6))),
       const SizedBox(width: 12),
       Expanded(child: _AppraisalStatCard(
-          value: '$evaluated', label: 'Rated Events',
+          value: '$ratedEvents', label: 'Rated Events',
           icon: Icons.assignment_turned_in_outlined, iconColor: const Color(0xFF10B981),
           iconBg: const Color(0xFFECFDF5))),
       const SizedBox(width: 12),
@@ -1138,7 +1164,7 @@ class _EventsTabState extends State<_EventsTab> {
         SizedBox(width: 90, child: Text('RESPONSES', style: style, textAlign: TextAlign.center)),
         SizedBox(width: 110, child: Text('EVIDENCY RATE', style: style, textAlign: TextAlign.center)),
         SizedBox(width: 130, child: Text('STATUS', style: style, textAlign: TextAlign.center)),
-        SizedBox(width: 100, child: Text('EVALUATION', style: style, textAlign: TextAlign.center)),
+        SizedBox(width: 100, child: Text('DEMOGRAPHICS', style: style, textAlign: TextAlign.center)),
         SizedBox(width: 120, child: Text('ACTION', style: style, textAlign: TextAlign.end)),
       ]),
     );
@@ -1177,15 +1203,8 @@ class _EventsTabState extends State<_EventsTab> {
             style: GoogleFonts.plusJakartaSans(
                 fontSize: 13, fontWeight: FontWeight.w700, color: pctColor)))),
         SizedBox(width: 130, child: Center(child: _StatusChip(status: _effectiveStatus(event)))),
-        SizedBox(width: 100, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          IconButton(
-            tooltip: 'Evaluation options',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            icon: const Icon(Icons.assignment_outlined, size: 20, color: Color(0xFF3B82F6)),
-            onPressed: () => _showEvaluationOptions(event),
-          ),
-          IconButton(
+        SizedBox(width: 100, child: Center(
+          child: IconButton(
             tooltip: 'Evaluator demographics',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
@@ -1194,29 +1213,37 @@ class _EventsTabState extends State<_EventsTab> {
             onPressed: () => showDialog<void>(
                 context: context, builder: (_) => _DemographicsDialog(event: event)),
           ),
-        ])),
+        )),
         SizedBox(width: 120, child: Align(
           alignment: Alignment.centerRight,
           child: hasEvals
               ? _ActionBtn(label: 'View Results', dark: true,
-                  onTap: () => _showEventEvalDialog(event))
-              : Text('No Data', style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12, color: AppTheme.textMuted)),
+                  onTap: () => _showEventResultsDialog(event))
+              : _ActionBtn(label: 'Evaluate', dark: false,
+                  onTap: () => _showEvaluationOptions(event)),
         )),
       ]),
     );
   }
 
   void _showEvaluationOptions(EventForAppraisal event) {
-    showDialog<void>(context: context, builder: (_) => _EvaluationOptionsDialog(event: event));
+    showDialog<void>(
+      context: context,
+      builder: (_) => _EvaluationOptionsDialog(
+        event: event,
+        onEvaluated: widget.onEvaluated,
+      ),
+    );
   }
 
-  void _showEventEvalDialog(EventForAppraisal event) async {
-    final updated = await showDialog<EventForAppraisal>(
+  void _showEventResultsDialog(EventForAppraisal event) {
+    showDialog<void>(
       context: context,
-      builder: (_) => _EventEvalDialog(event: event, onSubmitted: widget.onEvaluated),
+      builder: (_) => _EventResultsDialog(
+        event: event,
+        onEvaluated: widget.onEvaluated,
+      ),
     );
-    if (updated != null) widget.onEvaluated(updated);
   }
 
   String _fmtDate(String? raw) {
@@ -1225,138 +1252,6 @@ class _EventsTabState extends State<_EventsTab> {
       final dt = DateTime.parse(raw.split(' ').first);
       return '${dt.month}/${dt.day}/${dt.year}';
     } catch (_) { return raw; }
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Event Evaluation Dialog
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _EventEvalDialog extends StatefulWidget {
-  final EventForAppraisal event;
-  final ValueChanged<EventForAppraisal> onSubmitted;
-  const _EventEvalDialog({required this.event, required this.onSubmitted});
-  @override
-  State<_EventEvalDialog> createState() => _EventEvalDialogState();
-}
-
-class _EventEvalDialogState extends State<_EventEvalDialog> {
-  int _planning = 0, _objectives = 0, _personnel = 0,
-      _timeMgmt = 0, _engagement = 0, _resource = 0;
-  final _commentsCtrl = TextEditingController();
-  bool _submitting = false;
-
-  @override
-  void dispose() { _commentsCtrl.dispose(); super.dispose(); }
-
-  double get _average =>
-      (_planning + _objectives + _personnel + _timeMgmt + _engagement + _resource) / 6.0;
-
-  Future<void> _submit() async {
-    setState(() => _submitting = true);
-    try {
-      final updated = await ApiService.evaluateEvent(widget.event.id, {
-        'evaluator_name': 'Evaluator',
-        'evaluator_role': 'Coordinator',
-        'planning_score': _planning,
-        'objectives_score': _objectives,
-        'personnel_score': _personnel,
-        'time_mgmt_score': _timeMgmt,
-        'engagement_score': _engagement,
-        'resource_score': _resource,
-        'feedback_comments': _commentsCtrl.text.trim(),
-      });
-      widget.onSubmitted(updated);
-      if (mounted) Navigator.pop(context, updated);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 500, maxHeight: 680),
-        child: Column(children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: AppTheme.darkBanner,
-              borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(12), topRight: Radius.circular(12)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.rate_review_outlined, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Expanded(child: Text('Evaluate: ${widget.event.title}',
-                  style: const TextStyle(color: Colors.white, fontSize: 15,
-                      fontWeight: FontWeight.w700))),
-              IconButton(onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white, size: 18)),
-            ]),
-          ),
-          Expanded(child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Rating Criteria', style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.darkBanner)),
-              const SizedBox(height: 10),
-              _StarRatingRow('Planning & Preparation', _planning,
-                  (v) => setState(() => _planning = v)),
-              _StarRatingRow('Achievement of Objectives', _objectives,
-                  (v) => setState(() => _objectives = v)),
-              _StarRatingRow('Personnel Management', _personnel,
-                  (v) => setState(() => _personnel = v)),
-              _StarRatingRow('Time Management', _timeMgmt,
-                  (v) => setState(() => _timeMgmt = v)),
-              _StarRatingRow('Audience Engagement', _engagement,
-                  (v) => setState(() => _engagement = v)),
-              _StarRatingRow('Resource Management', _resource,
-                  (v) => setState(() => _resource = v)),
-              if (_planning > 0) ...[
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Text('Average Score: ${_average.toStringAsFixed(2)} / 5',
-                      style: const TextStyle(fontSize: 13,
-                          fontWeight: FontWeight.w600, color: Colors.blue)),
-                ),
-              ],
-              const SizedBox(height: 10),
-              TextField(controller: _commentsCtrl, maxLines: 6,
-                  decoration: InputDecoration(labelText: 'Comments (optional)',
-                      filled: true, fillColor: Colors.white,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)))),
-            ]),
-          )),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-              TextButton(onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel')),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: _submitting ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.darkBanner, foregroundColor: Colors.white),
-                child: _submitting
-                    ? const SizedBox(width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Submit'),
-              ),
-            ]),
-          ),
-        ]),
-      ),
-    );
   }
 }
 
@@ -1443,7 +1338,8 @@ class _EventQrDialog extends StatelessWidget {
 
 class _EvaluationOptionsDialog extends StatelessWidget {
   final EventForAppraisal event;
-  const _EvaluationOptionsDialog({required this.event});
+  final ValueChanged<EventForAppraisal>? onEvaluated;
+  const _EvaluationOptionsDialog({required this.event, this.onEvaluated});
 
   @override
   Widget build(BuildContext context) {
@@ -1451,7 +1347,7 @@ class _EvaluationOptionsDialog extends StatelessWidget {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        width: 360,
+        width: 380,
         padding: const EdgeInsets.all(24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
@@ -1494,6 +1390,22 @@ class _EvaluationOptionsDialog extends StatelessWidget {
             onTap: () {
               Navigator.pop(context);
               showDialog<void>(context: context, builder: (_) => _EvaluationLinkDialog(event: event));
+            },
+          ),
+          const SizedBox(height: 12),
+          _OptionCard(
+            icon: Icons.upload_file_rounded,
+            title: 'Upload Paper Evaluation',
+            subtitle: 'Upload a photo or scanned copy of a paper evaluation form to record it accurately',
+            onTap: () {
+              Navigator.pop(context);
+              showDialog<void>(
+                context: context,
+                builder: (_) => _UploadPaperEvaluationDialog(
+                  event: event,
+                  onEvaluated: onEvaluated,
+                ),
+              );
             },
           ),
         ]),
@@ -1614,6 +1526,1292 @@ class _EvaluationLinkDialog extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Upload Paper Evaluation Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _UploadPaperEvaluationDialog extends StatefulWidget {
+  final EventForAppraisal event;
+  final ValueChanged<EventForAppraisal>? onEvaluated;
+  const _UploadPaperEvaluationDialog({required this.event, this.onEvaluated});
+
+  @override
+  State<_UploadPaperEvaluationDialog> createState() => _UploadPaperEvaluationDialogState();
+}
+
+class _UploadPaperEvaluationDialogState extends State<_UploadPaperEvaluationDialog> {
+  Uint8List? _imageBytes;
+  String? _imageFileName;
+  final _nameCtrl = TextEditingController(text: 'Paper Evaluator');
+  String _selectedRole = 'Student';
+  int _planning = 5;
+  int _objectives = 5;
+  int _personnel = 5;
+  int _timeMgmt = 5;
+  int _engagement = 5;
+  int _resource = 5;
+  final _commentsCtrl = TextEditingController();
+  bool _submitting = false;
+  String? _error;
+
+  final List<String> _roles = ['Student', 'Faculty', 'Staff', 'Parent / Guest', 'Other'];
+
+  double get _average =>
+      (_planning + _objectives + _personnel + _timeMgmt + _engagement + _resource) / 6.0;
+
+  Future<void> _pickImage() async {
+    try {
+      final res = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['png', 'jpg', 'jpeg', 'webp'],
+        withData: true,
+      );
+      if (res != null && res.files.isNotEmpty) {
+        final file = res.files.first;
+        if (file.bytes != null) {
+          setState(() {
+            _imageBytes = file.bytes;
+            _imageFileName = file.name;
+          });
+        }
+      }
+    } catch (e) {
+      setState(() => _error = 'Could not select image: $e');
+    }
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+
+    try {
+      String? uploadedUrl;
+      if (_imageBytes != null && _imageFileName != null) {
+        final uploadRes = await ApiService.uploadAttachmentFile(_imageBytes!, _imageFileName!);
+        uploadedUrl = uploadRes['url'];
+      }
+
+      final payload = {
+        'evaluator_name': _nameCtrl.text.trim().isEmpty ? 'Paper Evaluator' : _nameCtrl.text.trim(),
+        'evaluator_role': _selectedRole,
+        'planning_score': _planning,
+        'objectives_score': _objectives,
+        'personnel_score': _personnel,
+        'time_mgmt_score': _timeMgmt,
+        'engagement_score': _engagement,
+        'resource_score': _resource,
+        'feedback_comments': _commentsCtrl.text.trim(),
+        'image_url': uploadedUrl,
+      };
+
+      final updated = await ApiService.submitPaperEvaluation(widget.event.id, payload);
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onEvaluated?.call(updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Paper evaluation recorded and proof attached successfully!'),
+          backgroundColor: Color(0xFF16A34A),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _error = e.toString().replaceAll('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 580,
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: const BoxDecoration(
+                color: AppTheme.darkBanner,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.document_scanner_outlined, color: Colors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Record Paper Evaluation: ${widget.event.title}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_error != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _error!,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: const Color(0xFFB91C1C),
+                          ),
+                        ),
+                      ),
+                    ],
+                    // Image upload box
+                    Text(
+                      'Paper Form Photo / Scan (Proof)',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    InkWell(
+                      onTap: _pickImage,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _imageBytes != null
+                                ? const Color(0xFF3B82F6)
+                                : const Color(0xFFCBD5E1),
+                            style: BorderStyle.solid,
+                          ),
+                        ),
+                        child: _imageBytes != null
+                            ? Column(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.memory(
+                                      _imageBytes!,
+                                      height: 140,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.check_circle, size: 16, color: Color(0xFF16A34A)),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        _imageFileName ?? 'Image selected',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      TextButton(
+                                        onPressed: _pickImage,
+                                        child: const Text('Change Image'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              )
+                            : Column(
+                                children: [
+                                  const Icon(Icons.add_photo_alternate_outlined,
+                                      size: 36, color: Color(0xFF3B82F6)),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Click to upload photo of the paper evaluation form',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Supports PNG, JPG, or JPEG. Scanned forms ensure accurate records.',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      color: AppTheme.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    // Evaluator details
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: _nameCtrl,
+                            decoration: InputDecoration(
+                              labelText: 'Evaluator Name (from paper)',
+                              hintText: 'e.g., Juan Dela Cruz or Paper Evaluator',
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedRole,
+                            items: _roles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                            onChanged: (v) {
+                              if (v != null) setState(() => _selectedRole = v);
+                            },
+                            decoration: InputDecoration(
+                              labelText: 'Role',
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      'Transcribed Ratings (1 to 5 Stars)',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _StarRatingRow('Planning & Preparation', _planning, (v) => setState(() => _planning = v)),
+                    _StarRatingRow('Achievement of Objectives', _objectives, (v) => setState(() => _objectives = v)),
+                    _StarRatingRow('Personnel Management', _personnel, (v) => setState(() => _personnel = v)),
+                    _StarRatingRow('Time Management', _timeMgmt, (v) => setState(() => _timeMgmt = v)),
+                    _StarRatingRow('Audience Engagement', _engagement, (v) => setState(() => _engagement = v)),
+                    _StarRatingRow('Resource Management', _resource, (v) => setState(() => _resource = v)),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Transcribed Score: ${_average.toStringAsFixed(2)} / 5.00 (${(_average / 5.0 * 100).toStringAsFixed(1)}%)',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF1D4ED8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _commentsCtrl,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        labelText: 'Transcribed Feedback / Comments (optional)',
+                        hintText: 'Enter any remarks written on the paper form...',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _submitting ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.darkBanner,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    child: _submitting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save Paper Evaluation'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Event Evaluation Results Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EventResultsDialog extends StatefulWidget {
+  final EventForAppraisal event;
+  final ValueChanged<EventForAppraisal>? onEvaluated;
+  const _EventResultsDialog({required this.event, this.onEvaluated});
+
+  @override
+  State<_EventResultsDialog> createState() => _EventResultsDialogState();
+}
+
+class _EventResultsDialogState extends State<_EventResultsDialog> {
+  int _activeTab = 0; // 0 = Aggregate Summary, 1 = Individual Responses
+  String _roleFilter = 'All';
+  final Set<int> _expandedIds = {};
+
+  final List<String> _roleOptions = [
+    'All',
+    'Teacher',
+    'Student',
+    'Coordinator',
+    'Dean',
+    'Principal',
+    'Registrar',
+    'Parent',
+    'Others',
+  ];
+
+  String _formatDate(String? raw) {
+    if (raw == null || raw.isEmpty) return '—';
+    try {
+      final dt = DateTime.parse(raw.split(' ').first);
+      final month = dt.month.toString().padLeft(2, '0');
+      final day = dt.day.toString().padLeft(2, '0');
+      return '${dt.year}-$month-$day';
+    } catch (_) {
+      return raw.split('T').first;
+    }
+  }
+
+  double get _overallEvidencyRate {
+    if (widget.event.evaluations.isEmpty) return 0.0;
+    final sum = widget.event.evaluations.map((e) => (e.average / 5.0 * 100.0)).reduce((a, b) => a + b);
+    return sum / widget.event.evaluations.length;
+  }
+
+  String _evidencySubtext(double pct) {
+    if (pct >= 80) return 'High Evidency';
+    if (pct >= 50) return 'Moderate Evidency';
+    return 'Low Evidency';
+  }
+
+  String _getInitials(String name) {
+    final clean = name.trim();
+    if (clean.isEmpty) return '??';
+    final parts = clean.split(RegExp(r'\s+'));
+    if (parts.length == 1) {
+      return clean.length >= 2 ? clean.substring(0, 2).toUpperCase() : clean.toUpperCase();
+    }
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  bool _matchesRole(EventEvaluation ev, String filter) {
+    if (filter == 'All') return true;
+    final role = (ev.evaluatorRole ?? '').toLowerCase().trim();
+    switch (filter) {
+      case 'Teacher':
+        return role.contains('teacher') || role.contains('faculty');
+      case 'Student':
+        return role.contains('student');
+      case 'Coordinator':
+        return role.contains('coordinator');
+      case 'Dean':
+        return role.contains('dean');
+      case 'Principal':
+        return role.contains('principal');
+      case 'Registrar':
+        return role.contains('registrar');
+      case 'Parent':
+        return role.contains('parent');
+      case 'Others':
+        return !role.contains('teacher') &&
+            !role.contains('faculty') &&
+            !role.contains('student') &&
+            !role.contains('coordinator') &&
+            !role.contains('dean') &&
+            !role.contains('principal') &&
+            !role.contains('registrar') &&
+            !role.contains('parent');
+      default:
+        return true;
+    }
+  }
+
+  List<EventEvaluation> get _filteredEvaluations {
+    return widget.event.evaluations.where((e) => _matchesRole(e, _roleFilter)).toList();
+  }
+
+  Widget _buildTabButton({
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final color = isSelected ? const Color(0xFF3B82F6) : const Color(0xFF64748B);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: isSelected ? const Color(0xFF3B82F6) : Colors.transparent,
+              width: 2.5,
+            ),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Text(
+        '$label: $value',
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF334155),
+        ),
+      ),
+    );
+  }
+
+  bool get _hasCriteriaData =>
+      widget.event.evaluations.any((e) =>
+          e.planningScore > 0 ||
+          e.objectivesScore > 0 ||
+          e.personnelScore > 0 ||
+          e.timeMgmtScore > 0 ||
+          e.engagementScore > 0 ||
+          e.resourceScore > 0);
+
+  double _avgCriteriaScore(int Function(EventEvaluation) selector) {
+    final rated = widget.event.evaluations.where((e) => selector(e) > 0).toList();
+    if (rated.isEmpty) return 0.0;
+    return rated.map((e) => selector(e).toDouble()).reduce((a, b) => a + b) / rated.length;
+  }
+
+  Widget _buildIndicatorItem(String title, double score) {
+    final pct = (score / 5.0 * 100).round();
+    final color = pct >= 80
+        ? const Color(0xFF16A34A)
+        : (pct >= 50 ? const Color(0xFFEA580C) : const Color(0xFFDC2626));
+    final subtext = pct >= 80 ? 'High Evidency' : (pct >= 50 ? 'Moderate Evidency' : 'Low Evidency');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF1E293B),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Text(
+                    '${score.toStringAsFixed(1)} / 5.0',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$pct%',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: (score / 5.0).clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: const Color(0xFFE2E8F0),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtext,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final evals = widget.event.evaluations;
+    final commentsList = evals.where((e) => e.feedbackComments != null && e.feedbackComments!.trim().isNotEmpty).toList();
+    final filtered = _filteredEvaluations;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 680,
+          maxHeight: MediaQuery.of(context).size.height * 0.88,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 20, 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.event.title,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1E293B),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Organizer: ${widget.event.organizerName ?? "—"} · ${widget.event.department ?? "General"} · ${_formatDate(widget.event.targetDate)}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Color(0xFF64748B), size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            // Navigation Tabs
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1.5)),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 24),
+                  _buildTabButton(
+                    icon: Icons.poll_outlined,
+                    label: 'Aggregate Summary',
+                    isSelected: _activeTab == 0,
+                    onTap: () => setState(() => _activeTab = 0),
+                  ),
+                  const SizedBox(width: 20),
+                  _buildTabButton(
+                    icon: Icons.people_alt_outlined,
+                    label: 'Individual Responses',
+                    isSelected: _activeTab == 1,
+                    onTap: () => setState(() => _activeTab = 1),
+                  ),
+                ],
+              ),
+            ),
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: _activeTab == 0
+                    ? _buildAggregateSummaryTab(evals, commentsList)
+                    : _buildIndividualResponsesTab(filtered),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAggregateSummaryTab(List<EventEvaluation> evals, List<EventEvaluation> commentsList) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Two Metric Cards Side by Side
+        Row(
+          children: [
+            // Overall Evidency Rate Card
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE6F4EA), // light green circle from screenshot
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: const Text(
+                        '%',
+                        style: TextStyle(
+                          color: Color(0xFF16A34A),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Overall Evidency Rate',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_overallEvidencyRate.toStringAsFixed(0)}%',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF16A34A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _evidencySubtext(_overallEvidencyRate),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Total Responses Card
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE8F0FE), // light blue circle from screenshot
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.people_alt_rounded,
+                        color: Color(0xFF2563EB),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Total Responses',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${evals.length}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF2563EB),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Evaluations submitted',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        // Section: Indicator-by-Indicator Performance
+        Text(
+          'Indicator-by-Indicator Performance',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          'Distribution of ratings and remarks across all ${evals.length} responses.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 12,
+            color: const Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (_hasCriteriaData) ...[
+          _buildIndicatorItem('Planning & Preparation', _avgCriteriaScore((e) => e.planningScore)),
+          _buildIndicatorItem('Achievement of Objectives', _avgCriteriaScore((e) => e.objectivesScore)),
+          _buildIndicatorItem('Personnel Management', _avgCriteriaScore((e) => e.personnelScore)),
+          _buildIndicatorItem('Time Management', _avgCriteriaScore((e) => e.timeMgmtScore)),
+          _buildIndicatorItem('Audience Engagement', _avgCriteriaScore((e) => e.engagementScore)),
+          _buildIndicatorItem('Resource Management', _avgCriteriaScore((e) => e.resourceScore)),
+        ] else
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'No indicator evaluations available.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+            ),
+          ),
+        const SizedBox(height: 32),
+        // Section: General Comments & Recommendations
+        Text(
+          'General Comments & Recommendations',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (commentsList.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'No comments or recommendations available.',
+              style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
+            ),
+          )
+        else
+          ...commentsList.map((ev) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9), // light cool blue-grey from screenshot
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${ev.evaluatorName.isEmpty ? "Attendee" : ev.evaluatorName} (${ev.evaluatorRole ?? "Attendee"}): ${ev.feedbackComments!.trim()}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: const Color(0xFF334155),
+                      ),
+                    ),
+                  ),
+                  if (ev.imageUrl != null && ev.imageUrl!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: InkWell(
+                        onTap: () {
+                          showDialog<void>(
+                            context: context,
+                            builder: (_) => _PaperImagePreviewDialog(
+                              imageUrl: ev.imageUrl!,
+                              title: '${widget.event.title} - ${ev.evaluatorName}',
+                            ),
+                          );
+                        },
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.photo_library_outlined, size: 14, color: Color(0xFF3B82F6)),
+                            SizedBox(width: 4),
+                            Text(
+                              'View paper',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF3B82F6),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildIndividualResponsesTab(List<EventEvaluation> filtered) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Showing X responses + Filter by Role Dropdown
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Showing ${filtered.length} responses',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+            Row(
+              children: [
+                Text(
+                  'Filter by Role:',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0).withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _roleFilter,
+                      isDense: true,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: const Color(0xFF1E293B),
+                      ),
+                      items: _roleOptions.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                      onChanged: (v) {
+                        if (v != null) setState(() => _roleFilter = v);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (filtered.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text(
+                'No responses matching the selected role.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+              ),
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: filtered.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, idx) {
+              final ev = filtered[idx];
+              final isExpanded = _expandedIds.contains(ev.id);
+              final rate = (ev.average / 5.0 * 100).round();
+              final rateColor = rate >= 80 ? const Color(0xFF16A34A) : const Color(0xFFEA580C);
+              final initials = _getInitials(ev.evaluatorName.isEmpty ? 'Attendee' : ev.evaluatorName);
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9), // exact light card style from screenshot
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: const Color(0xFF6B82A8), // steel blue from screenshot
+                          child: Text(
+                            initials,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                ev.evaluatorName.isEmpty ? 'Attendee #${idx + 1}' : ev.evaluatorName,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF1E293B),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                ev.evaluatorRole ?? 'Attendee',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '$rate%',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: rateColor,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  if (isExpanded) {
+                                    _expandedIds.remove(ev.id);
+                                  } else {
+                                    _expandedIds.add(ev.id);
+                                  }
+                                });
+                              },
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    isExpanded ? 'Hide details' : 'View details',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                  Icon(
+                                    isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                    size: 14,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    if (isExpanded) ...[
+                      const SizedBox(height: 12),
+                      const Divider(color: Color(0xFFCBD5E1), height: 1),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          _detailChip('Planning', '${ev.planningScore}/5'),
+                          _detailChip('Objectives', '${ev.objectivesScore}/5'),
+                          _detailChip('Personnel', '${ev.personnelScore}/5'),
+                          _detailChip('Time Mgmt', '${ev.timeMgmtScore}/5'),
+                          _detailChip('Engagement', '${ev.engagementScore}/5'),
+                          _detailChip('Resources', '${ev.resourceScore}/5'),
+                        ],
+                      ),
+                      if (ev.feedbackComments != null && ev.feedbackComments!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Remarks: "${ev.feedbackComments!.trim()}"',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            color: const Color(0xFF334155),
+                          ),
+                        ),
+                      ],
+                      if (ev.imageUrl != null && ev.imageUrl!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => _PaperImagePreviewDialog(
+                                imageUrl: ev.imageUrl!,
+                                title: '${widget.event.title} - ${ev.evaluatorName}',
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.photo_library_outlined, size: 14),
+                          label: const Text('View Scanned Paper Form'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF3B82F6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            textStyle: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scanned Paper Image Preview Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PaperImagePreviewDialog extends StatelessWidget {
+  final String imageUrl;
+  final String title;
+  const _PaperImagePreviewDialog({required this.imageUrl, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final fullUrl = imageUrl.startsWith('http')
+        ? imageUrl
+        : '${ApiService.baseUrl}$imageUrl';
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 820,
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Scanned Paper Evaluation Form',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: InteractiveViewer(
+                      child: Image.network(
+                        fullUrl,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (_, child, progress) {
+                          if (progress == null) return child;
+                          return const Center(child: CircularProgressIndicator());
+                        },
+                        errorBuilder: (_, err, __) => Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.broken_image_outlined, size: 48, color: Colors.grey),
+                              const SizedBox(height: 8),
+                              Text('Failed to load image: $err', style: AppTheme.bodySm),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Evidency Rate Legend Badge
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1652,42 +2850,82 @@ class _EvidencyBadge extends StatelessWidget {
 // Analytics Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _AnalyticsTab extends StatelessWidget {
+class _AnalyticsTab extends StatefulWidget {
   final List<SpecialTask> tasks;
   final List<EventForAppraisal> events;
   const _AnalyticsTab({required this.tasks, required this.events});
 
   @override
-  Widget build(BuildContext context) {
-    final evaluated = tasks.where((t) => t.evaluation?.weightedAverage != null).toList();
-    double overallAvg = 0;
-    if (evaluated.isNotEmpty) {
-      overallAvg = evaluated.map((t) => t.scoreOutOf100.toDouble())
-          .reduce((a, b) => a + b) / evaluated.length;
-    }
-    final uniquePersonnel = tasks.map((t) => t.assigneeId).whereType<int>().toSet().length;
-    final eventEvalCount = events.fold<int>(0, (s, e) => s + e.evaluations.length);
+  State<_AnalyticsTab> createState() => _AnalyticsTabState();
+}
 
-    // Department performance
-    final deptMap = <String, List<int>>{};
-    for (final t in evaluated) {
-      final dept = t.assigneeDepartment ?? 'Unknown';
-      deptMap.putIfAbsent(dept, () => []).add(t.scoreOutOf100);
+class _AnalyticsTabState extends State<_AnalyticsTab> {
+  int _perfMode = 0; // 0 = Department, 1 = Individual
+
+  @override
+  Widget build(BuildContext context) {
+    final evaluatedTasks = widget.tasks.where((t) => t.evaluation?.weightedAverage != null).toList();
+    final evaluatedEvents = widget.events.where((e) => e.evaluations.isNotEmpty).toList();
+
+    // Combined overall performance (Special tasks score + Event evidency rate)
+    final allScores = <double>[
+      ...evaluatedTasks.map((t) => t.scoreOutOf100.toDouble()),
+      ...evaluatedEvents.map((e) => e.evidencyRate),
+    ];
+    final double overallAvg =
+        allScores.isEmpty ? 0 : allScores.reduce((a, b) => a + b) / allScores.length;
+
+    // Unique personnel covered
+    final uniquePersonnel = <String>{
+      ...widget.tasks.map((t) => t.assigneeName).whereType<String>().where((n) => n.trim().isNotEmpty && n != '—'),
+      ...widget.events.map((e) => e.organizerName).whereType<String>().where((n) => n.trim().isNotEmpty && n != '—'),
+    }.length;
+
+    final totalEventEvals = widget.events.fold<int>(0, (s, e) => s + e.evaluations.length);
+
+    // Department performance combining special tasks and events
+    final deptMap = <String, List<double>>{};
+    for (final t in evaluatedTasks) {
+      final dept = t.assigneeDepartment?.trim();
+      if (dept != null && dept.isNotEmpty && dept != '—') {
+        deptMap.putIfAbsent(dept, () => []).add(t.scoreOutOf100.toDouble());
+      }
+    }
+    for (final e in evaluatedEvents) {
+      final dept = e.department?.trim();
+      if (dept != null && dept.isNotEmpty && dept != '—') {
+        deptMap.putIfAbsent(dept, () => []).add(e.evidencyRate);
+      }
     }
     final deptPerf = deptMap.entries.map((e) {
       final avg = e.value.reduce((a, b) => a + b) / e.value.length;
       return (dept: e.key, avg: avg, count: e.value.length);
     }).toList()..sort((a, b) => b.avg.compareTo(a.avg));
 
-    // Top performers
-    final personMap = <String, List<int>>{};
-    for (final t in evaluated) {
-      final name = t.assigneeName ?? 'Unknown';
-      personMap.putIfAbsent(name, () => []).add(t.scoreOutOf100);
+    // Individual performance combining special tasks and events
+    final personMap = <String, ({String? dept, List<double> scores})>{};
+    for (final t in evaluatedTasks) {
+      final name = t.assigneeName?.trim();
+      if (name != null && name.isNotEmpty && name != '—') {
+        final entry = personMap.putIfAbsent(name, () => (dept: t.assigneeDepartment?.trim(), scores: <double>[]));
+        entry.scores.add(t.scoreOutOf100.toDouble());
+      }
     }
+    for (final e in evaluatedEvents) {
+      final name = e.organizerName?.trim();
+      if (name != null && name.isNotEmpty && name != '—') {
+        final entry = personMap.putIfAbsent(name, () => (dept: e.department?.trim(), scores: <double>[]));
+        entry.scores.add(e.evidencyRate);
+      }
+    }
+    final individualPerf = personMap.entries.map((e) {
+      final avg = e.value.scores.reduce((a, b) => a + b) / e.value.scores.length;
+      return (name: e.key, dept: e.value.dept, avg: avg, count: e.value.scores.length);
+    }).toList()..sort((a, b) => b.avg.compareTo(a.avg));
+
     final topPerformers = personMap.entries.map((e) {
-      final avg = e.value.reduce((a, b) => a + b) / e.value.length;
-      return (name: e.key, avg: avg, count: e.value.length);
+      final avg = e.value.scores.reduce((a, b) => a + b) / e.value.scores.length;
+      return (name: e.key, avg: avg, count: e.value.scores.length);
     }).toList()..sort((a, b) => b.avg.compareTo(a.avg));
 
     return SingleChildScrollView(
@@ -1696,22 +2934,24 @@ class _AnalyticsTab extends StatelessWidget {
         Row(children: [
           Expanded(child: _AppraisalStatCard(
               value: overallAvg > 0 ? '${overallAvg.toStringAsFixed(1)}%' : '—',
-              label: 'Overall Performance', subLabel: 'Real-time avg',
+              label: 'Overall Performance', subLabel: 'Tasks & Events combined',
               icon: Icons.emoji_events_outlined, iconColor: const Color(0xFF10B981),
               iconBg: const Color(0xFFECFDF5))),
           const SizedBox(width: 12),
           Expanded(child: _AppraisalStatCard(
-              value: '$uniquePersonnel', label: 'Total Personnel', subLabel: 'In your scope',
+              value: '$uniquePersonnel', label: 'Total Personnel', subLabel: 'Faculty & organizers',
               icon: Icons.group_outlined, iconColor: const Color(0xFF3B82F6),
               iconBg: const Color(0xFFEFF6FF))),
           const SizedBox(width: 12),
           Expanded(child: _AppraisalStatCard(
-              value: '${evaluated.length}', label: 'Special Tasks', subLabel: 'Evaluated tasks',
+              value: '${evaluatedTasks.length}', label: 'Special Tasks',
+              subLabel: '${evaluatedTasks.length} of ${widget.tasks.length} evaluated',
               icon: Icons.assignment_outlined, iconColor: const Color(0xFFF59E0B),
               iconBg: const Color(0xFFFEF3C7))),
           const SizedBox(width: 12),
           Expanded(child: _AppraisalStatCard(
-              value: '$eventEvalCount', label: 'Events Evaluated', subLabel: 'Real-time count',
+              value: '${evaluatedEvents.length}', label: 'Events Evaluated',
+              subLabel: '$totalEventEvals attendee responses',
               icon: Icons.calendar_month_outlined, iconColor: const Color(0xFF8B5CF6),
               iconBg: const Color(0xFFEDE9FE))),
         ]),
@@ -1728,33 +2968,75 @@ class _AnalyticsTab extends StatelessWidget {
                 style: GoogleFonts.plusJakartaSans(
                     fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
             const SizedBox(height: 16),
-            _MonthlyTrendChart(tasks: tasks),
+            _MonthlyTrendChart(tasks: widget.tasks, events: widget.events),
           ]),
         ),
         const SizedBox(height: 16),
 
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Department Performance
+          // Department / Individual Performance with Slide Toggle Button
           Expanded(child: Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey.shade200)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Department Performance',
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _perfMode == 0 ? 'Department Performance' : 'Individual Performance',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _SlideToggleOption(
+                          label: 'Department',
+                          isSelected: _perfMode == 0,
+                          onTap: () => setState(() => _perfMode = 0),
+                        ),
+                        _SlideToggleOption(
+                          label: 'Individual',
+                          isSelected: _perfMode == 1,
+                          onTap: () => setState(() => _perfMode = 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
-              if (deptPerf.isEmpty)
-                Text('No data yet.', style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13, color: AppTheme.textMuted))
-              else
-                ...deptPerf.map((d) => _DeptPerformanceRow(
-                    dept: d.dept, avg: d.avg, count: d.count)),
+              if (_perfMode == 0) ...[
+                if (deptPerf.isEmpty)
+                  Text('No data yet.', style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13, color: AppTheme.textMuted))
+                else
+                  ...deptPerf.map((d) => _DeptPerformanceRow(
+                      dept: d.dept, avg: d.avg, count: d.count)),
+              ] else ...[
+                if (individualPerf.isEmpty)
+                  Text('No data yet.', style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13, color: AppTheme.textMuted))
+                else
+                  ...individualPerf.map((p) => _IndividualPerformanceRow(
+                      name: p.name,
+                      dept: p.dept,
+                      avg: p.avg,
+                      count: p.count)),
+              ],
             ]),
           )),
           const SizedBox(width: 16),
-          // Top Performers
+          // Top Performers (Preserved)
           Expanded(child: Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(color: Colors.white,
@@ -1781,24 +3063,81 @@ class _AnalyticsTab extends StatelessWidget {
   }
 }
 
+class _SlideToggleOption extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SlideToggleOption({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            color: isSelected ? AppTheme.textPrimary : AppTheme.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MonthlyTrendChart extends StatelessWidget {
   final List<SpecialTask> tasks;
-  const _MonthlyTrendChart({required this.tasks});
+  final List<EventForAppraisal> events;
+  const _MonthlyTrendChart({required this.tasks, required this.events});
 
   @override
   Widget build(BuildContext context) {
     final months = ['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'];
-    final now = DateTime.now();
     final monthScores = <String, List<int>>{};
     for (final m in months) { monthScores[m] = []; }
+
     for (final t in tasks) {
       if (t.evaluation?.weightedAverage == null) continue;
-      final dateStr = t.submittedDate ?? '';
+      final dateStr = t.submittedDate ?? t.dueDate ?? '';
       try {
         final dt = DateTime.parse(dateStr.split(' ').first);
         final key = _monthKey(dt);
         if (monthScores.containsKey(key)) {
           monthScores[key]!.add(t.scoreOutOf100);
+        }
+      } catch (_) {}
+    }
+
+    for (final e in events) {
+      if (e.evaluations.isEmpty) continue;
+      final dateStr = e.targetDate ?? '';
+      try {
+        final dt = DateTime.parse(dateStr.split(' ').first);
+        final key = _monthKey(dt);
+        if (monthScores.containsKey(key)) {
+          monthScores[key]!.add(e.evidencyRate.round());
         }
       } catch (_) {}
     }
@@ -1860,6 +3199,60 @@ class _DeptPerformanceRow extends StatelessWidget {
             Text(dept, style: GoogleFonts.plusJakartaSans(
                 fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
             Text('$count tasks evaluated', style: GoogleFonts.plusJakartaSans(
+                fontSize: 11, color: AppTheme.textMuted)),
+          ])),
+          Row(children: [
+            Icon(Icons.trending_up, size: 14, color: color),
+            const SizedBox(width: 2),
+            Text('${avg.toStringAsFixed(1)}%',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+          ]),
+        ]),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: pct.clamp(0.0, 1.0),
+            minHeight: 6,
+            backgroundColor: Colors.grey.shade200,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _IndividualPerformanceRow extends StatelessWidget {
+  final String name;
+  final String? dept;
+  final double avg;
+  final int count;
+  const _IndividualPerformanceRow({
+    required this.name,
+    this.dept,
+    required this.avg,
+    required this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = avg / 100.0;
+    final color = avg >= 80 ? const Color(0xFF22C55E)
+        : avg >= 60 ? const Color(0xFF3B82F6) : const Color(0xFFEF4444);
+    final subtitle = dept != null && dept!.isNotEmpty && dept != '—'
+        ? '$dept · $count task${count != 1 ? 's' : ''} evaluated'
+        : '$count task${count != 1 ? 's' : ''} evaluated';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: GoogleFonts.plusJakartaSans(
+                fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+            Text(subtitle, style: GoogleFonts.plusJakartaSans(
                 fontSize: 11, color: AppTheme.textMuted)),
           ])),
           Row(children: [
@@ -2333,47 +3726,91 @@ class _RatingDropdownRow extends StatelessWidget {
   final String label;
   final int value; // 0 = not chosen
   final ValueChanged<int> onChanged;
-  const _RatingDropdownRow(this.label, this.value, this.onChanged);
+  final String? description;
+  const _RatingDropdownRow(this.label, this.value, this.onChanged, {this.description});
 
   @override
-  Widget build(BuildContext context) => Row(children: [
-        Expanded(child: Text(label, style: GoogleFonts.plusJakartaSans(
-            fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary))),
-        SizedBox(
-          width: 250,
-          child: DropdownButtonFormField<int>(
-            value: value == 0 ? null : value,
-            isDense: true,
-            hint: Text('Select rating', style: GoogleFonts.plusJakartaSans(
-                fontSize: 13, color: AppTheme.textMuted)),
-            items: [
-              for (final e in _ratingLabels.entries)
-                DropdownMenuItem(value: e.key,
-                    child: Text('${e.key} - ${e.value}',
-                        style: GoogleFonts.plusJakartaSans(fontSize: 13))),
-            ],
-            onChanged: (v) { if (v != null) onChanged(v); },
-            decoration: InputDecoration(
-              filled: true, fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppTheme.borderColor)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppTheme.borderColor)),
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                  if (description != null) ...[
+                    const SizedBox(height: 3),
+                    Text(description!, style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11, color: AppTheme.textMuted, height: 1.35)),
+                  ],
+                ],
+              ),
             ),
-          ),
+            const SizedBox(width: 16),
+            SizedBox(
+              width: 250,
+              child: DropdownButtonFormField<int>(
+                value: value == 0 ? null : value,
+                isDense: true,
+                hint: Text('Select rating', style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13, color: AppTheme.textMuted)),
+                items: [
+                  for (final e in _ratingLabels.entries)
+                    DropdownMenuItem(value: e.key,
+                        child: Text('${e.key} - ${e.value}',
+                            style: GoogleFonts.plusJakartaSans(fontSize: 13))),
+                ],
+                onChanged: (v) { if (v != null) onChanged(v); },
+                decoration: InputDecoration(
+                  filled: true, fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.borderColor)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppTheme.borderColor)),
+                ),
+              ),
+            ),
+          ],
         ),
-      ]);
+      );
 }
 
-Widget _ScoreReadRow(String label, int score) => Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Row(children: [
-        Expanded(child: Text(label, style: GoogleFonts.plusJakartaSans(
-            fontSize: 13, color: AppTheme.textMuted))),
-        Text('$score', style: GoogleFonts.plusJakartaSans(
-            fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-      ]),
+Widget _ScoreReadRow(String label, int score, {String? description}) => Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                if (description != null) ...[
+                  const SizedBox(height: 2),
+                  Text(description, style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11, color: AppTheme.textMuted, height: 1.3)),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: Text('$score / 5', style: GoogleFonts.plusJakartaSans(
+                fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF1D4ED8))),
+          ),
+        ],
+      ),
     );
 
 /// "Attached MOVs" list: the files / links attached to the special task.
