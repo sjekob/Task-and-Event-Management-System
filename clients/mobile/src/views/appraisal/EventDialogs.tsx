@@ -61,7 +61,7 @@ export function EventRatingDialog({ event, onClose }: { event: EventForAppraisal
       {EVENT_RATING_CRITERIA.map((k) => (
         <View key={k.key} style={{ gap: 2 }}><T size={13} weight={600}>{k.label}</T><Stars value={s.scores[k.key]} onChange={(v) => c.rate(k.key, v)} /></View>
       ))}
-      {c.started && <View style={{ padding: 10, borderRadius: 8, backgroundColor: '#eff6ff' }}><T weight={600} color="#2563eb">Average Score: {c.average.toFixed(2)} / 5</T></View>}
+      {c.started && <View style={{ padding: 10, borderRadius: 8, backgroundColor: '#FCE8EC' }}><T weight={600} color="#D92243">Average Score: {c.average.toFixed(2)} / 5</T></View>}
       <Field label="Comments (optional)"><Input multiline rows={4} value={s.comments} onChangeText={(v) => c.setComments(v)} /></Field>
     </Modal>
   );

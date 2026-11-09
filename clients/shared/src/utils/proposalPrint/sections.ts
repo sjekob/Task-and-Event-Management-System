@@ -32,6 +32,9 @@ export function parseJson(raw: unknown): any {
   return typeof raw === 'string' ? JSON.parse(raw) : raw;
 }
 
+/** The Methodology's opening paragraph when the proponent hasn't written their own. */
+export const DEFAULT_METHODOLOGY_INTRO = 'The training shall be composed of lectures, video clip viewing, sharing and games. 5E’s approach shall be utilized for most of the sessions. The schedule will be as follows:';
+
 export function _paragraphs(text: string): string {
   if (!text.trim()) return '';
   return text.split(/\n\n+/).filter((p) => p.trim()).map((p) => `<p>${_esc(p.trim()).replace(/\n/g, ' ')}</p>`).join('\n');

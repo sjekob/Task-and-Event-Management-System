@@ -1,7 +1,11 @@
+import { useState } from 'react';
+import { View } from 'react-native';
 import { MemberRow, MemberText, ProposalFormController } from '@shared/controllers/EventControllers';
 import { memberResult } from '@shared/controllers/proposalReading';
-import { Badge, C, Check, Field, Input, Row, Select, T } from '../../ui/kit';
+import { Badge, Button, C, Field, Icon, Input, Row, Select, T } from '../../ui/kit';
+import { CommitteeSuggest } from './CommitteeSuggest';
 import { AddBtn, Note, RichPlain, RowCard, RowList, StepTitle } from './EventFormFields';
+import { SpecialTasksSheet } from './SpecialTasksSheet';
 
 // Steps 2-6 of the proposal form.
 export function RationaleStep({ c }: { c: ProposalFormController }) {
@@ -22,7 +26,10 @@ export function MethodologyStep({ c }: { c: ProposalFormController }) {
   return (
     <>
       <StepTitle>IV. METHODOLOGY</StepTitle>
-      <Note>The training shall be composed of lectures, video clip viewing, sharing and games. 5E's approach shall be utilized for most of the sessions.</Note>
+      <Field label="Introduction" help="How the activity will be carried out, before the phases.">
+        <Input multiline rows={4} value={d.methodologyIntro} placeholder="e.g. The training shall be composed of lectures, video clip viewing, sharing and games."
+          onChangeText={(v) => c.set('methodologyIntro', v)} />
+      </Field>
       {d.phases.map((r, i) => (
         <RowCard key={i} title={`Phase ${i + 1}`} onRemove={() => c.removeRow('phases', i)}>
           <Field label="Stage"><Input multiline rows={2} value={r.stage} onChangeText={(v) => c.setRow('phases', i, 'stage', v)} /></Field>
@@ -73,11 +80,30 @@ export function BudgetStep({ c }: { c: ProposalFormController }) {
         </RowCard>
       ))}
       <AddBtn label="Add Committee Group" onPress={() => c.addTwgGroup()} />
+      <SpecialTasksBar c={c} />
     </>
   );
 }
 
-/** A TWG member: details, the linked account and the automated special task. */
+/** Opens the special-task chooser; says how many members get a task. */
+function SpecialTasksBar({ c }: { c: ProposalFormController }) {
+  const [open, setOpen] = useState(false);
+  const members = c.state.d.twg.flatMap((g) => g.members).filter((m) => m.name.trim());
+  const automated = members.filter((m) => m.automate).length;
+  return (
+    <View style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: C.borderStrong, borderRadius: 12, padding: 12, gap: 8, backgroundColor: C.surface2 }}>
+      <Row gap={8}><Icon name="clipboard" size={17} color={C.accent} /><T weight={700}>Special tasks on approval</T></Row>
+      <T size={12.5} color={C.text2}>
+        {automated ? `${automated} of ${members.length} committee members get a special task.` : 'No special tasks chosen: linked members get the top score instead.'}
+        {' '}Each task is titled by the Output, described by the Terms of Reference, and due 7 days after the event unless you change it.
+      </T>
+      <Button disabled={!members.length} onPress={() => setOpen(true)}>Choose special tasks</Button>
+      {open && <SpecialTasksSheet c={c} onClose={() => setOpen(false)} />}
+    </View>
+  );
+}
+
+/** A TWG member: details and the linked account (special tasks are chosen in the chooser). */
 function MemberCard({ c, g, i, m }: { c: ProposalFormController; g: number; i: number; m: MemberRow }) {
   const fields: [MemberText, string, string][] = [['name', 'Name', 'Full name'], ['designation', 'Designation', 'e.g. Chairperson'], ['tor', 'Terms of Reference', 'e.g. Leads the Committee'], ['output', 'Output', 'e.g. Checked reports']];
   return (
@@ -88,8 +114,7 @@ function MemberCard({ c, g, i, m }: { c: ProposalFormController; g: number; i: n
           options={[{ value: null, label: 'Not linked to an account' }, ...c.state.people.map((p) => ({ value: p.id, label: p.name }))]}
           onChange={(v) => c.linkMember(g, i, v)} />
       </Field>
-      <Check disabled={m.userId === null} checked={m.automate} onChange={() => c.setMemberAutomate(g, i, !m.automate)}
-        label="Automate: a special task on approval (titled by the Output). Unticked: the top score (100/100) instead" />
+      <CommitteeSuggest c={c} g={g} i={i} m={m} />
       <Badge tone={memberResult(m).tone}>{memberResult(m).label}</Badge>
     </RowCard>
   );

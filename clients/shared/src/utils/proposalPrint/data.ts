@@ -1,13 +1,18 @@
 import { Json } from '../../models';
 import { PrintAssets } from './assets';
 import { richFields } from './rich';
-import { MONTHS, DEFAULT_INDICATORS, str, _esc, _paragraphs, _bulletList, _numberedList, _buildMethodologyRows, _buildParticipants, _activityMatrixRows, _execRows, _twgSection, _budgetSection } from './sections';
+import { MONTHS, DEFAULT_INDICATORS, DEFAULT_METHODOLOGY_INTRO, str, _esc, _paragraphs, _bulletList, _numberedList, _buildMethodologyRows, _buildParticipants, _activityMatrixRows, _execRows, _twgSection, _budgetSection } from './sections';
 
 /** The values the document templates fill in. */
 export function printData(event: Json, assets: PrintAssets) {
   const title = _esc(event.title ?? 'Untitled Event');
   const nature = str(event.nature ?? 'Co-curricular');
-  const targetDate = _esc(event.target_date ?? '');
+  // The date, with the event's hours when set ("October 23, 2024 · 4:00 PM – 5:00 PM").
+  const hours = [str(event.start_time), str(event.end_time)].map((t) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(t);
+    return m ? `${+m[1] % 12 || 12}:${m[2]} ${+m[1] < 12 ? 'AM' : 'PM'}` : '';
+  });
+  const targetDate = _esc((event.target_date ?? '') + (hours[0] && hours[1] ? ` · ${hours[0]} – ${hours[1]}` : ''));
   const venue = _esc(event.venue ?? '');
   const budget = pesos(event.proposed_budget);
   const fundSrc = _esc(event.fund_source ?? '');
@@ -15,6 +20,7 @@ export function printData(event: Json, assets: PrintAssets) {
   const focalRole = _esc(event.focal_role ?? '');
   const focalCp = _esc(event.focal_contact ?? '');
   const rationale = str(event.rationale);
+  const methodologyIntroHtml = _paragraphs(str(event.methodology_intro).trim() || DEFAULT_METHODOLOGY_INTRO);
   const objectives = str(event.objectives);
   const outputs = str(event.expected_outputs);
   const monitoring = str(event.monitoring_criteria);
@@ -74,6 +80,7 @@ export function printData(event: Json, assets: PrintAssets) {
     focalRole,
     focalCp,
     rationale,
+    methodologyIntroHtml,
     objectives,
     outputs,
     monitoring,

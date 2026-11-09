@@ -36,5 +36,5 @@ export class AttendanceQrController extends BaseController<AttendanceQrState> {
   }
 
   static readonly LABEL = `${ATTENDANCE_LABELS.time_in} · Evaluation`;
-  static readonly HOW = 'Attendees scan the QR to Time In (from 15 minutes before the activity starts until 1 hour after). After it ends, they scan it again or open the evaluation: submitting the evaluation is their Time Out, accepted until midnight.';
+  static readonly HOW = 'Attendees scan the QR to Time In during the first 2 hours of the event. From 2 hours before it ends, they scan it again or open the evaluation: submitting the evaluation is their Time Out, accepted until midnight.';
 }

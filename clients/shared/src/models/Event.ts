@@ -54,6 +54,14 @@ export class EventItem {
   /** Off the calendar and the active lists. */
   get isInactive() { return this.isDisabled || this.isDraft || this.isReturned; }
 
+  /** The proponent's original proposal file (Word or PDF), when attached. */
+  get proposalFile(): { url: string; name: string } | null {
+    const url = R.optStr(this.raw.proposal_file_url);
+    return url ? { url, name: R.optStr(this.raw.proposal_file_name) ?? 'Proposal file' } : null;
+  }
+  /** Submitted as that file, without reviewing the form read from it: the file is the proposal to read. */
+  get submittedAsFile() { return this.raw.submitted_as_file === true || this.raw.submitted_as_file === 1; }
+
   get venuePin(): VenuePin | null {
     const lat = R.optNum(this.raw.venue_latitude);
     const lng = R.optNum(this.raw.venue_longitude);

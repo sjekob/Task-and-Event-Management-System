@@ -52,11 +52,11 @@ export function SpecialTab({ c }: { c: AppraisalController }) {
       {!rows.length ? <Empty icon="clipboard" title="No special tasks to show." /> : rows.map((t) => (
         <TaskCard key={SpecialTaskStats.code(t)} t={t} onEvaluate={() => setEvaluating(t)} onView={() => setViewing(t)} />
       ))}
-      <View style={{ padding: 16, borderRadius: 14, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe', gap: 8 }}>
-        <T weight={700} color="#1d4ed8">Annual Faculty Performance Summary</T>
-        <T size={12} color="#3b82f6">Aggregated from all event and special task appraisals. Ready for DepEd Annual Faculty Performance Evaluation.</T>
+      <View style={{ padding: 16, borderRadius: 14, backgroundColor: '#FCE8EC', borderWidth: 1, borderColor: '#F4C3CD', gap: 8 }}>
+        <T weight={700} color="#A11A33">Annual Faculty Performance Summary</T>
+        <T size={12} color="#D92243">Aggregated from all event and special task appraisals. Ready for DepEd Annual Faculty Performance Evaluation.</T>
         <Button icon="download" loading={exporting} style={{ alignSelf: 'flex-start' }} onPress={() => void exportSummary()}>Export Performance Summary</Button>
-        <T size={11} color="#3b82f6">Exports the selected school year as PDF</T>
+        <T size={11} color="#D92243">Exports the selected school year as PDF</T>
       </View>
       {evaluating && <EvaluateSpecialTaskDialog task={evaluating} onClose={(u) => { setEvaluating(null); if (u) c.replaceTask(u); }} />}
       {viewing && <ViewSpecialTaskDialog task={viewing} onClose={() => setViewing(null)} />}

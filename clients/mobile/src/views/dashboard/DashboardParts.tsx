@@ -9,7 +9,7 @@ export const DASH_TONES: Record<Tone, { fg: string; bg: string; dot: string }> =
   red: { fg: C.redDark, bg: C.redBg, dot: C.red },
   amber: { fg: C.amberDark, bg: C.amberBg, dot: C.amber },
   blue: { fg: C.accent, bg: C.blueBg, dot: C.accent },
-  gray: { fg: C.muted, bg: '#f1f5f9', dot: C.light },
+  gray: { fg: C.muted, bg: '#FBEFDB', dot: C.light },
   green: { fg: '#16a34a', bg: C.greenBg, dot: C.green },
 };
 
@@ -48,8 +48,8 @@ export function Section({ icon, title, count, action, onAction, empty, footer, c
         {count > 0 && <View style={{ backgroundColor: C.softBlue, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 1 }}><T size={12} weight={700}>{count}</T></View>}
         <View style={{ flex: 1 }} />
         <Pressable onPress={onAction} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <T size={12.5} weight={600} color={C.accent}>{action}</T>
-          <Icon name="arrow-right" size={15} color={C.accent} />
+          <T size={12.5} weight={600} color={C.text}>{action}</T>
+          <Icon name="arrow-right" size={15} color={C.text} />
         </Pressable>
       </View>
       <View style={{ height: 1, backgroundColor: C.border }} />
@@ -66,7 +66,7 @@ export function Section({ icon, title, count, action, onAction, empty, footer, c
 
 export function DashRow({ leading, title, meta, trailing, onPress }: { leading: ReactNode; title: string; meta: string; trailing: ReactNode; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: pressed ? C.surface2 : 'transparent', borderBottomWidth: 1, borderColor: '#f1f5f9' })}>
+    <Pressable onPress={onPress} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: pressed ? C.surface2 : 'transparent', borderBottomWidth: 1, borderColor: '#FBEFDB' })}>
       {leading}
       <View style={{ flex: 1 }}>
         <T size={14} weight={600} lines={2}>{title}</T>

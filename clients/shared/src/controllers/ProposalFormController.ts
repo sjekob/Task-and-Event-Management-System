@@ -7,7 +7,7 @@ import { Json, VENUE_RADIUS_RANGE, parseEventDate } from '../models';
 import { Format } from '../utils/format';
 import { richToPlain } from '../utils/richText';
 import { draftFromReading, orderProposalFiles, readingSummary } from './proposalReading';
-import { EMPTY_MEMBER, MemberRow, MemberText, NEW_ROW, ProposalDraft, RowListKey, STEP_TITLES, draftFromEvent, draftTotals, firstEmptyField, draftToPayload } from './proposalDraft';
+import { DEFAULT_DUE_DAYS, EMPTY_MEMBER, MemberRow, MemberText, NEW_ROW, ProposalDraft, RowListKey, STEP_TITLES, draftFromEvent, draftTotals, firstEmptyField, draftToPayload } from './proposalDraft';
 
 export interface ProposalFormState {
   step: number;
@@ -38,6 +38,10 @@ export class ProposalFormController extends BaseController<ProposalFormState> {
   private readonly autosave = () => this.autoSaveDraft();
   /** The form as opened, to tell whether reading a file would overwrite typed work. */
   private readonly initial: string;
+  /** The uploaded proposal (one Word or PDF file), kept to submit it as is. */
+  private sourceFile: FilePart | null = null;
+  /** The event this form created (a draft saved earlier), so later saves update it. */
+  private createdId: number | null = null;
 
   constructor(private readonly services: Services, private readonly session: SessionController, readonly existing: Json | null) {
     super({
@@ -76,7 +80,10 @@ export class ProposalFormController extends BaseController<ProposalFormState> {
     if (typeof ordered === 'string') return ordered;
     this.setState({ reading: ordered.length > 1 ? `Reading ${ordered.length} page photos…` : `Reading ${ordered[0].name}…` });
     try {
-      return { reading: await this.services.events.readProposal(ordered), files: ordered.map((f) => f.name) };
+      const reading = await this.services.events.readProposal(ordered);
+      // One Word or PDF file can also be submitted as is (photos are read only).
+      this.sourceFile = ordered.length === 1 && /\.(pdf|docx?)$/i.test(ordered[0].name) ? ordered[0] : null;
+      return { reading, files: ordered.map((f) => f.name) };
     } catch (e) {
       return BaseController.messageOf(e, 'Could not read the proposal file');
     } finally {
@@ -135,13 +142,43 @@ export class ProposalFormController extends BaseController<ProposalFormState> {
   }
 
   /** Links a member to an account (its name fills an empty Name). Unlinking also turns automation off. */
-  linkMember(g: number, i: number, userId: number | null) {
+  /**
+   * Staff ranked for committee member [i] of group [g]: who fits their Terms of
+   * Reference, output and designation (and isn't overloaded), with the person
+   * named in the proposal first.
+   */
+  suggestMembers(g: number, i: number) {
+    const d = this.state.d;
+    const m = d.twg[g]?.members[i];
+    return this.services.events.committeeSuggestions({
+      name: m?.name ?? '', designation: m?.designation ?? '', tor: m?.tor ?? '', output: m?.output ?? '',
+      committee: d.twg[g]?.title ?? '', eventTitle: richToPlain(d.title),
+    });
+  }
+
+  /**
+   * Links member [i] of group [g] to a TaskNet account and writes that person's
+   * name in the Name column (as recorded in TaskNet). Unlinking keeps the name.
+   * [name] is the account's name when the caller already has it (e.g. a suggestion).
+   */
+  linkMember(g: number, i: number, userId: number | null, name?: string) {
     const m = this.state.d.twg[g].members[i];
-    const person = this.state.people.find((p) => p.id === userId);
-    this.updateMember(g, i, { userId, name: m.name.trim() || !person ? m.name : person.name, automate: userId === null ? false : m.automate });
+    const linked = userId === null ? null : name ?? this.state.people.find((p) => p.id === userId)?.name ?? null;
+    this.updateMember(g, i, { userId, name: linked ?? m.name, automate: userId === null ? false : m.automate });
   }
 
   setMemberAutomate(g: number, i: number, automate: boolean) { this.updateMember(g, i, { automate }); }
+  /** Days after the event the member's special task is due (0-365). */
+  setMemberDueDays(g: number, i: number, days: number) {
+    this.updateMember(g, i, { dueDays: Number.isFinite(days) ? Math.min(Math.max(Math.trunc(days), 0), 365) : DEFAULT_DUE_DAYS });
+  }
+  /** Tick or untick every member who can get a task (linked to an account and with an Output). */
+  setAllAutomate(automate: boolean) {
+    this.patch({ twg: this.state.d.twg.map((g) => ({ ...g, members: g.members.map((m) => (
+      ProposalFormController.canAutomate(m) ? { ...m, automate } : m)) })) });
+  }
+  /** A special task needs an account to assign it to and an Output to title it. */
+  static canAutomate(m: MemberRow): boolean { return m.userId !== null && m.output.trim() !== ''; }
 
   private async loadPeople() {
     try {
@@ -213,11 +250,53 @@ export class ProposalFormController extends BaseController<ProposalFormState> {
   }
 
   // ── Saving ──
-  private async save(status: 'draft' | 'pending_approval') {
-    const payload = { ...draftToPayload(this.state.d), status };
-    if (this.isEditing) await this.services.events.update(this.existingId!, payload);
-    else await this.services.events.create(payload);
+  private async save(status: 'draft' | 'pending_approval', extra: Json = {}): Promise<number> {
+    const payload = { ...draftToPayload(this.state.d), status, ...extra };
+    const id = this.existingId ?? this.createdId;
+    if (id !== null) await this.services.events.update(id, payload);
+    else this.createdId = Number((await this.services.events.create(payload)).id);
     this.persisted = true;
+    return (id ?? this.createdId)!;
+  }
+
+  // ── Submitting the original file as is ──
+  // The proponent may skip reviewing the form read from their file and submit
+  // the file itself; the approver reads it. TaskNet still needs what the file
+  // can't give it: the date and hours (attendance), the venue pin (geofence)
+  // and which committee members get an automated special task.
+
+  /** Whether the read file can be submitted as is (one Word or PDF file). */
+  get canSubmitAsFile() { return this.sourceFile !== null && !!this.state.d.reading; }
+  get sourceFileName() { return this.sourceFile?.name ?? ''; }
+
+  /** What's still needed before submitting the file as is (empty when ready). */
+  get asFileIssues(): string[] {
+    const d = this.state.d;
+    const out: string[] = [];
+    if (!richToPlain(d.title).trim()) out.push('the event title');
+    if (!d.targetDate.trim()) out.push('the date');
+    else if (this.state.dateIssue) out.push(`a valid date (${this.state.dateIssue.replace(/\.$/, '')})`);
+    if (!d.startTime || !d.endTime) out.push('the start and end time');
+    else if (d.endTime <= d.startTime) out.push('an end time after the start time');
+    if (!d.venuePin) out.push('the venue pinned on the map');
+    return out;
+  }
+
+  /** Submits the proposal with the original file attached, marked as submitted as the file. */
+  async submitAsFile(): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+    const issues = this.asFileIssues;
+    if (issues.length) return { ok: false, message: `Add ${issues.join(', ')} first.` };
+    if (!this.sourceFile) return { ok: false, message: 'Upload the proposal file again.' };
+    this.setState({ submitting: true });
+    try {
+      const id = await this.save('pending_approval', { submitted_as_file: true });
+      await this.services.events.uploadProposalFile(id, this.sourceFile);
+      return { ok: true, message: 'Event proposal submitted for approval, with your original file.' };
+    } catch (e) {
+      return { ok: false, message: BaseController.messageOf(e, 'Failed to submit. Check server connection.') };
+    } finally {
+      this.setState({ submitting: false });
+    }
   }
 
   /**
@@ -244,6 +323,9 @@ export class ProposalFormController extends BaseController<ProposalFormState> {
       this.setState({ submitting: false });
     }
   }
+
+  /** "Discard changes" when leaving: don't keep the unsaved work as a draft. */
+  discard() { this.persisted = true; }
 
   /** On logout / token expiry: persist meaningful, still-draftable work once. */
   private async autoSaveDraft() {

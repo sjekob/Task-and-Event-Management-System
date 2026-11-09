@@ -29,6 +29,7 @@ export function AttendanceQrDialog({ eventId, onClose }: { eventId: number; onCl
                   <View style={{ alignItems: 'center', gap: 6 }}>
                     <QRCode value={c.link(a)} size={180} />
                     <T weight={700}>{AttendanceQrController.LABEL}</T>
+                    <T size={11} color={C.muted} center selectable style={{ maxWidth: 260 }}>{c.link(a)}</T>
                   </View>
                 </Row>
                 {!a.schedule_readable && (

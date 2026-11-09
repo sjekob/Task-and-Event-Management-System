@@ -2,10 +2,12 @@
 per-activity attendee evaluation, and the automated Special Task it triggers.
 
 Flow: the proponent prints one QR code per activity. An attendee scans it:
-  * Time In:  start - 15 min .. start + 1 hour (at the venue, when pinned)
-  * Time Out: by submitting the activity's evaluation, from the end of the
-    activity until midnight that day (from anywhere). Scanning the same QR
-    again after the activity ends opens the evaluation.
+  * Time In:  the first 2 hours of the event (at the venue, when pinned)
+  * Time Out: by submitting the activity's evaluation, from 2 hours before the
+    event ends until midnight that day (from anywhere). Scanning the same QR
+    again in that window opens the evaluation.
+The hours are the event's start and end time (on each activity's day); an
+event without them falls back to each Activity Matrix row's own time range.
 Geofence: when the proponent pinned the venue (events.venue_latitude/
 venue_longitude/venue_radius_m), a scan is accepted only from inside that
 perimeter — the device's GPS position is required and its Haversine distance to
@@ -30,7 +32,7 @@ import hmac
 import json
 import math
 import re
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -45,8 +47,10 @@ from routes.public_evaluation import (AGE_GROUPS, ROLE_ORDER, SEX_OPTIONS, Indic
 
 router = APIRouter(prefix="/api/events", tags=["Attendance"])
 
-TIME_IN_BEFORE = timedelta(minutes=15)
-TIME_IN_AFTER = timedelta(hours=1)
+# Time In is open for the first TIME_IN_HOURS of the event; Time Out (the
+# evaluation) from TIME_OUT_HOURS before it ends until midnight.
+TIME_IN_HOURS = timedelta(hours=2)
+TIME_OUT_HOURS = timedelta(hours=2)
 
 _TS = "%Y-%m-%d %H:%M:%S"
 
@@ -141,11 +145,42 @@ def _activity(event, index: int) -> dict:
     return rows[index]
 
 
+def event_hours(event):
+    """The event's (start, end) times of day, or None when they aren't set."""
+    try:
+        keys = event.keys()
+    except AttributeError:
+        return None
+    if "start_time" not in keys or "end_time" not in keys:
+        return None
+    try:
+        start, end = time.fromisoformat(str(event["start_time"] or "")), time.fromisoformat(str(event["end_time"] or ""))
+    except ValueError:
+        return None
+    return (start, end) if start < end else None
+
+
+def day_span(event, day: date):
+    """The event's hours on [day]: the start and end time from the Proposal Brief
+    on the target date; on other days, from the earliest to the latest session of
+    that day in the Activity Matrix (falling back to the brief's hours)."""
+    hours = event_hours(event)
+    target = parse_event_date(event["target_date"])
+    if hours and day == target:
+        return hours
+    spans = [s for s in (parse_time_range(r.get("time")) for r in _activity_rows(event)
+                         if (parse_event_date(r.get("day")) or target) == day) if s]
+    if spans:
+        return min(s[0] for s in spans), max(s[1] for s in spans)
+    return hours
+
+
 def _schedule(event, row: dict):
-    """(start, end) datetimes for an activity: the row's day (falling back to the
-    event's target date) at the row's time range. None if unreadable."""
+    """(start, end) datetimes of the event on an activity's day (the row's day,
+    falling back to the target date): the window every QR of that day uses.
+    None if unreadable."""
     day = parse_event_date(row.get("day")) or parse_event_date(event["target_date"])
-    span = parse_time_range(row.get("time"))
+    span = day_span(event, day) if day else None
     if day is None or span is None:
         return None
     return datetime.combine(day, span[0]), datetime.combine(day, span[1])
@@ -153,9 +188,10 @@ def _schedule(event, row: dict):
 
 def _windows(start: datetime, end: datetime) -> dict:
     return {
-        "time_in": (start - TIME_IN_BEFORE, start + TIME_IN_AFTER),
-        # Time Out is the evaluation: from the end of the activity until midnight.
-        "time_out": (end, datetime.combine(end.date(), time(23, 59, 59))),
+        # The first 2 hours of the event (all of it, if it's shorter).
+        "time_in": (start, min(start + TIME_IN_HOURS, end)),
+        # Time Out is the evaluation: the last 2 hours of the event, until midnight.
+        "time_out": (max(end - TIME_OUT_HOURS, start), datetime.combine(end.date(), time(23, 59, 59))),
     }
 
 
@@ -171,10 +207,10 @@ def evaluation_lock(ev, index: int, rec, now: Optional[datetime] = None) -> Opti
     opens, closes = _windows(*sched)["time_out"]
     now = now or school_now()
     if now < opens:
-        return (f"The evaluation opens when the activity ends ({_fmt(opens)}). "
+        return (f"The evaluation opens at {_fmt(opens)}, 2 hours before the event ends. "
                 "Submitting it records your Time Out; you have until midnight.")
     if now > closes:
-        return "Time Out closed at midnight after the activity, so this evaluation can no longer be submitted."
+        return "Time Out closed at midnight after the event, so this evaluation can no longer be submitted."
     return None
 
 
@@ -352,7 +388,7 @@ def _scan_gate(db, event_id: int, body: ScanBody):
 
 def _record_scan(db, ev, body: ScanBody, now: datetime, sched, rec, who: dict, reload) -> dict:
     """One QR per activity. The first scan is the Time In (inside its window and,
-    when pinned, the perimeter). Scanning again after the activity ends opens the
+    when pinned, the perimeter). Scanning again in the Time Out window opens the
     evaluation, whose submission is the Time Out. Shared by personnel and guests."""
     stamp = now.strftime(_TS)
     if rec and rec["time_in_at"]:

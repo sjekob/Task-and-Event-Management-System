@@ -26,7 +26,7 @@ export default function DashboardScreen() {
       <Banner title={c.greeting()} subtitle={c.subtitle()} />
       {s.error && <ErrorBox message={s.error} onRetry={() => void c.load()} />}
       <Kpi value={d?.pending ?? 0} label="Pending" caption={approver ? 'Not yet submitted, still on time' : 'Open and still on time'}
-        icon="clock" tone="blue" onPress={() => go(c.tasksRoute)} />
+        icon="clock" tone="amber" onPress={() => go(c.tasksRoute)} />
       <Kpi value={d?.submitted ?? 0} label="Submitted" caption={approver ? 'Turned in by assignees' : 'Turned in by you'}
         icon="check-circle" tone="green" onPress={() => go(c.tasksRoute)} />
       <Kpi value={d?.missing ?? 0} label="Missing" caption="Past deadline, not submitted" icon="alert-circle" tone="red"
@@ -50,7 +50,7 @@ export default function DashboardScreen() {
         <Section icon="check-square" title="Task manager" count={d?.taskManagerTasks.length ?? 0} action="View all" onAction={() => go('/tasks')}
           empty={!d?.taskManagerTasks.length ? { icon: 'file-plus', text: 'You have no active tasks. Tasks you create appear here.' } : undefined}>
           {d?.taskManagerTasks.map((t) => (
-            <DashRow key={t.id} leading={<StatusDot tone={t.isOverdue ? 'red' : 'blue'} />} title={t.title} meta={DashboardController.taskMeta(t, true)}
+            <DashRow key={t.id} leading={<StatusDot tone={t.isOverdue ? 'red' : 'amber'} />} title={t.title} meta={DashboardController.taskMeta(t, true)}
               trailing={(t.teamTotal ?? 0) === 0 ? <Chip tone="gray">Not assigned</Chip> : <MiniProgress done={t.teamSubmitted ?? 0} total={t.teamTotal!} />}
               onPress={() => go(DashboardController.managedTaskPath(t))} />
           ))}

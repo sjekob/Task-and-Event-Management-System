@@ -1,5 +1,5 @@
 import { Json } from '../../models';
-import { richLines, sanitizeRich } from '../richText';
+import { richBlocks, richLines, sanitizeRich } from '../richText';
 import { _bulletList, _esc, _numberedList, _paragraphs, str } from './sections';
 
 /** The proponent's formatted fields (comments.rich), as rendered HTML with plain-text fallbacks. */
@@ -19,9 +19,9 @@ export function richFields(event: Json) {
     venueHtml: inline('venue', event.venue),
     focalRoleHtml: inline('focalRole', event.focal_role),
     outputsHtml: outs.length ? list('ul', outs.map((o) => richLines(o).join('<br>'))) : _bulletList(str(event.expected_outputs)),
-    rationaleHtml: has('rationale') ? richLines(rich.rationale).map((l) => `<p>${l}</p>`).join('\n') : _paragraphs(str(event.rationale)),
+    rationaleHtml: has('rationale') ? richBlocks(rich.rationale) : _paragraphs(str(event.rationale)),
     objectivesHtml: has('objectives') ? list('ol', richLines(rich.objectives)) : _numberedList(str(event.objectives)),
     /** Empty when neither form has text (the template then uses its default). */
-    monitoringHtml: has('monitoring') ? richLines(rich.monitoring).map((l) => `<p>${l}</p>`).join('\n') : _paragraphs(str(event.monitoring_criteria)),
+    monitoringHtml: has('monitoring') ? richBlocks(rich.monitoring) : _paragraphs(str(event.monitoring_criteria)),
   };
 }

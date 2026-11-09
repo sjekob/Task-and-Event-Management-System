@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { TaskDetailController } from '@shared/controllers/TaskDetailController';
@@ -7,11 +7,12 @@ import { Format } from '@shared/utils/format';
 import { useServices, useSession } from '../../core/AppModel';
 import { useScreenController } from '../../core/hooks';
 import { useFeedback } from '../../ui/feedback';
-import { Badge, Bone, Button, C, Empty, Icon, IconTile, Progress, Row, Screen, T } from '../../ui/kit';
+import { Avatar, Badge, Bone, Button, C, Empty, Icon, IconTile, Progress, Row, Screen, T } from '../../ui/kit';
 import { CommentInput, CommentItem } from '../common/Comments';
 import { AssigneesCard } from './TaskAssignees';
-import { Block, Legend, Meta } from './TaskDetailParts';
+import { Block, Legend, Meta, ReportStatusChip } from './TaskDetailParts';
 import { ReviewPanel, SubmitPanel } from './TaskPanels';
+import { SHEET_PEEK, WorkSheet } from './WorkSheet';
 
 /** /task/[id]?own=1&base=/my-tasks — a task as its assignee (own) or its creator / reviewer. */
 export default function TaskDetailScreen() {
@@ -21,6 +22,8 @@ export default function TaskDetailScreen() {
   const fb = useFeedback();
   const [c, s] = useScreenController(() => new TaskDetailController(services, user!, Number(id), own === '1'), [id, own]);
   useEffect(() => { void c.load(); }, [c]);
+  // The submission sheet: collapsed until someone is opened or the bar is used.
+  const [sheet, setSheet] = useState(false);
 
   const header = <Stack.Screen options={{ title: s.task?.isSpecial ? 'Special Task' : 'Task' }} />;
   if (s.loading) return <Screen>{header}<Bone h={150} r={14} /><Bone h={120} r={14} /><Bone h={200} r={14} /></Screen>;
@@ -42,8 +45,33 @@ export default function TaskDetailScreen() {
   const p = c.progress;
   const ownStatus = c.ownStatus;
 
+  const r = c.selectedReport;
+  const summary = reviewing
+    ? (r ? (
+      <Row gap={10}>
+        <Avatar url={r.avatarUrl} initials={(r.fullName ?? '?').charAt(0).toUpperCase()} size={34} />
+        <View style={{ flex: 1 }}>
+          <T weight={700} lines={1}>{r.fullName}</T>
+          <T size={12} color={C.muted} lines={1}>{c.mobileDeadlineText}</T>
+        </View>
+        <ReportStatusChip status={r.reportStatus} />
+      </Row>
+    ) : (
+      <Row gap={8} style={{ justifyContent: 'space-between' }}>
+        <T size={16} weight={700}>Submission</T>
+        <T size={12} color={C.muted}>Tap someone above to see their work</T>
+      </Row>
+    ))
+    : (
+      <Row gap={8}>
+        <T size={16} weight={700} style={{ flex: 1 }}>Your work</T>
+        {ownStatus && <Badge tone={ownStatus.tone}>{ownStatus.label}</Badge>}
+      </Row>
+    );
+
   return (
-    <Screen onRefresh={() => c.load()}>
+    <View style={{ flex: 1 }}>
+    <Screen onRefresh={() => c.load()} style={{ paddingBottom: SHEET_PEEK + 40 }}>
       {header}
       <Block>
         <Row gap={12} style={{ alignItems: 'flex-start' }}>
@@ -87,8 +115,7 @@ export default function TaskDetailScreen() {
         <T size={14.5} style={{ lineHeight: 23 }} color={t.instructions?.trim() ? C.text : C.light} selectable>{t.instructions?.trim() || 'No instructions provided.'}</T>
       </Block>
 
-      {reviewing && <AssigneesCard c={c} run={run} />}
-      {reviewing ? <ReviewPanel c={c} run={run} commentProps={commentProps} /> : <SubmitPanel c={c} run={run} commentProps={commentProps} />}
+      {reviewing && <AssigneesCard c={c} run={run} onPick={() => setSheet(true)} />}
 
       <Block>
         <Row gap={8}><Icon name="message-square" size={17} color={C.muted} /><T size={15} weight={700}>Public comments</T>{t.publicComments.length > 0 && <Badge>{t.publicComments.length}</Badge>}</Row>
@@ -97,5 +124,9 @@ export default function TaskDetailScreen() {
         <CommentInput placeholder="Add a comment..." onSend={(text) => run(() => c.addComment(text, 'public'))} />
       </Block>
     </Screen>
+    <WorkSheet open={sheet} onOpenChange={setSheet} summary={summary}>
+      {reviewing ? <ReviewPanel c={c} run={run} commentProps={commentProps} inSheet /> : <SubmitPanel c={c} run={run} commentProps={commentProps} />}
+    </WorkSheet>
+    </View>
   );
 }

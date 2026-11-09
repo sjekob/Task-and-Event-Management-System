@@ -81,8 +81,8 @@ function BadgeGrid({ badges }: { badges: AppraisalBadge[] }) {
       {sorted.map((b) => {
         const col = BadgesController.color(b);
         return (
-          <Row key={b.code} gap={12} style={{ alignItems: 'flex-start', padding: 12, borderRadius: 14, backgroundColor: b.earned ? '#fff' : '#f8fafc', borderWidth: b.earned ? 1.5 : 1, borderColor: b.earned ? `${col}73` : '#e2e8f0' }}>
-            <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: b.earned ? `${col}24` : '#f1f5f9', borderWidth: 2, borderColor: col, alignItems: 'center', justifyContent: 'center' }}>
+          <Row key={b.code} gap={12} style={{ alignItems: 'flex-start', padding: 12, borderRadius: 14, backgroundColor: b.earned ? '#fff' : '#FFFAF2', borderWidth: b.earned ? 1.5 : 1, borderColor: b.earned ? `${col}73` : '#F1E3CC' }}>
+            <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: b.earned ? `${col}24` : '#FBEFDB', borderWidth: 2, borderColor: col, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name={b.earned ? BADGE_ICON[b.icon] ?? 'award' : 'lock'} size={21} color={b.earned ? col : '#94a3b8'} />
             </View>
             <View style={{ flex: 1, gap: 3 }}>

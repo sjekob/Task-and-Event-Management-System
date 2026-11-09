@@ -10,7 +10,7 @@ import { Button, C, FONT, Icon, Modal, T, shadow } from '../ui/kit';
 /** Sign in (with a role choice for accounts that hold several roles). */
 export default function Login() {
   const app = useApp();
-  const { user, sessionExpired } = useSession();
+  const { user, sessionExpired, endReason } = useSession();
   const { from } = useLocalSearchParams<{ from?: string }>();
   const [c, s] = useScreenController(() => new LoginController(app.session));
   const [focus, setFocus] = useState<'u' | 'p' | null>(null);
@@ -35,7 +35,7 @@ export default function Login() {
           {sessionExpired && (
             <View style={{ flexDirection: 'row', gap: 8, backgroundColor: C.amberBg, borderRadius: 10, padding: 12 }}>
               <Icon name="info" size={16} color={C.amberDark} />
-              <T size={13} color={C.amberDark} style={{ flex: 1 }}>Your session expired. Any in-progress event was saved as a draft.</T>
+              <T size={13} color={C.amberDark} style={{ flex: 1 }}>{endReason ?? 'Your session expired.'} Any in-progress event was saved as a draft.</T>
             </View>
           )}
           <View style={box(focus === 'u')}>

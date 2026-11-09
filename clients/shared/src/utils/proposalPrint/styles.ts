@@ -96,6 +96,11 @@ body.paged #pages { padding-top: 56px; }
 .ptotal.plabel { text-align: right !important; }
 
 ol, ul { margin-left: 24px; margin-top: 3px; }
+/* The proponent's checklists (rich text): a box per item, ticked when done. */
+ul.checklist { list-style: none; margin-left: 6px; padding-left: 0; }
+ul.checklist > li { position: relative; padding-left: 22px; }
+ul.checklist > li::before { content: '\\2610'; position: absolute; left: 0; top: 0; }
+ul.checklist > li.checked::before { content: '\\2611'; }
 li { margin-bottom: 3px; text-align: justify; }
 p { text-align: justify; text-indent: 28px; margin-bottom: 10px; }
 

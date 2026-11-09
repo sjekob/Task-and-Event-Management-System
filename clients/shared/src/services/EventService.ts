@@ -1,8 +1,14 @@
 import { ApiClient, FilePart } from './ApiClient';
 import {
-  AttendanceAction, AttendanceActivity, AttendanceList, AttendanceQrCodes, AttendanceScanResult, DateCheck, EventItem,
+  AssigneeSuggestion, AttendanceAction, AttendanceActivity, AttendanceList, AttendanceQrCodes, AttendanceScanResult, DateCheck, EventItem,
   GuestActivity, GuestInfo, Json,
 } from '../models';
+
+/** What a committee member's role is about, for ranking who fits it. */
+export interface CommitteeRoleQuery { name: string; designation: string; tor: string; output: string; committee: string; eventTitle: string }
+
+/** A staff member ranked for a committee role; [nameMatch]: their name is the one written in the proposal. */
+export interface CommitteeSuggestion { s: AssigneeSuggestion; nameMatch: boolean }
 
 /**
  * What approving an event did: special tasks made for the committee members
@@ -56,6 +62,11 @@ export class EventService {
     return EventItem.fromJson(await this.api.post('/api/events', { body: payload, ok: [201, 200], fallback: 'Could not save the event' }));
   }
 
+  /** Attaches the proponent's original proposal file (Word or PDF) to the event. */
+  uploadProposalFile(id: number, file: FilePart): Promise<{ url: string; name: string }> {
+    return this.api.upload(`/api/events/${id}/proposal-file`, file, { timeoutMs: 120000, fallback: 'Could not attach the proposal file' });
+  }
+
   async update(id: number, payload: Json): Promise<EventItem | null> {
     const d = await this.api.put(`/api/events/${id}`, { body: payload, fallback: 'Could not save the event' });
     return d && typeof d === 'object' ? EventItem.fromJson(d) : null;
@@ -87,6 +98,15 @@ export class EventService {
   }
 
   /** Reads a proposal file (one Word/PDF, or page photos in order) into the form's fields. Saves nothing. */
+  /** Staff ranked for one committee member's role (same fit score as task assignment). */
+  async committeeSuggestions(q: CommitteeRoleQuery): Promise<CommitteeSuggestion[]> {
+    const data = await this.api.post<Json[]>('/api/events/committee/suggestions', {
+      body: { name: q.name, designation: q.designation, tor: q.tor, output: q.output, committee: q.committee, event_title: q.eventTitle },
+      background: true, fallback: 'Could not load suggestions',
+    });
+    return (data ?? []).map((j) => ({ s: AssigneeSuggestion.fromJson(j), nameMatch: j.name_match === true }));
+  }
+
   readProposal(files: FilePart[]): Promise<ProposalReading> {
     return this.api.uploadMany('/api/events/read-proposal', files, { field: 'files', timeoutMs: 180000, fallback: 'Could not read the proposal file' });
   }

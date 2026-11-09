@@ -21,8 +21,10 @@ export class PersonnelService {
     return User.fromJson(await this.api.get(`/api/personnel/${id}`, { fallback: 'User not found' }));
   }
 
-  async create(body: Json): Promise<User> {
-    return User.fromJson(await this.api.post('/api/personnel', { body, ok: [201, 200], fallback: 'Failed to create personnel' }));
+  /** Creates an account; the server generates its password and returns it once. */
+  async create(body: Json): Promise<{ user: User; password: string; emailed: boolean }> {
+    const data = await this.api.post<Json>('/api/personnel', { body, ok: [201, 200], fallback: 'Failed to create personnel' });
+    return { user: User.fromJson(data), password: String(data.temporary_password ?? ''), emailed: data.emailed === true };
   }
 
   async update(id: number, body: Json): Promise<User> {

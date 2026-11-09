@@ -10,7 +10,7 @@ import { AssignPickerDialog, AssignRoleSelector } from '../common/AssignPicker';
 import { Block, Run } from './TaskDetailParts';
 
 /** Assignees with their status; tap one with a report to review it. Adds and removes people. */
-export function AssigneesCard({ c, run }: { c: TaskDetailController; run: Run }) {
+export function AssigneesCard({ c, run, onPick }: { c: TaskDetailController; run: Run; onPick?: () => void }) {
   const fb = useFeedback();
   const [assigning, setAssigning] = useState(false);
   const users = c.team;
@@ -29,7 +29,7 @@ export function AssigneesCard({ c, run }: { c: TaskDetailController; run: Run })
         const st = c.statusFor(u);
         const has = !!c.reportOf(u.id);
         return (
-          <Pressable key={u.id} onPress={() => has && c.selectAssignee(u)}
+          <Pressable key={u.id} onPress={() => { if (has) { c.selectAssignee(u); onPick?.(); } }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 8, borderRadius: 10, backgroundColor: selected === u.id ? C.blueBg : 'transparent' }}>
             <Avatar url={u.avatarUrl} initials={u.initials} size={34} />
             <View style={{ flex: 1 }}>

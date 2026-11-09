@@ -3,7 +3,7 @@ import json
 import os
 import re
 import time
-from datetime import date
+from datetime import date, timedelta
 
 import httpx
 from typing import List
@@ -168,6 +168,46 @@ def _match_users(db, names: list) -> dict:
     return out
 
 
+class CommitteeSuggestionBody(BaseModel):
+    name: Optional[str] = Field(default="", max_length=200)          # as written in the proposal
+    designation: Optional[str] = Field(default="", max_length=300)
+    tor: Optional[str] = Field(default="", max_length=4000)          # Terms of Reference
+    output: Optional[str] = Field(default="", max_length=1000)
+    committee: Optional[str] = Field(default="", max_length=300)
+    event_title: Optional[str] = Field(default="", max_length=500)
+    limit: int = Field(default=6, ge=1, le=20)
+
+
+def _name_key(name: str) -> str:
+    """'Sheila P. Chevallier (NCS II)' → 'sheila chevallier': first and last word,
+    without titles, middle initials or designations."""
+    n = re.sub(r"\(.*?\)", " ", (name or "").lower())
+    n = re.sub(r"\b(mr|mrs|ms|dr|engr|atty|sir|maam|ma'am)\.?\s", " ", n)
+    words = [w for w in re.findall(r"[a-zñ]+", n) if len(w) > 1]
+    return f"{words[0]} {words[-1]}" if len(words) >= 2 else " ".join(words)
+
+
+@router.post("/committee/suggestions")
+def committee_suggestions(body: CommitteeSuggestionBody, db=Depends(get_db),
+                          user=Depends(require_event_manager)):
+    """Staff ranked for one committee member's role: the same 0-100 fit as task
+    assignment (certificates and skills matched to the Terms of Reference,
+    output and designation, plus current workload). The person whose name
+    matches the one written in the proposal comes first (name_match)."""
+    from qualifications import score_candidates
+    candidates = [dict(r) for r in db.execute(
+        """SELECT u.id, u.username, u.full_name, u.role, u.grade_level_id, gl.grade_level, u.is_active
+           FROM users u LEFT JOIN grade_levels gl ON gl.id = u.grade_level_id
+           WHERE u.is_active = 1 AND u.role <> 'admin'""").fetchall()]
+    text = " ".join(filter(None, [body.tor, body.output, body.designation, body.committee, body.event_title]))
+    ranked = score_candidates(db, candidates, text)
+    wanted = _name_key(body.name or "")
+    for r in ranked:
+        r["name_match"] = bool(wanted) and _name_key(r.get("full_name") or "") == wanted
+    ranked.sort(key=lambda r: (not r["name_match"], -(r.get("score") or 0)))
+    return ranked[:body.limit]
+
+
 @router.post("/read-proposal")
 async def read_proposal(files: List[UploadFile] = File(...), db=Depends(get_db),
                         user=Depends(require_event_manager)):
@@ -282,6 +322,12 @@ class EventCreateBody(BaseModel):
     expected_outputs: Optional[str] = None
     participants: Optional[str] = None
     rationale: Optional[str] = None
+    methodology_intro: Optional[str] = None
+    # Submitted as the uploaded proposal file (POST /{id}/proposal-file), not reviewed field by field.
+    submitted_as_file: Optional[bool] = False
+    # The event's hours (HH:MM, 24-hour); attendance windows come from them.
+    start_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    end_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     objectives: Optional[str] = None
     phase1: Optional[str] = None
     phase2: Optional[str] = None
@@ -323,6 +369,18 @@ class EventCreateBody(BaseModel):
             self.venue_radius_m = None
         elif self.venue_radius_m is None:
             self.venue_radius_m = DEFAULT_RADIUS_M
+        return self
+
+    @model_validator(mode="after")
+    def _check_hours(self):
+        """The event's hours: both or neither (drafts), required to submit, end after start."""
+        start, end = self.start_time or None, self.end_time or None
+        if (start is None) != (end is None):
+            raise ValueError("Give the event's start and end time, or neither.")
+        if start and end <= start:
+            raise ValueError("The event's end time must be after its start time.")
+        if self.status != "draft" and not start:
+            raise ValueError("Add the event's start and end time: attendance opens from them.")
         return self
 
     # Rich-text formatting (comments.rich) is whitelisted before it is stored.
@@ -431,6 +489,30 @@ def create_event(body: EventCreateBody, request: Request, db=Depends(get_db),
     return _event_row(row, db)
 
 
+@router.post("/{event_id}/proposal-file")
+async def upload_proposal_file(event_id: int, request: Request, file: UploadFile = File(...),
+                               db=Depends(get_db), user=Depends(require_event_manager)):
+    """The proponent's original proposal file (Word or PDF), kept with the event
+    so the approver can read it exactly as written. Replaces an earlier one."""
+    from files import save_upload
+    row = db.execute("SELECT created_by, status FROM events WHERE id=?", (event_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Event not found")
+    if row["created_by"] != int(user["sub"]):
+        raise HTTPException(403, "Only the proponent can attach the proposal file.")
+    if row["status"] not in ("draft", "pending_approval", "revisions_requested"):
+        raise HTTPException(409, "The proposal can no longer be changed.")
+    if not (file.filename or "").lower().endswith((".pdf", ".docx", ".doc")):
+        raise HTTPException(400, "Attach the proposal as a PDF or Word file.")
+    saved = await save_upload(file, prefix=f"proposal_{event_id}_")
+    db.execute("UPDATE event SET proposal_file_url=?, proposal_file_name=? WHERE id=?",
+               (saved["url"], saved["name"], event_id))
+    audit.record(db, user, "event.proposal_file", "event", event_id,
+                 f"Attached the proposal file {saved['name']}", request=request)
+    db.commit()
+    return {"url": saved["url"], "name": saved["name"]}
+
+
 @router.put("/{event_id}")
 def update_event(event_id: int, body: EventCreateBody, request: Request, db=Depends(get_db),
                  user=Depends(require_event_manager)):
@@ -490,25 +572,22 @@ def _held_role(db, uid: int) -> str:
 
 
 def _twg_task_instructions(event_title: str, committee: str, m: dict) -> str:
-    """A committee member's special-task instructions: their Terms of Reference
-    (the full description, as written) first, then where the task comes from."""
+    """A committee member's special-task description: their Terms of Reference as written
+    (the Output is the title). Without one, where the task comes from."""
     tor = "\n".join(l.rstrip() for l in (m.get("tor") or "").strip().splitlines())
-    about = [f"Event: {event_title}"]
-    if committee:
-        about.append(f"Committee: {committee}")
+    if tor:
+        return tor
+    # No Terms of Reference written: say where the task comes from instead.
+    about = [f"Event: {event_title}"] + ([f"Committee: {committee}"] if committee else [])
     if (m.get("designation") or "").strip():
         about.append(f"Designation: {m['designation'].strip()}")
-    if (m.get("output") or "").strip():
-        about.append(f"Expected output: {m['output'].strip()}")
-    parts = [f"Terms of Reference:\n{tor}"] if tor else []
-    parts.append("\n".join(about))
-    return "\n\n".join(parts)
+    return "\n".join(about)
 
 
 def _create_twg_special_tasks(db, event_id: int) -> dict:
     """On approval: one pending special task per TWG member flagged
-    `automate_special_task`, assigned to that member and due on the event's
-    target date. Members NOT flagged get no task; they're credited the top
+    `automate_special_task`: titled by the member's Output, described by their
+    Terms of Reference, due `due_days` (default 7) after the event's target date. Members NOT flagged get no task; they're credited the top
     special-task score for this event instead (event_committee_credits).
     Re-approving never duplicates (same event + title + assignee / same user)."""
     ev = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
@@ -517,7 +596,6 @@ def _create_twg_special_tasks(db, event_id: int) -> dict:
     except (TypeError, ValueError):
         groups = []
     target = parse_event_date(ev["target_date"])
-    due = target.isoformat() if target else None
     assigner = ev["created_by"]
     created, skipped = [], []
     for g in groups if isinstance(groups, list) else []:
@@ -538,6 +616,12 @@ def _create_twg_special_tasks(db, event_id: int) -> dict:
             if not title or uid is None:
                 skipped.append(name)
                 continue
+            # Due the proponent's chosen number of days after the event (7 unless changed).
+            try:
+                days = min(max(int(m.get("due_days")), 0), 365)
+            except (TypeError, ValueError):
+                days = 7
+            due = ((target or date.today()) + timedelta(days=days)).isoformat()
             if db.execute(
                     """SELECT 1 FROM tasks t JOIN task_assignments ta ON ta.task_id=t.id
                        WHERE t.source_event_id=? AND t.task_category='special'

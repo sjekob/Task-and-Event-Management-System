@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 
 import bcrypt
 from dotenv import load_dotenv
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 
@@ -45,7 +45,16 @@ if not SECRET_KEY:
     )
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS: int = int(os.getenv("TOKEN_EXPIRE_HOURS", "24"))
+ACCESS_TOKEN_EXPIRE_HOURS: int = int(os.getenv("TOKEN_EXPIRE_HOURS", "12"))
+
+# Sign-out after inactivity. The client warns a minute before and signs out at
+# SESSION_IDLE_MINUTES; the server refuses the session a few minutes later (the
+# grace covers clocks and a heartbeat in flight), so an abandoned or copied
+# token stops working even if the client never ran its timer.
+SESSION_IDLE_MINUTES: int = max(1, int(os.getenv("SESSION_IDLE_MINUTES", "30")))
+SESSION_IDLE_GRACE_MINUTES = 5
+# Last-activity writes are throttled to one per this many seconds per session.
+_TOUCH_EVERY_S = 60
 
 security = HTTPBearer()
 
@@ -142,12 +151,60 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
-def create_token(user_id: int, role: str) -> str:
+def create_token(user_id: int, role: str, session_id: str) -> str:
     expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     return jwt.encode(
-        {"sub": str(user_id), "role": role, "exp": expire},
+        {"sub": str(user_id), "role": role, "sid": session_id, "exp": expire},
         SECRET_KEY, algorithm=ALGORITHM,
     )
+
+
+def start_session(db, user_id: int, role: str, ip: Optional[str], user_agent: Optional[str]) -> str:
+    """Records a new session and returns its id (put in the token). Also clears
+    this user's sessions that ended long ago. Caller commits."""
+    import secrets as _s
+    sid = _s.token_urlsafe(24)
+    db.execute("""DELETE FROM auth_session WHERE personnel_id=?
+                  AND (expires_at < CURRENT_TIMESTAMP - INTERVAL '7 days' OR revoked_at < CURRENT_TIMESTAMP - INTERVAL '7 days')""",
+               (user_id,))
+    db.execute("""INSERT INTO auth_session (id, personnel_id, role, expires_at, ip, user_agent)
+                  VALUES (?,?,?, CURRENT_TIMESTAMP + make_interval(hours => ?), ?, ?)""",
+               (sid, user_id, role, ACCESS_TOKEN_EXPIRE_HOURS, (ip or "")[:64], (user_agent or "")[:300]))
+    return sid
+
+
+def end_session(db, session_id: Optional[str]):
+    """Revokes a session (sign-out). Caller commits."""
+    if session_id:
+        db.execute("UPDATE auth_session SET revoked_at=CURRENT_TIMESTAMP WHERE id=? AND revoked_at IS NULL", (session_id,))
+
+
+def end_all_sessions(db, user_id: int):
+    """Revokes every session of a user (deactivation, password reset). Caller commits."""
+    db.execute("UPDATE auth_session SET revoked_at=CURRENT_TIMESTAMP WHERE personnel_id=? AND revoked_at IS NULL", (user_id,))
+
+
+def touch_session(db, session_id: str):
+    """Marks the session active now (throttled). Caller commits."""
+    db.execute(f"""UPDATE auth_session SET last_active_at=CURRENT_TIMESTAMP
+                   WHERE id=? AND last_active_at < CURRENT_TIMESTAMP - INTERVAL '{_TOUCH_EVERY_S} seconds'""", (session_id,))
+
+
+def _session_problem(db, session_id: Optional[str]) -> Optional[str]:
+    """Why the session can't be used, or None when it's live."""
+    if not session_id:
+        return "Please sign in again."
+    row = db.execute(f"""SELECT revoked_at IS NOT NULL AS revoked, expires_at < CURRENT_TIMESTAMP AS expired,
+                                last_active_at < CURRENT_TIMESTAMP - make_interval(mins => ?) AS idle
+                         FROM auth_session WHERE id=?""",
+                     (SESSION_IDLE_MINUTES + SESSION_IDLE_GRACE_MINUTES, session_id)).fetchone()
+    if not row or row["revoked"]:
+        return "You have been signed out. Please sign in again."
+    if row["expired"]:
+        return "Your session has expired. Please sign in again."
+    if row["idle"]:
+        return "You were signed out after a period of inactivity. Please sign in again."
+    return None
 
 
 def decode_token(token: str) -> dict:
@@ -178,11 +235,16 @@ def _held_roles(db, user_id: int) -> Optional[tuple]:
     return bool(row["is_active"]), roles
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
     """The verified caller. The token's signature and expiry are checked, then
-    the database: the account must still exist, be active, and still hold the
-    role the token was issued for — so deactivating an account or removing a
-    role takes effect immediately instead of when the token expires."""
+    the database: the session must be live (not signed out, not idle too long),
+    and the account must still exist, be active, and still hold the role the
+    token was issued for — so deactivating an account or removing a role takes
+    effect immediately instead of when the token expires.
+
+    Changes (anything but GET/HEAD) count as activity. Reads don't, so
+    background refreshes can't keep an unattended session alive; the client
+    reports real use through POST /api/auth/heartbeat."""
     claims = decode_token(credentials.credentials)
     try:
         uid = int(claims.get("sub"))
@@ -190,6 +252,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise HTTPException(401, "Invalid or expired token")
     from database import db_session  # local import: database must not import auth
     with db_session() as db:
+        problem = _session_problem(db, claims.get("sid"))
+        if problem:
+            raise HTTPException(401, problem)
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            touch_session(db, claims["sid"])
+            db.commit()
         held = _held_roles(db, uid)
     if held is None:
         raise HTTPException(401, "This account no longer exists")

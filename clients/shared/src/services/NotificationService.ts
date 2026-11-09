@@ -17,7 +17,7 @@ export class NotificationService {
     }
   }
 
-  async markRead(id: number) { await this.api.post(`/api/notifications/${id}/read`).catch(() => undefined); }
-  async markAllRead() { await this.api.post('/api/notifications/read-all').catch(() => undefined); }
+  async markRead(id: number) { await this.api.post(`/api/notifications/${id}/read`, { background: true }).catch(() => undefined); }
+  async markAllRead() { await this.api.post('/api/notifications/read-all', { background: true }).catch(() => undefined); }
   async remove(id: number) { await this.api.delete(`/api/notifications/${id}`).catch(() => undefined); }
 }

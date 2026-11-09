@@ -13,12 +13,19 @@ export function SectionHeader({ icon, title }: { icon: FeatherName; title: strin
   );
 }
 
-/** Edit Profile (owner only). */
-export function EditProfileDialog({ profile, onClose }: { profile: User; onClose: (saved: boolean) => void }) {
+/**
+ * Edit Profile (owner only). [firstTime]: the form a teacher fills in on their
+ * first sign-in; it can't be dismissed and the basic details are required.
+ */
+export function EditProfileDialog({ profile, onClose, firstTime }: { profile: User; onClose: (saved: boolean) => void; firstTime?: boolean }) {
   const app = useApp();
-  const [c, s] = useScreenController(() => new EditProfileController(app.services, app.session, profile), [profile.id]);
+  const [c, s] = useScreenController(() => {
+    const ctl = new EditProfileController(app.services, app.session, profile);
+    ctl.requireBasics = !!firstTime;
+    return ctl;
+  }, [profile.id]);
   const field = (key: ProfileTextField, label: string) => (
-    <Field label={label}>
+    <Field label={label} required={firstTime && EditProfileController.REQUIRED_KEYS.includes(key)}>
       {EditProfileController.DATE_KEYS.includes(key)
         ? <DateField value={s.fields[key] || null} onChange={(v) => c.setField(key, v ?? '')} />
         : <Input value={s.fields[key]} keyboardType={key === 'email' ? 'email-address' : key === 'phone_number' ? 'phone-pad' : 'default'}
@@ -38,8 +45,16 @@ export function EditProfileDialog({ profile, onClose }: { profile: User; onClose
   const remaining = s.skillOptions.filter((o) => !taken.has(o.name.toLowerCase()));
 
   return (
-    <Modal title="Edit Profile" subtitle="Your skills and certificates, with how many tasks you have, are used to suggest you for matching tasks." onClose={() => onClose(false)}
-      footer={<><Button variant="ghost" onPress={() => onClose(false)}>Cancel</Button><Button loading={s.saving} onPress={async () => { if (await c.save()) onClose(true); }}>Save</Button></>}>
+    <Modal title={firstTime ? 'Welcome! Complete your profile' : 'Edit Profile'} locked={firstTime} onClose={() => { if (!firstTime) onClose(false); }}
+      subtitle={firstTime
+        ? 'Before you start, fill in your personal information. Fields marked * are required; the rest can be added later from your profile.'
+        : 'Your skills and certificates, with how many tasks you have, are used to suggest you for matching tasks.'}
+      footer={<>
+        {firstTime
+          ? <Button variant="ghost" onPress={() => void app.session.logout()}>Sign out</Button>
+          : <Button variant="ghost" onPress={() => onClose(false)}>Cancel</Button>}
+        <Button loading={s.saving} onPress={async () => { if (await c.save()) onClose(true); }}>{firstTime ? 'Save and continue' : 'Save'}</Button>
+      </>}>
       <SectionHeader icon="credit-card" title="Basic Information" />
       {field('first_name', 'First Name')}{field('middle_name', 'Middle Name')}{field('last_name', 'Last Name')}{field('suffix', 'Suffix')}
       <SectionHeader icon="phone" title="Contact Information" />
@@ -61,7 +76,7 @@ export function EditProfileDialog({ profile, onClose }: { profile: User; onClose
       <Row wrap gap={6}>
         {s.skills.map((x) => (
           <Pressable key={x} onPress={() => c.setSkills(s.skills.filter((y) => y !== x))} accessibilityLabel={`Remove ${x}`}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#eff4fa', borderWidth: 1, borderColor: '#d0dceb', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 }}>
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.surface3, borderWidth: 1, borderColor: C.border, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 }}>
             <T size={12}>{x}</T><Icon name="x" size={13} color={C.muted} />
           </Pressable>
         ))}

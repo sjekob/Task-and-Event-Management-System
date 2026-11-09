@@ -1,14 +1,14 @@
 /** TaskNet colors (same tokens as the web app and the Flutter AppTheme). */
 export const C = {
-  bg: '#dce6f5',
+  bg: '#e0dbd2',
   card: '#ffffff',
-  dark: '#1a1a2e',
-  sidebarActive: '#8faad4',
-  accent: '#2563eb',
-  text: '#1a1a2e',
-  text2: '#4b5563',
-  muted: '#6b7280',
-  light: '#9ca3af',
+  dark: '#5a1120',
+  sidebarActive: '#D92243',
+  accent: '#D92243',
+  text: '#2B2220',
+  text2: '#5B4E48',
+  muted: '#7D6F68',
+  light: '#A99B92',
   green: '#22c55e',
   greenDark: '#15803d',
   greenBg: '#dcfce7',
@@ -18,14 +18,20 @@ export const C = {
   amber: '#f59e0b',
   amberDark: '#b45309',
   amberBg: '#fef3c7',
-  blueBg: '#dbeafe',
+  blueBg: '#FCE8EC',
   blueDark: '#1d4ed8',
   purple: '#7c3aed',
   purpleBg: '#ede9fe',
-  border: '#e5e7eb',
-  borderStrong: '#d1d5db',
-  surface2: '#f8fafc',
-  softBlue: '#eef2fa',
+  border: '#E9E3DA',
+  borderStrong: '#D5CCBF',
+  surface2: '#FAF8F5',
+  softBlue: '#FDF0DC',
+  sidebar: '#252525',
+  accentBg: '#FCE8EC',
+  accentDark: '#A11A33',
+  orange: '#F69D39',
+  orangeSoft: '#FEEBD3',
+  surface3: '#F3EFE9',
 };
 
 export type Tone = 'green' | 'red' | 'amber' | 'blue' | 'gray' | 'purple' | 'orange' | 'dark';
@@ -35,7 +41,7 @@ export const TONES: Record<Tone, { fg: string; bg: string }> = {
   red: { fg: C.redDark, bg: C.redBg },
   amber: { fg: '#92400e', bg: C.amberBg },
   blue: { fg: C.accent, bg: C.blueBg },
-  gray: { fg: C.muted, bg: '#f1f5f9' },
+  gray: { fg: C.muted, bg: C.surface3 },
   purple: { fg: C.purple, bg: C.purpleBg },
   orange: { fg: '#ea580c', bg: '#ffedd5' },
   dark: { fg: '#fff', bg: C.dark },
@@ -50,9 +56,18 @@ export const FONT = {
 } as const;
 
 export const shadow = {
-  shadowColor: '#000',
-  shadowOpacity: 0.08,
-  shadowRadius: 8,
-  shadowOffset: { width: 0, height: 2 },
-  elevation: 2,
+  shadowColor: '#2B2220',
+  shadowOpacity: 0.12,
+  shadowRadius: 14,
+  shadowOffset: { width: 0, height: 4 },
+  elevation: 4,
+};
+
+/** Dialogs and sheets: clearly above the page. */
+export const shadowLg = {
+  shadowColor: '#2B2220',
+  shadowOpacity: 0.28,
+  shadowRadius: 28,
+  shadowOffset: { width: 0, height: -6 },
+  elevation: 16,
 };

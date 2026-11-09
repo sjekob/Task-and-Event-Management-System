@@ -35,8 +35,8 @@ export function MovList({ task }: { task: SpecialTask }) {
       <T size={13} weight={700}>Attached MOVs:</T>
       {task.movs.length === 0 ? <T size={12} color={C.muted} style={{ fontStyle: 'italic' }}>No MOVs uploaded</T> : task.movs.map((m) => (
         <Row key={m.id} gap={8}>
-          <Icon name={m.type === 'file' ? 'file-text' : 'link-2'} size={15} color="#3b82f6" />
-          <T size={13} color="#2563eb" lines={1} style={{ flex: 1, textDecorationLine: 'underline' }}>{m.name}</T>
+          <Icon name={m.type === 'file' ? 'file-text' : 'link-2'} size={15} color="#D92243" />
+          <T size={13} color="#D92243" lines={1} style={{ flex: 1, textDecorationLine: 'underline' }}>{m.name}</T>
           <Button variant="ghost" size="sm" onPress={() => (m.type === 'file' ? setViewing(m) : void openUrl(m.url))}>View MOV</Button>
         </Row>
       ))}
@@ -66,7 +66,7 @@ export function EvaluateSpecialTaskDialog({ task, onClose }: { task: SpecialTask
               <Select<number | null> value={s[k] || null} placeholder="Select rating" title={l} options={RATINGS} onChange={(v) => c.set({ [k]: v ?? 0 })} />
             </Field>
           ))}
-          <T size={13} weight={700} color="#1d4ed8">Final IPCRF Score: {c.finalScoreText}</T>
+          <T size={13} weight={700} color="#A11A33">Final IPCRF Score: {c.finalScoreText}</T>
           <Field label="Remarks"><Input multiline rows={3} placeholder="Add performance comments..." value={s.remarks} onChangeText={(v) => c.set({ remarks: v })} /></Field>
         </>
       )}
@@ -86,8 +86,8 @@ export function ViewSpecialTaskDialog({ task, onClose }: { task: SpecialTask; on
           {([['Quality (Q)', ev.completionScore], ['Efficiency (E)', ev.initiativeScore], ['Timeliness (T)', ev.timelinessScore]] as const).map(([l, v]) => (
             <Line key={l} label={l} value={`${v} - ${IPCRF_LABELS[v] ?? '—'}`} />
           ))}
-          <View style={{ backgroundColor: '#eff6ff', borderRadius: 8, padding: 10 }}>
-            <T weight={700} color="#1d4ed8">Final IPCRF Score: {(ev.weightedAverage ?? 0).toFixed(2)} / 5.00 ({ipcrfRating(ev.weightedAverage ?? 0)})</T>
+          <View style={{ backgroundColor: '#FCE8EC', borderRadius: 8, padding: 10 }}>
+            <T weight={700} color="#A11A33">Final IPCRF Score: {(ev.weightedAverage ?? 0).toFixed(2)} / 5.00 ({ipcrfRating(ev.weightedAverage ?? 0)})</T>
           </View>
           {ev.remarks ? <><T size={13} weight={700}>Remarks</T><T size={13} color={C.text2}>{ev.remarks}</T></> : null}
         </View>

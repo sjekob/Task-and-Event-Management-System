@@ -104,6 +104,8 @@ export class User {
   permissions = new Set<string>();
   /** Roles this session may assign tasks to ("Assign as"). */
   assignableRoles: string[] = [];
+  /** Required personal details not filled in yet (the first-sign-in form asks for them). */
+  missingProfile: string[] = [];
   /** Whether the caller may (de)activate this account (personnel list; decided by the backend). */
   canToggleStatus = false;
   dateOfAppointment: string | null = null;
@@ -140,6 +142,7 @@ export class User {
     u.education = Education.fromJson(R.obj(j.education));
     u.permissions = new Set(R.strList(j.permissions));
     u.assignableRoles = R.strList(j.assignable_roles);
+    u.missingProfile = R.strList(j.missing_profile);
     u.canToggleStatus = R.bool(j.can_toggle_status);
     u.dateOfAppointment = R.optStr(j.date_of_appointment);
     u.birthdate = R.optStr(j.birthdate);

@@ -8,6 +8,7 @@ import { RequireAuth } from '../../core/RequireAuth';
 import { Avatar, C, FONT, IconButton } from '../../ui/kit';
 import { NotificationBell, NotificationPanel } from '../../views/shell/Notifications';
 import { Sidebar } from '../../views/shell/Sidebar';
+import { FirstTimeProfile } from '../../views/profile/FirstTimeProfile';
 
 const SCREENS: [string, string][] = [
   ['dashboard', 'Dashboard'], ['my-tasks', 'My Tasks'], ['my-special-tasks', 'My Special Tasks'], ['advisory', 'Advisory'], ['activity', 'Activity'],
@@ -18,6 +19,7 @@ const SCREENS: [string, string][] = [
 /** Signed-in layout: drawer navigation, a header with create / notifications / profile, and notification polling. */
 export default function MainLayout() {
   const app = useApp();
+  const { user } = useSession();
   const [notifOpen, setNotifOpen] = useState(false);
   useEffect(() => {
     app.notifications.start();
@@ -26,6 +28,8 @@ export default function MainLayout() {
 
   return (
     <RequireAuth>
+      {/* A teacher's first sign-in: personal details come before anything else. */}
+      {user && user.missingProfile.length > 0 ? <FirstTimeProfile /> : <>
       <Drawer
         drawerContent={(props) => <Sidebar {...props} />}
         screenOptions={{
@@ -41,6 +45,7 @@ export default function MainLayout() {
         {SCREENS.map(([name, title]) => <Drawer.Screen key={name} name={name} options={{ title }} />)}
       </Drawer>
       {notifOpen && <NotificationPanel onClose={() => setNotifOpen(false)} />}
+      </>}
     </RequireAuth>
   );
 }

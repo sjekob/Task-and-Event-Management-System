@@ -51,7 +51,7 @@ const Group = memo(function Group({ g, showDept, open, onToggle }: { g: G; showD
   return (
     <View style={{ borderTopWidth: 1, borderColor: C.border }}>
       <Pressable onPress={onToggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 }}>
-        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}><T weight={700} color="#3b82f6">{g.key.charAt(0).toUpperCase() || '?'}</T></View>
+        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#FCE8EC', alignItems: 'center', justifyContent: 'center' }}><T weight={700} color="#D92243">{g.key.charAt(0).toUpperCase() || '?'}</T></View>
         <View style={{ flex: 1 }}>
           <T size={13.5} weight={600} lines={1}>{g.key}</T>
           <T size={11.5} color={C.muted}>{showDept && g.dept ? `${g.dept} · ` : ''}{g.subs.length} submissions</T>

@@ -81,8 +81,8 @@ export default function ProfileScreen() {
         {p.skills.length === 0 ? <T size={13} color={C.muted}>None added yet</T> : (
           <Row wrap gap={8}>
             {p.skills.map((sk) => (
-              <Row key={sk} gap={5} style={{ backgroundColor: '#eef2fa', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 }}>
-                <Icon name="check-circle" size={14} color="#1e3a8a" /><T size={12.5}>{sk}</T>
+              <Row key={sk} gap={5} style={{ backgroundColor: '#FDF0DC', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 }}>
+                <Icon name="check-circle" size={14} color="#A11A33" /><T size={12.5}>{sk}</T>
               </Row>
             ))}
           </Row>

@@ -208,7 +208,6 @@ def get_personnel(uid: int, db=Depends(get_db), user=Depends(get_current_user)):
 class PersonnelCreateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str
-    password: str
     email: Optional[str] = None
     first_name: str  # initial display name; the owner completes their profile
     middle_name: Optional[str] = None
@@ -219,13 +218,26 @@ class PersonnelCreateBody(BaseModel):
     date_of_appointment: Optional[date] = None   # YYYY-MM-DD
 
 
+_PW_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"  # no 0/O, 1/l/I
+
+
+def _generate_password(length: int = 10) -> str:
+    """A random sign-in password with at least one upper, lower and digit."""
+    import secrets
+    while True:
+        pw = "".join(secrets.choice(_PW_CHARS) for _ in range(length))
+        if any(c.isupper() for c in pw) and any(c.islower() for c in pw) and any(c.isdigit() for c in pw):
+            return pw
+
+
 @router.post("/api/personnel", status_code=201)
 def create_personnel(body: PersonnelCreateBody, request: Request, db=Depends(get_db),
                      user=Depends(require_personnel_manager)):
     valid_roles = ('principal', 'coordinator', 'dean', 'teacher', 'registrar')
     if body.role not in valid_roles:
         raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
-    pw = hash_password(body.password)
+    password = _generate_password()  # never chosen by the manager; sent to the new user
+    pw = hash_password(password)
     try:
         new_id = store.create_user(db, {
             "username": body.username, "password_hash": pw, "role": body.role,
@@ -239,8 +251,15 @@ def create_personnel(body: PersonnelCreateBody, request: Request, db=Depends(get
     except Exception as e:
         db.rollback()
         raise HTTPException(400, f"Username already exists or invalid data: {e}")
+    # Email the new account its sign-in details (when mail is set up and an email was given).
+    import mailer
+    full = " ".join(x for x in (body.first_name, body.middle_name, body.last_name, body.suffix) if x and x.strip())
+    emailed = mailer.enabled() and "@" in (body.email or "")
+    mailer.send_account_created(body.email or "", full, body.username, password, body.role.title())
     row = db.execute("SELECT * FROM users WHERE username=?", (body.username,)).fetchone()
-    return _user_row(row, db)
+    # The generated password is returned once, so the manager can hand it over
+    # if the email doesn't arrive; it is stored only as a hash.
+    return {**_user_row(row, db), "temporary_password": password, "emailed": emailed}
 
 
 class PersonnelUpdateBody(BaseModel):
@@ -270,6 +289,9 @@ def update_personnel(uid: int, body: PersonnelUpdateBody, request: Request,
     }.items() if v is not None}
     if fields:
         store.update_user(db, uid, fields)
+        if body.password:  # a reset signs the account out everywhere
+            from auth import end_all_sessions
+            end_all_sessions(db, uid)
         db.commit()
 
     if body.coordinator_type is not None:
@@ -381,6 +403,9 @@ def toggle_personnel_status(uid: int, request: Request, db=Depends(get_db),
         raise HTTPException(403, "Only the Principal or Admin can change this account's status")
     new_status = 0 if row["is_active"] else 1
     store.update_user(db, uid, {"is_active": new_status})
+    if not new_status:  # deactivated: end every session now
+        from auth import end_all_sessions
+        end_all_sessions(db, uid)
     audit.record(db, user, "account.reactivate" if new_status else "account.deactivate", "user", uid,
                  "Reactivated account" if new_status else "Deactivated account",
                  changes={"active": [not new_status, bool(new_status)]}, request=request)

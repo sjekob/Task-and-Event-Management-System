@@ -33,6 +33,19 @@ export function BriefStep({ c }: { c: ProposalFormController }) {
           : s.checkingDate ? <T size={12} color={C.muted}>Checking the calendar...</T>
           : dateOk ? <T size={12} color="#16a34a">No other event is scheduled on this date.</T> : null}
         {s.dateWarning && !s.dateIssue ? <T size={12} color={C.amberDark}>{s.dateWarning}</T> : null}
+        <Row gap={8} style={{ marginTop: 8 }}>
+          <View style={{ flex: 1 }}>
+            <DateField mode="time" placeholder="Starts at" value={d.startTime ? Format.to12h(d.startTime) : null}
+              onChange={(v) => c.set('startTime', v ? Format.to24h(v) : '')} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <DateField mode="time" placeholder="Ends at" value={d.endTime ? Format.to12h(d.endTime) : null}
+              onChange={(v) => c.set('endTime', v ? Format.to24h(v) : '')} />
+          </View>
+        </Row>
+        {d.startTime && d.endTime && d.endTime <= d.startTime
+          ? <T size={12} color={C.red}>The end time must be after the start time.</T>
+          : <T size={12} color={C.muted}>Attendance opens from these hours: Time In for the first 2 hours, Time Out (the evaluation) from 2 hours before the end until midnight.</T>}
       </Field>
       <RichPlain label="d. Proposed Venue" placeholder="e.g. NCS II Pavilion" value={d.venue} onChange={(v) => c.set('venue', v)} />
       <VenuePinCard c={c} />

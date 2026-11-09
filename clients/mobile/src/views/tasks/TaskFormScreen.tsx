@@ -6,6 +6,7 @@ import { TaskScanController } from '@shared/controllers/TaskScanController';
 import { Task, TaskCategory } from '@shared/models';
 import { useServices, useSession } from '../../core/AppModel';
 import { useScreenController } from '../../core/hooks';
+import { useDirty, useUnsavedGuard } from '../../core/unsaved';
 import { useFeedback } from '../../ui/feedback';
 import { Avatar, Button, C, DateField, ErrorBox, Field, Input, Loading, Row, Screen, T } from '../../ui/kit';
 import { pickFile } from '../../ui/files';
@@ -41,7 +42,11 @@ function TaskForm({ back, mode }: { back: string; mode: TaskFormMode }) {
   const [picker, setPicker] = useState(false);
   const [linkKind, setLinkKind] = useState<AttachmentKind | null>(null);
   const [templates, setTemplates] = useState(false);
-  const leave = () => (router.canGoBack() ? router.back() : router.replace(back as never));
+  // Leaving with unsaved changes asks first (back arrow, Android back, swipe).
+  const dirty = useDirty({ t: s.title, i: s.instructions, sd: s.startDate, ed: s.endDate, dt: s.dueTime, cat: s.category,
+    who: s.selectedIds, files: s.attachments.length });
+  const guard = useUnsavedGuard(dirty, { what: mode.kind === 'template' ? 'template' : 'task' });
+  const leave = () => { guard.release(); if (router.canGoBack()) router.back(); else router.replace(back as never); };
 
   const addAttachment = async (kind: AttachmentKind) => {
     if (kind !== 'file') { setLinkKind(kind); return; }
@@ -62,6 +67,7 @@ function TaskForm({ back, mode }: { back: string; mode: TaskFormMode }) {
   return (
     <Screen>
       <Stack.Screen options={{ title: c.pageTitle }} />
+      {guard.dialog}
       <T size={13} color={C.muted}>{c.subtitle}</T>
       {mode.kind !== 'edit' && (
         <Row wrap>

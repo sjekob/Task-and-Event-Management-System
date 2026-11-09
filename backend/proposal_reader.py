@@ -62,6 +62,11 @@ def _clean(s) -> str:
     return re.sub(r"[   ]+", " ", s).strip()
 
 
+class _Row(list):
+    """A PDF table row. [spanned]: columns covered by a merged cell from a row above (pdfplumber gives them None)."""
+    spanned = frozenset()
+
+
 def _clean_cell(s) -> str:
     """Cell text keeps its line breaks (activities, terms of reference)."""
     lines = [_clean(x) for x in ("" if s is None else str(s)).splitlines()]
@@ -121,7 +126,8 @@ def _pdf_blocks(data: bytes) -> list:
             for t in tables:
                 rows = []
                 for r in t.extract():
-                    cells = [_clean_cell(c) for c in r]  # spanned cells come back empty
+                    cells = _Row(_clean_cell(c) for c in r)  # spanned cells come back empty
+                    cells.spanned = frozenset(i for i, c in enumerate(r) if c is None)
                     if any(cells):
                         rows.append(cells)
                 if rows:
@@ -135,7 +141,9 @@ def _pdf_blocks(data: bytes) -> list:
             for line in body.extract_text_lines(keep_blank_chars=False):
                 text = _clean(line.get("text"))
                 if text:
-                    items.append((line["top"], ("p", text)))
+                    # Third part: the line's runs of words with their x span, so side-by-side
+                    # columns (two signatories on one printed line) can be told apart.
+                    items.append((line["top"], ("p", text, _segments(line))))
             items.sort(key=lambda x: x[0])
             pages.append([b for _, b in items])
     # Letterhead and footer lines repeat on every page ("Email Address: …",
@@ -153,6 +161,45 @@ def _pdf_blocks(data: bytes) -> list:
                 continue
             blocks.append(b)
     return blocks
+
+
+_PAGE_NO = re.compile(r"^\s*(?:(?:page|pg\.?|p\.)\s*\d+(?:\s*(?:of|/)\s*\d+)?|\d+\s*(?:of|/)\s*\d+|[-\u2013\u2014]\s*\d+\s*[-\u2013\u2014])\s*$", re.I)
+
+
+def _is_page_number(text: str) -> bool:
+    """A page number on its own: "Page 3 of 8", "3 of 8", "3/8", "- 3 -", "p. 3"."""
+    return bool(text and _PAGE_NO.match(text))
+
+
+def _drop_page_numbers(rows: list) -> list:
+    """Table rows that are really a footer ("Page | 3 of 8") caught inside a table's area."""
+    return [r for r in rows if not _is_page_number(" ".join(str(c) for c in r if c))]
+
+
+def _segments(line: dict) -> list:
+    """[(x0, x1, text)] runs of words on a PDF line, split where the gap is wider than a few spaces."""
+    chars = sorted((c for c in (line.get("chars") or []) if str(c.get("text", "")).strip()), key=lambda c: c["x0"])
+    runs, cur = [], []
+    for ch in chars:
+        size = float(ch.get("size") or 10)
+        if cur and ch["x0"] - cur[-1]["x1"] > max(18.0, size * 2.2):
+            runs.append(cur)
+            cur = []
+        cur.append(ch)
+    if cur:
+        runs.append(cur)
+    out = []
+    for run in runs:
+        text, prev = "", None
+        for ch in run:
+            if prev is not None and ch["x0"] - prev["x1"] > float(ch.get("size") or 10) * 0.18:
+                text += " "
+            text += ch["text"]
+            prev = ch
+        text = _clean(text)
+        if text:
+            out.append((run[0]["x0"], run[-1]["x1"], text))
+    return out
 
 
 def _is_page_furniture(text: str) -> bool:
@@ -385,7 +432,7 @@ def _empty_form() -> dict:
     return {
         "title": "", "nature": "", "targetDate": "", "venue": "", "time": "",
         "budget": "", "fundSource": "", "focalName": "", "focalRole": "", "focalContact": "",
-        "participants": [], "outputs": [], "rationale": "", "objectives": "",
+        "participants": [], "outputs": [], "rationale": "", "methodologyIntro": "", "objectives": "",
         "phases": [], "matrix": [], "materials": [], "snacks": [], "exec": [], "twg": [],
         "monitoring": "", "indicators": [], "signatories": [],
     }
@@ -486,6 +533,9 @@ def _parse_table(form: dict, rows: list, section: Optional[str], last: dict, war
             header = (["Name", "Position"] if kind == "exec"
                       else ["Name", "Designation", "Terms of Reference", "Output"])
             body = rows
+        elif sum(1 for r in rows if r and re.fullmatch(r"phase\s*\d+", _norm(r[0]))) >= 2 and len(header) >= 2:
+            kind, body = "phases", rows
+            header = ["Phase", "Stage", "Activities"] if len(header) >= 3 else ["Stage", "Activities"]
         elif section == "matrix" and len(header) >= 4:
             kind, header, body = "matrix", ["Day", "Time", "Event", "Speaker"], rows
         else:
@@ -514,6 +564,7 @@ def _parse_table(form: dict, rows: list, section: Optional[str], last: dict, war
             stage = _cell(r, cst)
             if cst is not None and re.fullmatch(r"phase\s*\d+", _norm(stage)) and len(r) >= 3:
                 stage = r[1]  # "Phase 1 | Stage | Activities"
+            stage = _one_line(stage)
             acts = _cell(r, ca)
             if stage or acts:
                 form["phases"].append({"stage": stage, "activities": acts})
@@ -576,8 +627,15 @@ def _parse_table(form: dict, rows: list, section: Optional[str], last: dict, war
             if group is None:
                 group = {"title": title or "Technical Working Group", "members": []}
                 form["twg"].append(group)
-            group["members"].append({"name": _one_line(_cell(r, cn)), "designation": _one_line(_cell(r, cd)),
-                                     "tor": _keep_lines(_cell(r, ct), last.get("wrapped", False)), "output": _one_line(_cell(r, co))})
+            member = {"name": _one_line(_cell(r, cn)), "designation": _one_line(_cell(r, cd)),
+                      "tor": _keep_lines(_cell(r, ct), last.get("wrapped", False)), "output": _one_line(_cell(r, co))}
+            # A merged Output (or Terms of Reference) cell spanning several members' rows: they share it.
+            above = group["members"][-1] if group["members"] else None
+            spanned = getattr(r, "spanned", frozenset())
+            for key, ci in (("output", co), ("tor", ct)):
+                if above and ci is not None and not member[key] and ci in spanned:
+                    member[key] = above[key]
+            group["members"].append(member)
         last["continuing_twg"] = True
     elif kind == "participants":
         cm, cf = _col(header, r"^male"), _col(header, r"female")
@@ -589,8 +647,42 @@ def _parse_table(form: dict, rows: list, section: Optional[str], last: dict, war
         ci = _col(header, r"indicator")
         for r in body:
             v = _strip_bullet(_one_line(_cell(r, ci)))
-            if v and not _is_total_row(r):
+            if not v or _is_total_row(r):
+                continue
+            if _IND_END.match(v):
+                break
+            if not _indicator_label(v):
                 form["indicators"].append(v)
+
+
+# -- Indicators: only the statements, not the printed form around them --
+# An evaluation form carries a title, the school name, "Name / Grade & Section"
+# fields and "Directions: ..." above the indicators, and "Comments and
+# Recommendations" below them. None of those are indicators.
+_IND_END = re.compile(r"^\W*(comments?|recommendations?|remarks|suggestions)\b", re.I)
+_IND_LABEL = re.compile(r"^\W*(directions?|instructions?|name|grade|section|date|signature|legend|rating scale|school)\b", re.I)
+
+
+def _indicator_label(v: str) -> bool:
+    """A heading or form label rather than an indicator statement."""
+    t = v.strip()
+    letters = [ch for ch in t if ch.isalpha()]
+    shouting = len(letters) >= 6 and sum(ch.isupper() for ch in letters) / len(letters) > 0.7
+    return t.endswith(":") or bool(_IND_LABEL.match(t)) or shouting
+
+
+def _looks_like_statement(raw: str, v: str) -> bool:
+    """The first real indicator: a numbered/bulleted item, or a full sentence."""
+    return bool(re.match(r"^\s*(\d+[.)]|[•\-*·●○])", raw)) or v.rstrip().endswith((".", ")", "?"))
+
+
+_SIG_ROLE = re.compile(r"^(noted|endorsed|recommending approval|approved)(?: by)?\s*:?\s*(.*)$", re.I)
+_SIG_SELF = re.compile(r"^(prepared|submitted|proponent)(?: by)?\s*:?\s*$", re.I)
+
+
+def _signatory(role: str, lines: list) -> dict:
+    """Name on the first line; the title may wrap onto the next one or two."""
+    return {"role": role, "name": lines[0], "title": " ".join(lines[1:3])}
 
 
 def parse(blocks: list, line_tables: bool = False, wrapped_cells: bool = False) -> dict:
@@ -605,15 +697,58 @@ def parse(blocks: list, line_tables: bool = False, wrapped_cells: bool = False) 
     text = {"rationale": [], "objectives": [], "monitoring": [], "methodology_intro": []}
     sig = {"role": None, "lines": []}
     sigs = []
+    ind = {"started": False, "done": False}  # indicators: past the form preamble / past the list
 
     def flush_sig():
         if sig["role"] and sig["lines"]:
-            name = sig["lines"][0]
-            title = sig["lines"][1] if len(sig["lines"]) > 1 else ""
-            sigs.append({"role": sig["role"], "name": name, "title": title})
+            sigs.append(_signatory(sig["role"], sig["lines"][:2]))
         sig.update(role=None, lines=[])
+        flush_cols()
 
-    for kind, val in blocks:
+    # PDF signature blocks are often two columns side by side; each column is followed separately.
+    cols = []  # {"x0", "cx", "role", "lines"}
+
+    def col_for(x0: float, x1: float) -> dict:
+        cx = (x0 + x1) / 2
+        for c in cols:  # same column: left-aligned under it, or centred on it
+            if abs(c["x0"] - x0) < 40 or abs(c["cx"] - cx) < 40:
+                return c
+        c = {"x0": x0, "cx": cx, "role": None, "lines": []}
+        cols.append(c)
+        return c
+
+    def flush_cols():
+        for c in cols:
+            if c["role"] and c["lines"]:
+                sigs.append(_signatory(c["role"], c["lines"]))
+        cols.clear()
+
+    def signature_columns(segs: list) -> None:
+        for x0, x1, t in segs:
+            c = col_for(x0, x1)
+            m = _SIG_ROLE.match(t)
+            if m and len(t) < 60:
+                if c["role"] and c["lines"]:
+                    sigs.append(_signatory(c["role"], c["lines"]))
+                c.update(x0=x0, cx=(x0 + x1) / 2, lines=[m.group(2).strip()] if m.group(2).strip() else [],
+                         role=next(r for r in SIGNATORY_ROLES if r.lower() == m.group(1).lower()))
+            elif _SIG_SELF.match(t):
+                if c["role"] and c["lines"]:
+                    sigs.append(_signatory(c["role"], c["lines"]))
+                c.update(x0=x0, cx=(x0 + x1) / 2, role=None, lines=[])  # the proponent's own signature
+            elif c["role"] and len(c["lines"]) < 3:
+                c["lines"].append(t)
+
+    for blk in blocks:
+        kind, val = blk[0], blk[1]
+        segs = blk[2] if len(blk) > 2 else None
+        # Page numbers ("Page 3 of 8") are never content, on any page or inside a table.
+        if kind == "t":
+            val = _drop_page_numbers(val)
+            if not val:
+                continue
+        elif _is_page_number(val):
+            continue
         if kind == "t":
             _parse_table(form, val, section, last, warnings)
             pending = {}
@@ -627,6 +762,12 @@ def parse(blocks: list, line_tables: bool = False, wrapped_cells: bool = False) 
             sub["budget"] = None
             if heading != "twg":
                 last.pop("continuing_twg", None)
+            continue
+        if segs and (section == "signatories" or any(_SIG_ROLE.match(t) or _SIG_SELF.match(t) for _, _, t in segs)):
+            if section != "signatories":
+                flush_sig()
+            section = "signatories"
+            signature_columns(segs)
             continue
         # "Prepared by:" / signatories ("Noted:", "Recommending Approval:" …) close the document.
         if re.match(r"^(prepared|submitted)(?: by)?\s*:?\s*$|^proponent\s*:\s*$", line, re.I):
@@ -687,20 +828,32 @@ def parse(blocks: list, line_tables: bool = False, wrapped_cells: bool = False) 
             continue
         if section in ("rationale", "objectives", "monitoring"):
             text[section].append(line)
+        elif section == "methodology" and not form["phases"]:
+            if not re.match(r"(?i)^(phase|stage|activities)\b", line):
+                text["methodology_intro"].append(line)
         elif section == "indicators":
             if re.match(r"(?i)^\W*indicators?\b", line):
                 continue  # the table's heading row, read as text
             v = _strip_bullet(re.sub(r"[|_]+", " ", line))
             v = _trim_box_noise(v)  # empty Evident/Not Evident boxes read as "a ee eee"
-            if v and len(v) > 3:
-                form["indicators"].append(v)
+            if ind["done"] or not v or len(v) <= 3:
+                continue
+            if _IND_END.match(v):
+                ind["done"] = True   # "Comments and Recommendations": the list is over
+                continue
+            if _indicator_label(v) or (not ind["started"] and not _looks_like_statement(line, v)):
+                continue             # the form's title, school name, fields and directions
+            ind["started"] = True
+            form["indicators"].append(v)
     flush_sig()
 
     form["rationale"] = _paragraphs(text["rationale"])
+    form["methodologyIntro"] = _paragraphs(text["methodology_intro"])
     objectives = [l for l in text["objectives"] if not l.rstrip().endswith(":")]
     form["objectives"] = "\n".join(_strip_bullet(l) for l in _join_wrapped(objectives))
     form["monitoring"] = _paragraphs(text["monitoring"])
-    form["signatories"] = sigs
+    order = {r: i for i, r in enumerate(SIGNATORY_ROLES)}
+    form["signatories"] = sorted(sigs, key=lambda x: order.get(x["role"], 99))
     return form
 
 
@@ -804,7 +957,7 @@ def _paragraphs(lines: list) -> str:
 SECTION_FIELDS = [  # (wizard step label, form keys that count as "found")
     ("Proposal Brief", ("title", "targetDate", "venue", "budget", "fundSource", "focalName", "outputs", "participants")),
     ("Rationale & Objectives", ("rationale", "objectives")),
-    ("Methodology", ("phases",)),
+    ("Methodology", ("phases", "methodologyIntro")),
     ("Activity Matrix", ("matrix",)),
     ("Budget", ("materials", "snacks")),
     ("Working Committee", ("exec", "twg")),
@@ -850,6 +1003,20 @@ def read(files: list) -> dict:
     if not form["nature"]:
         warnings.append("The nature of the activity (Curricular / Co-curricular / Extra-curricular) "
                         "wasn't found. Choose it in the Proposal Brief.")
+    # The event's hours (attendance opens from them): the proposal's stated time
+    # range, else the target date's sessions in the Activity Matrix.
+    from routes.attendance import parse_time_range  # lazy: attendance pulls in FastAPI
+    span = parse_time_range(form["time"]) if form["time"] else None
+    if not span:
+        target = parse_event_date(form["targetDate"])
+        spans = [s for s in (parse_time_range(r.get("time")) for r in form["matrix"]
+                             if (parse_event_date(r.get("day")) or target) == target) if s]
+        if target and spans:
+            span = (min(s[0] for s in spans), max(s[1] for s in spans))
+    form["startTime"], form["endTime"] = (span[0].strftime("%H:%M"), span[1].strftime("%H:%M")) if span else ("", "")
+    if not span:
+        warnings.append("The event's start and end time weren't found. Add them in the Proposal Brief: "
+                        "Time In and Time Out are open only during the event.")
     if form["time"] and not any(r.get("time") for r in form["matrix"]):
         warnings.append(f"The proposal gives the time as \"{form['time']}\". Add it to the Activity Matrix rows.")
     if form["targetDate"] and parse_event_date(form["targetDate"]) is None:

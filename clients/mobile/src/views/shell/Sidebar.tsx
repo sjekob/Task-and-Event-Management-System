@@ -23,7 +23,20 @@ export function Sidebar({ navigation }: DrawerContentComponentProps) {
     router.navigate(item.path as never);
   };
   const logout = async () => {
-    if (await fb.confirm({ title: 'Log out?', confirmLabel: 'Log out' })) {
+    // Don't cut off a save or upload that's still running.
+    const block = app.session.signOutBlock();
+    if (block?.kind === 'saving') {
+      fb.toast('Still saving. Wait until it finishes, then log out.', 'error');
+      return;
+    }
+    const ask = block?.kind === 'unsaved'
+      ? { title: 'Log out without saving?', message: `You have unsaved changes to this ${block.what}. They'll be lost.`, confirmLabel: 'Discard and log out', danger: true }
+      : { title: 'Log out?', confirmLabel: 'Log out' };
+    if (await fb.confirm(ask)) {
+      if (app.session.signOutBlock()?.kind === 'saving') {  // something started saving while the question was up
+        fb.toast('Still saving. Wait until it finishes, then log out.', 'error');
+        return;
+      }
       navigation.closeDrawer();
       await app.session.logout();
       router.replace('/login');
@@ -31,7 +44,7 @@ export function Sidebar({ navigation }: DrawerContentComponentProps) {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.dark, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 8 }}>
+    <View style={{ flex: 1, backgroundColor: C.sidebar, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18, marginBottom: 14 }}>
         <Image source={require('../../../assets/images/tasknet-logo.png')} style={{ width: 32, height: 32, tintColor: '#fff' }} />
         <View>
@@ -47,7 +60,8 @@ export function Sidebar({ navigation }: DrawerContentComponentProps) {
               const on = item.page === active;
               return (
                 <Pressable key={item.page} onPress={() => go(item)}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 12, borderRadius: 10, backgroundColor: on ? 'rgba(255,255,255,0.12)' : 'transparent' }}>
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 12, borderRadius: 10, backgroundColor: on ? 'rgba(255,255,255,0.12)' : 'transparent', borderLeftWidth: 3,
+                    borderLeftColor: on ? C.orange : 'transparent' }}>
                   <Icon name={NAV_ICON[item.icon]} size={19} color={on ? '#fff' : 'rgba(255,255,255,0.7)'} />
                   <T size={14} weight={on ? 700 : 500} color={on ? '#fff' : 'rgba(255,255,255,0.78)'}>{item.label}</T>
                 </Pressable>

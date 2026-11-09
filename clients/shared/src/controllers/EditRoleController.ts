@@ -47,6 +47,8 @@ export interface EditRoleState {
   subjects: string[];
   rows: SubjectRow[];
   metaLoaded: boolean;
+  /** Why the grade-level / subject lists couldn't be loaded (then the dialog offers Retry). */
+  metaError: string | null;
   saving: boolean;
   error: string | null;
 }
@@ -62,15 +64,24 @@ export class EditRoleController extends BaseController<EditRoleState> {
       advisorySectionId: user.advisorySection?.id ?? null,
       sections: [],
       appointment: user.dateOfAppointment ?? '',
-      gradeLevels: [], subjects: [], rows: [], metaLoaded: false, saving: false, error: null,
+      gradeLevels: [], subjects: [], rows: [], metaLoaded: false, metaError: null, saving: false, error: null,
     });
     void this.loadMeta();
   }
 
-  private async loadMeta() {
-    const [gradeLevels, subjects, sections] = await Promise.all([
-      this.services.personnel.gradeLevels(), this.services.personnel.subjects(), this.services.personnel.sections().catch(() => [] as Section[]),
-    ]);
+  /** Loads the grade levels, subjects and sections; on failure says so (no silently empty lists). */
+  async loadMeta() {
+    this.setState({ metaError: null, metaLoaded: false });
+    let gradeLevels: GradeLevelMeta[], subjects: { name: string }[], sections: Section[];
+    try {
+      [gradeLevels, subjects, sections] = await Promise.all([
+        this.services.personnel.gradeLevels(), this.services.personnel.subjects(), this.services.personnel.sections().catch(() => [] as Section[]),
+      ]);
+      if (!gradeLevels.length || !subjects.length) throw new Error('empty');
+    } catch {
+      this.setState({ metaError: "Couldn't load the grade levels and subjects. Check the connection and try again.", metaLoaded: true });
+      return;
+    }
     const rows = this.user.subjects.map((s) => ({
       gradeLevelId: gradeLevels.find((g) => g.name === s.gradeLevel)?.id ?? null,
       subject: s.subject,

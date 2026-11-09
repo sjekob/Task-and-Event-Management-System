@@ -79,9 +79,7 @@ export function proposalPages(p: PrintData): string {
      ╚══════════════════════════════╝ -->
 <div class="section">
   <div class="section-title">IV.&nbsp;&nbsp;Methodology</div>
-  <p>The training shall be composed of lectures, video clip viewing, sharing and games.
-     5E&#x2019;s approach shall be utilized for most of the sessions.
-     The schedule will be as follows:</p>
+  ${p.methodologyIntroHtml}
   <table class="phase-table">
     ${p.methodologyRows}
   </table>

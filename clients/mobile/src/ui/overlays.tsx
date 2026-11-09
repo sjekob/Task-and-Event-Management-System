@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Modal as RNModal, Platform, Pressable, ScrollView
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FeatherName, Icon } from './icons';
 import { T } from './text';
-import { C } from './theme';
+import { C, shadowLg } from './theme';
 
 /**
  * A full dialog: title bar, scrollable body and a footer of actions. Slides up
@@ -17,8 +17,8 @@ export function Modal({ title, subtitle, onClose, children, footer, icon, locked
   return (
     <RNModal visible transparent animationType="slide" onRequestClose={locked ? undefined : onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.45)' }} onPress={locked ? undefined : onClose} />
-        <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '92%', paddingBottom: Math.max(insets.bottom, 12) }}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(43,20,24,0.5)' }} onPress={locked ? undefined : onClose} />
+        <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '92%', paddingBottom: Math.max(insets.bottom, 12), ...shadowLg }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 16, paddingBottom: 12, borderBottomWidth: 1, borderColor: C.border }}>
             {icon && <View style={{ marginTop: 2 }}><Icon name={icon} size={20} /></View>}
             <View style={{ flex: 1 }}>

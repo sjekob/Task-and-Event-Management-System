@@ -30,7 +30,7 @@ export function VenuePinCard({ c }: { c: ProposalFormController }) {
   };
   return (
     <Card style={{ gap: 8 }}>
-      <Row gap={8}><Icon name="map" size={18} color={pin ? '#1d4ed8' : C.muted} /><T weight={700} style={{ flex: 1 }}>Venue location for attendance</T></Row>
+      <Row gap={8}><Icon name="map" size={18} color={pin ? '#A11A33' : C.muted} /><T weight={700} style={{ flex: 1 }}>Venue location for attendance</T></Row>
       <T size={12.5} color={C.muted}>
         {pin ? `Pinned · Time In / Time Out accepted within ${formatDistance(d.venueRadius)} of ${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}.`
           : 'Not pinned · attendance is checked by time only. Stand at the venue and pin it to require attendees to be there.'}
@@ -74,7 +74,7 @@ export function ProposalUploadCard({ c }: { c: ProposalFormController }) {
         </>
       ) : (
         <>
-          <Icon name="upload" size={34} color="#1d4ed8" />
+          <Icon name="upload" size={34} color="#A11A33" />
           <T size={17} weight={700} center>Upload your event proposal</T>
           <T size={13} color={C.muted} center>TaskNet reads the title, date, venue, schedule, budget and working committee from the file and fills in the proposal for you to check.</T>
           <Button icon="file-text" onPress={() => void choose()}>Choose file</Button>

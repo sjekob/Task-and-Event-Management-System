@@ -143,7 +143,7 @@ def _lock_reason(row) -> Optional[str]:
 def _session_lock_reason(db, row, session: int, email: str) -> Optional[str]:
     """A guest's evaluation of one session: open once that email has timed out
     of it (attendance, not the event's target date, decides)."""
-    # The evaluation is the guest's Time Out: open from the session's end until midnight.
+    # The evaluation is the guest's Time Out: open from 2 hours before the event ends until midnight.
     from routes.attendance import evaluation_lock  # attendance imports this module
     if row["status"] not in ("approved", "completed"):
         return "This event is not yet approved for evaluation."

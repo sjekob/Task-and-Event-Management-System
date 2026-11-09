@@ -13,8 +13,8 @@ from typing import Optional
 from store import replace_list
 
 # The proposal's simple details: columns of `event`, named as in the payload.
-_COLUMNS = ("target_date", "venue", "proposed_budget", "fund_source", "focal_name", "focal_role", "focal_contact",
-            "rationale", "monitoring_criteria")
+_COLUMNS = ("target_date", "start_time", "end_time", "venue", "proposed_budget", "fund_source", "focal_name", "focal_role", "focal_contact",
+            "rationale", "methodology_intro", "monitoring_criteria")
 _RICH_FIELDS = ("title", "venue", "focalRole", "rationale", "objectives", "monitoring")
 
 
@@ -81,6 +81,8 @@ def save_event(db, body: dict, *, event_id: Optional[int] = None, status: Option
         "venue_radius_m": (body.get("venue_radius_m") or 100) if pinned else None,
         "reading_method": reading["method"] if reading else None,
         "reading_at": (_s(reading.get("read_at")) or None) if reading else None,
+        # Submitted as the original file, without reviewing the form read from it.
+        "submitted_as_file": 1 if body.get("submitted_as_file") else 0,
     }
     if event_id is None:
         fields.update(status=status or "pending_approval", created_by=created_by)
@@ -120,10 +122,20 @@ def _save_committees(db, event_id: int, groups: list):
         cid = db.execute("INSERT INTO event_committee (event_id, position, title) VALUES (?,?,?)",
                          (event_id, gi, _s(g.get("title")))).lastrowid
         for mi, m in enumerate(m for m in (g.get("members") or []) if isinstance(m, dict)):
-            db.execute("""INSERT INTO event_committee_member (committee_id, position, name, designation, tor, output, automate, personnel_id)
-                          VALUES (?,?,?,?,?,?,?,?)""",
+            db.execute("""INSERT INTO event_committee_member (committee_id, position, name, designation, tor, output, automate,
+                                                                due_days, personnel_id)
+                          VALUES (?,?,?,?,?,?,?,?,?)""",
                        (cid, mi, _s(m.get("name")), _s(m.get("designation")), _s(m.get("tor")), _s(m.get("output")),
-                        1 if m.get("automate_special_task") else 0, m["user_id"] if isinstance(m.get("user_id"), int) else None))
+                        1 if m.get("automate_special_task") else 0, _due_days(m.get("due_days")),
+                        m["user_id"] if isinstance(m.get("user_id"), int) else None))
+
+
+def _due_days(v) -> int:
+    """Days after the event an automated committee task is due: 0-365, default 7."""
+    try:
+        return min(max(int(v), 0), 365)
+    except (TypeError, ValueError):
+        return 7
 
 
 def _save_comments(db, event_id: int, comments):

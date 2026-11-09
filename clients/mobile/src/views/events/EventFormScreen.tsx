@@ -5,12 +5,14 @@ import { ProposalFormController, STEP_TITLES } from '@shared/controllers/EventCo
 import { EventItem, Json } from '@shared/models';
 import { useApp } from '../../core/AppModel';
 import { useScreenController } from '../../core/hooks';
+import { useDirty, useUnsavedGuard } from '../../core/unsaved';
 import { useFeedback } from '../../ui/feedback';
 import { Button, C, ErrorBox, Icon, Loading, Screen, T } from '../../ui/kit';
 import { BriefStep } from './EventFormBrief';
 import { ReturnedCard } from './EventReview';
 import { ProposalUploadCard, ReadingCard } from './ProposalExtras';
 import { BudgetStep, MatrixStep, MethodologyStep, MonitoringStep, RationaleStep } from './EventFormSteps';
+import { SpecialTasksSheet } from './SpecialTasksSheet';
 
 /** /event-form (new) and /event-form?id=… (edit). */
 export default function EventFormScreen() {
@@ -33,18 +35,39 @@ function ProposalForm({ existing }: { existing: Json | null }) {
   const app = useApp();
   const fb = useFeedback();
   const [c, s] = useScreenController(() => new ProposalFormController(app.services, app.session, existing), []);
-  const leave = () => (router.canGoBack() ? router.back() : router.replace('/events'));
-  const submit = async (asDraft = false) => {
+  // Leaving with unsaved changes asks first (back arrow, Android back, swipe).
+  const dirty = useDirty(s.d);
+  const guard = useUnsavedGuard(dirty, {
+    what: 'event proposal',
+    onDiscard: () => c.discard(),
+    saveLabel: c.isReturned ? 'Save changes' : 'Save draft',
+    saveDraft: c.canSaveAsDraft ? async () => {
+      const r = await c.submit(true);
+      fb.toast(r.message, r.ok ? 'success' : 'error');
+      return r.ok;
+    } : undefined,
+  });
+  const leave = () => { guard.release(); if (router.canGoBack()) router.back(); else router.replace('/events'); };
+  const send = async (asDraft = false) => {
     const r = await c.submit(asDraft);
-    if (r.ok) { fb.toast(r.message, 'success'); leave(); } else fb.toast(r.message, 'error');
+    if (r.ok) { setReview(false); fb.toast(r.message, 'success'); leave(); } else fb.toast(r.message, 'error');
+  };
+  // Submitting (not saving a draft) first shows the committee's special tasks to confirm.
+  const [review, setReview] = useState(false);
+  const hasCommittee = s.d.twg.some((g) => g.members.some((m) => m.name.trim()));
+  const submit = async (asDraft = false) => {
+    if (!asDraft && hasCommittee && !review) { setReview(true); return; }
+    await send(asDraft);
   };
   const Step = STEPS[s.step];
   const header = <Stack.Screen options={{ title: c.isEditing ? 'Edit Event' : 'Add New Event' }} />;
-  if (s.uploading) return <Screen>{header}<ProposalUploadCard c={c} /></Screen>;
+  if (s.uploading) return <Screen>{header}<ProposalUploadCard c={c} />{guard.dialog}</Screen>;
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       {header}
+      {guard.dialog}
+      {review && <SpecialTasksSheet c={c} submitting={s.submitting} onClose={() => setReview(false)} onSubmit={() => void send()} />}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ backgroundColor: '#fff', flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, gap: 14 }}>
         {STEP_TITLES.map((t, i) => (
           <Pressable key={t} onPress={() => c.goTo(i)} style={{ alignItems: 'center', gap: 6, flexDirection: 'row' }}>

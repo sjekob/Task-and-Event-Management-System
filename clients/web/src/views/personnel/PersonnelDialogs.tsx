@@ -125,10 +125,16 @@ export function EditRoleDialog({ user, onClose }: { user: User; onClose: (ok: bo
             <div className="pm-label">Subjects and Sections Taught</div>
             <div className="body-sm" style={{ color: 'var(--muted)' }}>For each subject, tick the sections this person teaches it in.</div>
           </div>
-          {!s.metaLoaded ? <div className="center-fill" style={{ padding: 8 }}><Spinner small /></div> : s.rows.map((r, i) => (
+          {!s.metaLoaded ? <div className="center-fill" style={{ padding: 8 }}><Spinner small /></div>
+            : s.metaError ? (
+              <div className="alert red row gap-12">
+                <span className="grow">{s.metaError}</span>
+                <Button size="sm" variant="outline-muted" onClick={() => void c.loadMeta()}>Retry</Button>
+              </div>
+            ) : s.rows.map((r, i) => (
             <div key={i} className="col gap-12" style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 16, background: 'var(--surface-2)' }}>
               <div className="row gap-8">
-                <span className="grow" style={{ fontSize: 13, fontWeight: 700 }}>{r.subject ? `${r.subject}` : `Subject ${i + 1}`}</span>
+                <span className="grow" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-2)' }}>Subject {i + 1}</span>
                 <button className="icon-btn sm" disabled={s.rows.length <= 1} title="Remove subject" aria-label="Remove subject" onClick={() => c.removeRow(i)}
                   style={{ color: s.rows.length > 1 ? 'var(--red)' : '#d1d5db' }}><X size={18} /></button>
               </div>
@@ -138,6 +144,8 @@ export function EditRoleDialog({ user, onClose }: { user: User; onClose: (ok: bo
                   <Select value={r.subject ?? ''} onChange={(e) => c.setRow(i, { subject: e.target.value || null })}>
                     <option value="">Select subject</option>
                     {s.subjects.map((x) => <option key={x} value={x}>{x}</option>)}
+                    {/* A subject no longer in the list still shows as chosen. */}
+                    {r.subject && !s.subjects.includes(r.subject) && <option value={r.subject}>{r.subject}</option>}
                   </Select>
                 </Field>
               </div>

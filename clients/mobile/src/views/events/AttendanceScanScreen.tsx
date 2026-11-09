@@ -108,7 +108,7 @@ export default function AttendanceScanScreen() {
             <T size={13} color={C.muted} center>{info.event_title}</T>
             <T size={12} color={C.muted} center>{[info.activity.time, info.venue].filter(Boolean).join('  ·  ')}</T>
             {c.window ? <T size={12} weight={600} center>{c.label} window: {c.window}</T> : null}
-            {pin ? <T size={12} color="#1d4ed8" center>Must be within {pin.radius_m} m of the venue</T> : null}
+            {pin ? <T size={12} color="#A11A33" center>Must be within {pin.radius_m} m of the venue</T> : null}
           </>
         )}
         <View style={{ alignItems: 'center', gap: 8, marginTop: 18, alignSelf: 'stretch' }}>{body}</View>

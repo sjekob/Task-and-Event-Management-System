@@ -10,7 +10,11 @@ import { CommentInput, CommentItem, InlineCommentInput } from '../common/Comment
 import { Block, CommentProps, ReportAttachments, ReportStatusChip, Run, SubmissionType } from './TaskDetailParts';
 
 /** Reviewer: one assignee's report, marking it, and private comments. */
-export function ReviewPanel({ c, run, commentProps }: { c: TaskDetailController; run: Run; commentProps: CommentProps }) {
+export function ReviewPanel({ c, run, commentProps, inSheet }: {
+  c: TaskDetailController; run: Run; commentProps: CommentProps;
+  /** Inside the bottom sheet, whose bar already shows the person and status. */
+  inSheet?: boolean;
+}) {
   const r = c.selectedReport;
   if (!r) {
     return (
@@ -23,15 +27,17 @@ export function ReviewPanel({ c, run, commentProps }: { c: TaskDetailController;
   }
   const comments = c.privateCommentsFor(r);
   return (
-    <Block title="Submission">
-      <Row gap={10}>
-        <Avatar url={r.avatarUrl} initials={(r.fullName ?? '?').charAt(0).toUpperCase()} size={36} />
-        <View style={{ flex: 1 }}>
-          <T weight={700} lines={1}>{r.fullName}</T>
-          {r.gradeLevel ? <T size={12} color={C.muted}>{r.gradeLevel}</T> : null}
-        </View>
-        <ReportStatusChip status={r.reportStatus} />
-      </Row>
+    <Block title={inSheet ? undefined : 'Submission'}>
+      {!inSheet && (
+        <Row gap={10}>
+          <Avatar url={r.avatarUrl} initials={(r.fullName ?? '?').charAt(0).toUpperCase()} size={36} />
+          <View style={{ flex: 1 }}>
+            <T weight={700} lines={1}>{r.fullName}</T>
+            {r.gradeLevel ? <T size={12} color={C.muted}>{r.gradeLevel}</T> : null}
+          </View>
+          <ReportStatusChip status={r.reportStatus} />
+        </Row>
+      )}
       <View style={{ backgroundColor: C.surface2, borderRadius: 10, padding: 12, gap: 6 }}>
         <SubmissionType type={r.reportType} />
         <T weight={600}>{r.reportTitle}</T>

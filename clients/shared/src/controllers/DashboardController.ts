@@ -129,7 +129,7 @@ export class DashboardController extends BaseController<DashboardState> {
     if (t.isOverdue) return 'red';
     const dl = t.deadline;
     if (dl && daysUntil(dl) <= 2) return 'amber';
-    return 'blue';
+    return 'gray';   // plenty of time: neutral, so red and amber stand out
   }
 
   static dueChip(t: Task): { label: string; tone: Tone } {

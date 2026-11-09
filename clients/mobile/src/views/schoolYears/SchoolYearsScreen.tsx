@@ -48,7 +48,7 @@ export default function SchoolYearsScreen() {
               const ts = SchoolYearsController.statusStyle(t.status);
               const cur = t.status === 'current';
               return (
-                <View key={t.id} style={{ padding: 10, borderRadius: 10, backgroundColor: cur ? '#f0fdf4' : C.surface2, borderWidth: 1, borderColor: cur ? '#86efac' : '#e2e8f0' }}>
+                <View key={t.id} style={{ padding: 10, borderRadius: 10, backgroundColor: cur ? '#f0fdf4' : C.surface2, borderWidth: 1, borderColor: cur ? '#86efac' : '#F1E3CC' }}>
                   <Row><T size={13} weight={700} style={{ flex: 1 }}>{t.name}</T><Badge tone={ts.tone as Tone}>{ts.label}</Badge></Row>
                   <T size={12} color={C.muted}>{SchoolYearsController.range(t.startDate, t.endDate)}</T>
                 </View>

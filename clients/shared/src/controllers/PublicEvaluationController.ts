@@ -65,7 +65,7 @@ export class PublicEvaluationController extends BaseController<PublicEvalState> 
       if (this.activityIndex !== null) {
         // Attendance, not the public date gate, decides whether an attendee may evaluate.
         activity = await this.services.events.attendanceActivity(Number(this.eventId), this.activityIndex);
-        // The evaluation is the Time Out: open from the activity's end until midnight.
+        // The evaluation is the Time Out: open from 2 hours before the event ends until midnight.
         lock = activity.evaluation_lock ?? null;
       }
       this.setState(lock === null

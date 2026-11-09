@@ -9,6 +9,7 @@ import {
   PlusJakartaSans_800ExtraBold, useFonts,
 } from '@expo-google-fonts/plus-jakarta-sans';
 import { AppProvider, appModel } from '../core/AppModel';
+import { IdleWatch } from '../core/IdleWatch';
 import { FeedbackProvider } from '../ui/feedback';
 import { C, FONT, Spinner } from '../ui/kit';
 
@@ -28,6 +29,7 @@ export default function RootLayout() {
         <AppProvider>
           <FeedbackProvider>
             <StatusBar style="dark" />
+            <IdleWatch>
             <Stack screenOptions={{
               headerStyle: { backgroundColor: '#fff' },
               headerTitleStyle: { fontFamily: FONT[700], fontSize: 17, color: C.text },
@@ -40,6 +42,7 @@ export default function RootLayout() {
               <Stack.Screen name="(main)" options={{ headerShown: false }} />
               <Stack.Screen name="eval/[eventId]" options={{ title: 'Event Evaluation' }} />
             </Stack>
+            </IdleWatch>
           </FeedbackProvider>
         </AppProvider>
       </SafeAreaProvider>

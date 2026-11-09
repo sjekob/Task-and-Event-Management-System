@@ -6,7 +6,15 @@ export type LoginResult =
   | { kind: 'chooseRole'; roles: string[] };
 
 export class AuthService {
+  /** Minutes without activity before the server ends a session (it says so at sign-in and in /me). */
+  idleTimeoutMinutes = 30;
+
   constructor(private readonly api: ApiClient) {}
+
+  private readIdle(data: any) {
+    const n = Number(data?.idle_timeout_minutes);
+    if (Number.isFinite(n) && n > 0) this.idleTimeoutMinutes = n;
+  }
 
   /**
    * Signs in. A multi-role account first gets {kind: 'chooseRole'}; call again
@@ -26,14 +34,26 @@ export class AuthService {
       return { kind: 'chooseRole', roles: (data.available_roles ?? []).map(String) };
     }
     await this.api.saveToken(data.token);
+    this.readIdle(data);
     return { kind: 'signedIn', user: User.fromJson(data.user), token: data.token };
   }
 
   async me(): Promise<User> {
-    return User.fromJson(await this.api.get('/api/auth/me', { timeoutMs: 10000, fallback: 'Not authenticated' }));
+    const data = await this.api.get('/api/auth/me', { timeoutMs: 10000, fallback: 'Not authenticated' });
+    this.readIdle(data);
+    return User.fromJson(data);
   }
 
-  logout(): Promise<void> {
-    return this.api.clearToken();
+  /** Tells the server the person is using the app, so the session doesn't time out. */
+  async heartbeat(): Promise<void> {
+    this.readIdle(await this.api.post('/api/auth/heartbeat', { timeoutMs: 10000, background: true }));
+  }
+
+  /** Ends the session on the server (best effort), then forgets the token here. */
+  async logout(): Promise<void> {
+    if (await this.api.getToken()) {
+      await this.api.post('/api/auth/logout', { quiet401: true, background: true, timeoutMs: 5000, ok: [204, 200] }).catch(() => undefined);
+    }
+    await this.api.clearToken();
   }
 }

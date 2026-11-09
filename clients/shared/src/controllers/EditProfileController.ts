@@ -24,6 +24,14 @@ export interface EditProfileState {
 export class EditProfileController extends BaseController<EditProfileState> {
   static readonly NAME_KEYS: ProfileTextField[] = ['first_name', 'middle_name', 'last_name', 'suffix'];
   static readonly DATE_KEYS: ProfileTextField[] = ['birthdate', 'date_of_appointment'];
+  /** Must be filled in on the first-sign-in form (matches the server's list). */
+  static readonly REQUIRED_KEYS: ProfileTextField[] = ['first_name', 'last_name', 'phone_number', 'birthdate', 'address'];
+  static readonly LABELS: Partial<Record<ProfileTextField, string>> = {
+    first_name: 'First name', last_name: 'Last name', phone_number: 'Phone number', birthdate: 'Birthdate', address: 'Address',
+  };
+
+  /** True on the first-sign-in form: the required details can't be left blank. */
+  requireBasics = false;
 
   constructor(private readonly services: Services, private readonly session: SessionController, p: User) {
     super({
@@ -61,7 +69,14 @@ export class EditProfileController extends BaseController<EditProfileState> {
     return opts.indexOf(this.state.edu.highest_attainment ?? '') >= 1;
   }
 
+  /** Required fields still blank (only checked on the first-sign-in form). */
+  get blankRequired(): ProfileTextField[] {
+    return this.requireBasics ? EditProfileController.REQUIRED_KEYS.filter((k) => !this.state.fields[k].trim()) : [];
+  }
+
   private validate(): string | null {
+    const blank = this.blankRequired;
+    if (blank.length) return `Please fill in: ${blank.map((k) => EditProfileController.LABELS[k]).join(', ')}.`;
     for (const k of EditProfileController.DATE_KEYS) {
       const v = this.state.fields[k].trim();
       if (!v) continue;

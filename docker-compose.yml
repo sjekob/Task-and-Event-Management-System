@@ -30,6 +30,16 @@ x-backend-common: &backend-common
     JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env - see .env.example}
     # Shared PostgreSQL database (the `postgres` service below).
     DATABASE_URL: ${DATABASE_URL:-postgresql://tasknet:tasknet@postgres:5432/tasknet}
+    # Email (account credentials, notifications). Empty MAIL_HOST: no email is sent.
+    MAIL_HOST: ${MAIL_HOST:-}
+    MAIL_PORT: ${MAIL_PORT:-2525}
+    MAIL_USERNAME: ${MAIL_USERNAME:-}
+    MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    MAIL_FROM: ${MAIL_FROM:-TaskNet <no-reply@tasknet.local>}
+    APP_URL: ${APP_URL:-http://localhost:5173}
+    # Sign-out after this many minutes without activity; longest a sign-in lasts.
+    SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-30}
+    TOKEN_EXPIRE_HOURS: ${TOKEN_EXPIRE_HOURS:-12}
   depends_on:
     postgres:
       condition: service_healthy
@@ -46,7 +56,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tasknet}
       POSTGRES_DB: ${POSTGRES_DB:-tasknet}
     ports:
-      - "5432:5432"
+      # Only this computer can reach the database (pgAdmin/DBeaver on localhost still work);
+      # other devices on the network cannot.
+      - "127.0.0.1:5432:5432"
     volumes:
       - tasknet_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -78,6 +90,13 @@ services:
       TASKS_SERVICE_URL:     http://tasks:8003
       EVENTS_SERVICE_URL:    http://events:8004
       APPRAISAL_SERVICE_URL: http://appraisal:8005
+      # Per-IP request limits (per minute); see gateway/main.py.
+      RATE_LIMIT_LOGIN:  ${RATE_LIMIT_LOGIN:-20}
+      RATE_LIMIT_PUBLIC: ${RATE_LIMIT_PUBLIC:-60}
+      RATE_LIMIT_HEAVY:  ${RATE_LIMIT_HEAVY:-30}
+      RATE_LIMIT_WRITES: ${RATE_LIMIT_WRITES:-180}
+      RATE_LIMIT_MAX:    ${RATE_LIMIT_MAX:-600}
+      TRUSTED_PROXIES:   ${TRUSTED_PROXIES:-127.0.0.0/8,::1/128,172.16.0.0/12,192.168.65.0/24}
 
   # Internal services below publish NO host ports — they are private and only
   # reachable by the gateway over the internal Docker network (service DNS).

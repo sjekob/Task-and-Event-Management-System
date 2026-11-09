@@ -1,7 +1,7 @@
 import { Json, parseEventDate } from '../models';
 import { ProposalReading } from '../services/EventService';
 import { plainToRich, richToPlain } from '../utils/richText';
-import { MemberRow, NATURES, ProposalDraft, SavedReading, TwgGroup } from './proposalDraft';
+import { DEFAULT_DUE_DAYS, MemberRow, NATURES, ProposalDraft, SavedReading, TwgGroup } from './proposalDraft';
 
 // Filling the proposal form from an uploaded file (server: proposal_reader.py).
 
@@ -62,7 +62,7 @@ export function draftFromReading(r: ProposalReading, files: string[], base: Prop
       title: str(g.title),
       members: g.members.map((m: Json): MemberRow => ({
         name: str(m.name), designation: str(m.designation), tor: str(m.tor), output: str(m.output),
-        userId: typeof m.user_id === 'number' ? m.user_id : null, automate: false,
+        userId: typeof m.user_id === 'number' ? m.user_id : null, automate: false, dueDays: DEFAULT_DUE_DAYS,
       })),
     }));
 
@@ -80,12 +80,14 @@ export function draftFromReading(r: ProposalReading, files: string[], base: Prop
     title: rich(x.title, base.title),
     nature: NATURES.includes(str(x.nature)) ? str(x.nature) : base.nature,
     targetDate: pick(x.targetDate, base.targetDate),
+    startTime: pick(x.startTime, base.startTime), endTime: pick(x.endTime, base.endTime),
     venue: rich(x.venue, base.venue),
     budget: pick(x.budget, base.budget), fund: pick(x.fundSource, base.fund),
     focalName: pick(x.focalName, base.focalName), focalRole: rich(x.focalRole, base.focalRole), focalCp: pick(x.focalContact, base.focalCp),
     pCat1, pCat2, tMale, tFemale, jMale, jFemale,
     outputs: outputs.length ? outputs.map(plainToRich) : base.outputs,
     rationale: rich(x.rationale, base.rationale), objectives: rich(x.objectives, base.objectives),
+    methodologyIntro: pick(x.methodologyIntro, base.methodologyIntro),
     phases: rows(x.phases, (p) => ({ stage: str(p.stage), activities: str(p.activities) }), base.phases),
     matrix: rows(x.matrix, (m) => ({ day: str(m.day), time: str(m.time), event: str(m.event), speaker: str(m.speaker) }), base.matrix),
     materials: rows(x.materials, (m) => ({ item: str(m.item), qty: str(m.qty), cost: str(m.cost), total: str(m.total) }), base.materials),

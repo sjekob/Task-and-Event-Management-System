@@ -64,14 +64,35 @@ export interface RequestOptions {
   fallback?: string;
   /** Status codes that count as success (default: any 2xx). */
   ok?: number[];
+  /** Don't end the session on a 401 (e.g. the sign-out call itself). */
+  quiet401?: boolean;
+  /** Housekeeping (heartbeat, marking read): not counted as work in progress. */
+  background?: boolean;
 }
 
 /** HTTP client for the TaskNet gateway. One instance per app. */
 export class ApiClient {
   private token: string | null | undefined;
   private readonly bucket = new TokenBucket();
-  /** Called when the server rejects the token (401), e.g. to end the session. */
-  onUnauthorized: (() => void) | null = null;
+  /** Called when the server rejects the token (401), with its reason, e.g. to end the session. */
+  onUnauthorized: ((reason: string) => void) | null = null;
+  /** Called when the number of saves/uploads in flight changes (so sign-out can wait for them). */
+  onPendingChange: ((pending: number) => void) | null = null;
+  private pending = 0;
+
+  /** Saves and uploads still in flight. */
+  get pendingWrites() { return this.pending; }
+
+  /** Runs [work], counting it as in progress unless it's a read or housekeeping. */
+  private async tracked<T>(method: string, opts: RequestOptions, work: () => Promise<T>): Promise<T> {
+    if (method === 'GET' || opts.background) return work();
+    this.onPendingChange?.(++this.pending);
+    try {
+      return await work();
+    } finally {
+      this.onPendingChange?.(--this.pending);
+    }
+  }
 
   constructor(readonly baseUrl: string, private readonly tokenStore: TokenStore) {}
 
@@ -113,7 +134,11 @@ export class ApiClient {
   delete<T = any>(path: string, opts: RequestOptions = {}) { return this.request<T>('DELETE', path, opts); }
 
   /** JSON request; resolves with the parsed body (null when empty). */
-  async request<T = any>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+  request<T = any>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+    return this.tracked(method, opts, () => this.requestNow<T>(method, path, opts));
+  }
+
+  private async requestNow<T>(method: string, path: string, opts: RequestOptions): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
     if (!opts.anonymous) {
@@ -134,7 +159,11 @@ export class ApiClient {
   }
 
   /** Multipart upload of several files under one field (e.g. a proposal's page photos, in order). */
-  async uploadMany<T = any>(path: string, files: FilePart[], opts: RequestOptions & { field?: string } = {}): Promise<T> {
+  uploadMany<T = any>(path: string, files: FilePart[], opts: RequestOptions & { field?: string } = {}): Promise<T> {
+    return this.tracked('POST', opts, () => this.uploadNow<T>(path, files, opts));
+  }
+
+  private async uploadNow<T>(path: string, files: FilePart[], opts: RequestOptions & { field?: string }): Promise<T> {
     const form = new FormData();
     for (const file of files) {
       if (file.blob) {
@@ -176,8 +205,9 @@ export class ApiClient {
   private async handle<T>(res: Response, opts: RequestOptions): Promise<T> {
     const okay = opts.ok ? opts.ok.includes(res.status) : res.ok;
     if (!okay) {
-      if (res.status === 401 && !opts.anonymous) this.onUnauthorized?.();
-      throw new ApiError(await this.reason(res, opts.fallback ?? 'Something went wrong'), res.status);
+      const reason = await this.reason(res, opts.fallback ?? 'Something went wrong');
+      if (res.status === 401 && !opts.anonymous && !opts.quiet401) this.onUnauthorized?.(reason);
+      throw new ApiError(reason, res.status);
     }
     const text = await res.text();
     if (!text) return null as T;

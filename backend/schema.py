@@ -257,6 +257,10 @@ CREATE TABLE IF NOT EXISTS event (
     nature              TEXT NOT NULL DEFAULT 'Co-curricular',
     status              TEXT NOT NULL DEFAULT 'pending_approval' CHECK(status IN ({_in(EVENT_STATUSES)})),
     target_date         TEXT,
+    -- The event's hours each day (HH:MM, 24-hour). Attendance opens from them:
+    -- Time In for the first 2 hours, Time Out from 2 hours before the end until midnight.
+    start_time          TEXT CHECK(start_time ~ '^[0-2][0-9]:[0-5][0-9]$'),
+    end_time            TEXT CHECK(end_time ~ '^[0-2][0-9]:[0-5][0-9]$'),
     venue               TEXT,
     proposed_budget     TEXT,
     fund_source         TEXT,
@@ -264,6 +268,8 @@ CREATE TABLE IF NOT EXISTS event (
     focal_role          TEXT,
     focal_contact       TEXT,
     rationale           TEXT,
+    -- The paragraph that opens the Methodology (before the phases table).
+    methodology_intro   TEXT,
     objectives          TEXT,
     monitoring_criteria TEXT,
     -- Venue pin + attendance perimeter (geofence); all NULL = checked by time only.
@@ -310,6 +316,8 @@ CREATE TABLE IF NOT EXISTS event_committee_member (
     position INTEGER NOT NULL,
     name TEXT NOT NULL, designation TEXT NOT NULL, tor TEXT NOT NULL, output TEXT NOT NULL,
     automate INTEGER NOT NULL DEFAULT 0 CHECK(automate IN (0,1)),
+    -- The automated special task is due this many days after the event (the proponent sets it).
+    due_days INTEGER NOT NULL DEFAULT 7 CHECK(due_days BETWEEN 0 AND 365),
     personnel_id INTEGER REFERENCES personnel(id) ON DELETE SET NULL,
     UNIQUE(committee_id, position)
 );
@@ -523,6 +531,30 @@ CREATE TABLE IF NOT EXISTS special_task_evaluation (
 );
 
 -- ── Notifications ────────────────────────────────────────────────────────────
+-- Signed-in sessions. Each token names one; signing out revokes it, and one
+-- left idle past SESSION_IDLE_MINUTES stops working (enforced per request).
+CREATE TABLE IF NOT EXISTS auth_session (
+    id TEXT PRIMARY KEY,
+    personnel_id INTEGER NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_active_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    revoked_at TIMESTAMP,
+    ip TEXT,
+    user_agent TEXT
+);
+CREATE INDEX IF NOT EXISTS auth_session_personnel ON auth_session(personnel_id);
+-- Day-before reminders already sent (task opens / task's last day / event
+-- tomorrow), keyed by the date they are about so each goes out once.
+CREATE TABLE IF NOT EXISTS reminder_sent (
+    kind TEXT NOT NULL CHECK(kind IN ('task_opens','task_last_day','event_tomorrow')),
+    ref_id INTEGER NOT NULL,
+    personnel_id INTEGER NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+    on_date DATE NOT NULL,
+    sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(kind, ref_id, personnel_id, on_date)
+);
 CREATE TABLE IF NOT EXISTS notification (
     id {PK},
     user_id INTEGER NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
@@ -586,7 +618,8 @@ SELECT e.id, e.title, e.nature, e.target_date, e.venue, e.proposed_budget, e.fun
                                                'total', x.male + x.female) ORDER BY x.position),
             'totals', json_build_object('male', SUM(x.male), 'female', SUM(x.female), 'total', SUM(x.male + x.female)))::text
         FROM event_participant_group x WHERE x.event_id = e.id HAVING COUNT(*) > 0) AS participants,
-       e.rationale, e.objectives,
+       e.rationale, e.objectives, e.methodology_intro, e.start_time, e.end_time,
+       e.proposal_file_url, e.proposal_file_name, e.submitted_as_file = 1 AS submitted_as_file,
        {_json_list("event_phase", "json_build_object('stage', x.stage, 'activities', x.activities)")} AS phase1,
        ''::text AS phase2, ''::text AS phase3,
        {_json_list("event_session", "json_build_object('day', x.day, 'time', x.time, 'event', x.activity, 'speaker', x.speaker)")} AS activity_matrix,
@@ -596,7 +629,7 @@ SELECT e.id, e.title, e.nature, e.target_date, e.venue, e.proposed_budget, e.fun
        (SELECT json_agg(json_build_object('title', c.title, 'members', COALESCE((
             SELECT json_agg(json_build_object('name', m.name, 'designation', m.designation, 'tor', m.tor, 'output', m.output,
                                               'user_id', m.personnel_id, 'user_name', u.full_name,
-                                              'automate_special_task', m.automate = 1) ORDER BY m.position)
+                                              'automate_special_task', m.automate = 1, 'due_days', m.due_days) ORDER BY m.position)
             FROM event_committee_member m LEFT JOIN users u ON u.id = m.personnel_id
             WHERE m.committee_id = c.id), '[]'::json)) ORDER BY c.position)::text
         FROM event_committee c WHERE c.event_id = e.id) AS twg_groups,
@@ -702,4 +735,22 @@ BEGIN
 END $$;
 -- A "department" is a grade level (teachers call Grade 1-6 departments): grade_levels holds them.
 DROP TABLE IF EXISTS departments;
+-- Committee members' special-task due days (default 7 days after the event).
+DO $$
+BEGIN
+    IF to_regclass('event_committee_member') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_name='event_committee_member' AND column_name='due_days') THEN
+        ALTER TABLE event_committee_member ADD COLUMN due_days INTEGER NOT NULL DEFAULT 7 CHECK(due_days BETWEEN 0 AND 365);
+    END IF;
+END $$;
+-- The Methodology's opening paragraph, editable per proposal.
+ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS methodology_intro TEXT;
+-- The event's daily hours (attendance windows are taken from them).
+ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS start_time TEXT CHECK(start_time ~ '^[0-2][0-9]:[0-5][0-9]$');
+ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS end_time TEXT CHECK(end_time ~ '^[0-2][0-9]:[0-5][0-9]$');
+-- The proponent's original proposal file, and whether they submitted it as is
+-- (without reviewing the form read from it): the approver reads the file.
+ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS proposal_file_url TEXT;
+ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS proposal_file_name TEXT;
+ALTER TABLE IF EXISTS event ADD COLUMN IF NOT EXISTS submitted_as_file INTEGER NOT NULL DEFAULT 0 CHECK(submitted_as_file IN (0,1));
 """

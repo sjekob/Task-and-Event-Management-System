@@ -56,8 +56,8 @@ const EventCard = memo(function EventCard({ e, onLink, onDemo, onResults }: { e:
       <Line label="Responses" value={String(EventAppraisal.responses(e))} />
       <Line label="Evidency" value={has ? `${e.evidencyRate.toFixed(0)}%` : '—'} color={col} />
       <Row style={{ marginTop: 4 }}>
-        <IconButton name="grid" label="Evaluation QR / link" color="#3b82f6" onPress={onLink} />
-        <IconButton name="users" label="Evaluator demographics" color={has ? '#3b82f6' : '#bdbdbd'} onPress={onDemo} />
+        <IconButton name="grid" label="Evaluation QR / link" color="#D92243" onPress={onLink} />
+        <IconButton name="users" label="Evaluator demographics" color={has ? '#D92243' : '#bdbdbd'} onPress={onDemo} />
         <View style={{ flex: 1 }} />
         {has ? <Button size="sm" onPress={onResults}>View Results</Button> : <T size={12} color={C.muted}>No Data</T>}
       </Row>

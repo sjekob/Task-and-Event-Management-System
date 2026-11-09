@@ -23,6 +23,8 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 @app.on_event("startup")
 def startup():
     init_db()
+    import reminders
+    reminders.start()  # day-before task and event reminders
 
 
 app.include_router(auth.router)

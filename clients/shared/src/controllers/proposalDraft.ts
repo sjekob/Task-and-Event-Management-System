@@ -1,5 +1,8 @@
 import { DEFAULT_VENUE_RADIUS, Json } from '../models';
 import { hasFormatting, plainToRich, richToPlain, sanitizeRich } from '../utils/richText';
+import { DEFAULT_METHODOLOGY_INTRO } from '../utils/proposalPrint/sections';
+
+export { DEFAULT_METHODOLOGY_INTRO };
 
 // Event proposal form data: row types, defaults, parsing, validation and payload.
 export const STEP_TITLES = ['Proposal Brief', 'Rationale & Objectives', 'Methodology', 'Activity Matrix', 'Budget', 'Monitoring & Evaluation'];
@@ -18,10 +21,27 @@ export interface ExecRow { name: string; position: string }
 
 /**
  * [userId] links the member to an account. Ticked [automate]: a special task
- * for the member when the event is approved. Not ticked: no task, and a linked
- * member is credited the top score instead.
+ * for the member when the event is approved, titled by the Output, described by
+ * the Terms of Reference and due [dueDays] after the event (7 unless changed).
+ * Not ticked: no task, and a linked member is credited the top score instead.
  */
-export interface MemberRow { name: string; designation: string; tor: string; output: string; userId: number | null; automate: boolean }
+export interface MemberRow { name: string; designation: string; tor: string; output: string; userId: number | null; automate: boolean; dueDays: number }
+
+/** A committee task is due this many days after the event unless the proponent changes it. */
+export const DEFAULT_DUE_DAYS = 7;
+
+/** Due days from stored data: a whole number 0-365, else the default. */
+export function dueDaysOf(v: unknown): number {
+  const n = Math.trunc(Number(v));
+  return Number.isFinite(n) && n >= 0 && n <= 365 && v !== null && v !== '' ? n : DEFAULT_DUE_DAYS;
+}
+
+/** The due date [days] after the event's target date (YYYY-MM-DD), or null when the date isn't set. */
+export function taskDueDate(targetDate: string, days: number): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(targetDate || '');
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days);
+}
 
 export type MemberText = 'name' | 'designation' | 'tor' | 'output';
 
@@ -43,6 +63,8 @@ export interface SavedReading {
 
 export interface ProposalDraft {
   title: string; targetDate: string; venue: string; budget: string; fund: string;
+  /** The event's hours, HH:MM (24-hour). Time In / Time Out are open only around them. */
+  startTime: string; endTime: string;
   /** Venue pin for attendance geofencing; null = not pinned (checked by time only). */
   venuePin: { lat: number; lng: number } | null;
   /** Perimeter radius around the pin, metres. */
@@ -53,6 +75,8 @@ export interface ProposalDraft {
   pCat1: string; pCat2: string; tMale: number; tFemale: number; jMale: number; jFemale: number;
   outputs: string[];
   rationale: string; objectives: string;
+  /** The paragraph that opens the Methodology, above the phases. */
+  methodologyIntro: string;
   phases: PhaseRow[];
   matrix: MatrixRow[];
   materials: MaterialRow[]; snacks: SnackRow[]; exec: ExecRow[]; twg: TwgGroup[];
@@ -80,7 +104,7 @@ export const EMPTY_SNACK = (): SnackRow => ({ item: '', pax: '', cost: '', total
 
 export const EMPTY_EXEC = (): ExecRow => ({ name: '', position: '' });
 
-export const EMPTY_MEMBER = (): MemberRow => ({ name: '', designation: '', tor: '', output: '', userId: null, automate: false });
+export const EMPTY_MEMBER = (): MemberRow => ({ name: '', designation: '', tor: '', output: '', userId: null, automate: false, dueDays: DEFAULT_DUE_DAYS });
 
 export const NEW_ROW: Record<RowListKey, () => any> = { phases: EMPTY_PHASE, matrix: EMPTY_MATRIX, materials: EMPTY_MAT, snacks: EMPTY_SNACK, exec: EMPTY_EXEC };
 
@@ -131,6 +155,7 @@ export function draftFromEvent(e: Json | null): ProposalDraft {
       const members = Array.isArray(g.members) ? g.members.map((m: Json) => ({
         name: s(m.name), designation: s(m.designation), tor: s(m.tor), output: s(m.output),
         userId: typeof m.user_id === 'number' ? m.user_id : null, automate: m.automate_special_task === true,
+        dueDays: dueDaysOf(m.due_days),
       })) : [];
       return { title: s(g.title), members: members.length ? members : [EMPTY_MEMBER()] };
     })
@@ -156,7 +181,7 @@ export function draftFromEvent(e: Json | null): ProposalDraft {
   const read = P(e?.proposal_reading);
   const richOuts: unknown[] = Array.isArray(rich.outputs) ? rich.outputs : [];
   return {
-    title: richOr(rich.title, s(e?.title)), targetDate: s(e?.target_date), venue: richOr(rich.venue, s(e?.venue)), budget: s(e?.proposed_budget), fund: s(e?.fund_source),
+    title: richOr(rich.title, s(e?.title)), targetDate: s(e?.target_date), startTime: s(e?.start_time), endTime: s(e?.end_time), venue: richOr(rich.venue, s(e?.venue)), budget: s(e?.proposed_budget), fund: s(e?.fund_source),
     venuePin: lat !== null && lng !== null ? { lat, lng } : null,
     venueRadius: typeof e?.venue_radius_m === 'number' ? e.venue_radius_m : DEFAULT_VENUE_RADIUS,
     reading: read && typeof read === 'object' && Array.isArray(read.sections) ? {
@@ -166,7 +191,8 @@ export function draftFromEvent(e: Json | null): ProposalDraft {
     } : null,
     focalName: s(e?.focal_name), focalRole: richOr(rich.focalRole, s(e?.focal_role)), focalCp: s(e?.focal_contact), nature: s(e?.nature) || 'Co-curricular',
     pCat1, pCat2, tMale, tFemale, jMale, jFemale, outputs: outputs.map((o, i) => richOr(richOuts[i], o)),
-    rationale: richOr(rich.rationale, s(e?.rationale)), objectives: richOr(rich.objectives, objectives), phases,
+    rationale: richOr(rich.rationale, s(e?.rationale)), objectives: richOr(rich.objectives, objectives),
+    methodologyIntro: s(e?.methodology_intro) || DEFAULT_METHODOLOGY_INTRO, phases,
     matrix: list('activity_matrix', (r) => ({ day: s(r.day), time: s(r.time), event: s(r.event), speaker: s(r.speaker) }), EMPTY_MATRIX, 3),
     materials: list('training_materials', (r) => ({ item: s(r.item), qty: s(r.qty), cost: s(r.cost), total: s(r.total) }), EMPTY_MAT, 2),
     snacks: list('snacks', (r) => ({ item: s(r.item), pax: s(r.pax), cost: s(r.cost), total: s(r.total) }), EMPTY_SNACK, 1),
@@ -186,6 +212,8 @@ export function firstEmptyField(d: ProposalDraft, dateIssue: string | null): [nu
   if (e(d.title)) return [0, 'Please enter the event title.'];
   if (e(d.targetDate)) return [0, 'Please enter the target date.'];
   if (dateIssue) return [0, dateIssue];
+  if (e(d.startTime) || e(d.endTime)) return [0, "Please enter the event's start and end time: Time In and Time Out are open only during the event."];
+  if (d.endTime <= d.startTime) return [0, "The event's end time must be after its start time."];
   if (e(d.venue)) return [0, 'Please enter the proposed venue.'];
   if (e(d.pCat1)) return [0, 'Please name the first target participant category.'];
   if (e(d.pCat2)) return [0, 'Please name the second target participant category.'];
@@ -239,7 +267,10 @@ export function draftToPayload(d: ProposalDraft): Json {
   for (const k of RICH_FIELDS) if (hasFormatting(d[k])) rich[k] = sanitizeRich(d[k]);
   if (d.outputs.some(hasFormatting)) rich.outputs = d.outputs.map((o) => sanitizeRich(o));
   return {
-    title: plain(d.title), nature: d.nature, target_date: d.targetDate, venue: plain(d.venue), proposed_budget: d.budget, fund_source: d.fund,
+    title: plain(d.title), nature: d.nature, target_date: d.targetDate,
+    // Both or neither (a draft can leave them out).
+    start_time: d.startTime && d.endTime ? d.startTime : null, end_time: d.startTime && d.endTime ? d.endTime : null,
+    venue: plain(d.venue), proposed_budget: d.budget, fund_source: d.fund,
     venue_latitude: d.venuePin?.lat ?? null, venue_longitude: d.venuePin?.lng ?? null,
     venue_radius_m: d.venuePin ? Math.round(d.venueRadius) : null,
     proposal_reading: d.reading ? JSON.stringify(d.reading) : null,
@@ -252,7 +283,7 @@ export function draftToPayload(d: ProposalDraft): Json {
       ],
       totals: { male: t.male, female: t.female, total: t.all },
     }),
-    rationale: plain(d.rationale), objectives: plain(d.objectives),
+    rationale: plain(d.rationale), objectives: plain(d.objectives), methodology_intro: d.methodologyIntro.trim(),
     phase1: JSON.stringify(d.phases), phase2: '', phase3: '',
     activity_matrix: JSON.stringify(d.matrix),
     training_materials: JSON.stringify(d.materials),
@@ -260,7 +291,7 @@ export function draftToPayload(d: ProposalDraft): Json {
     exec_committee: JSON.stringify(d.exec),
     twg_groups: JSON.stringify(d.twg.map((g) => ({
       title: g.title,
-      members: g.members.map(({ userId, automate, ...m }) => ({ ...m, user_id: userId, automate_special_task: automate })),
+      members: g.members.map(({ userId, automate, dueDays, ...m }) => ({ ...m, user_id: userId, automate_special_task: automate, due_days: dueDays })),
     }))),
     monitoring_criteria: plain(d.monitoring),
     indicators: JSON.stringify(d.indicators.map((label) => ({ label }))),

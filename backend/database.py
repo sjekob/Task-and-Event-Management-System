@@ -332,9 +332,14 @@ def init_db():
 
 
 def create_notification(db, user_id: int, notif_type: str, title: str, body: str = "", ref_id: int = None):
-    """Insert one in-app notification for a user. Caller owns the commit."""
+    """Insert one in-app notification for a user (and email a copy when mail is set up). Caller owns the commit."""
     from store import notify
+    import mailer
     notify(db, user_id, notif_type, title, body, ref_id)
+    if mailer.enabled():
+        who = db.execute("SELECT email, full_name, is_active FROM users WHERE id=?", (user_id,)).fetchone()
+        if who and who["email"] and who["is_active"]:
+            mailer.send_notification(who["email"], who["full_name"] or "", notif_type, title, body or "")
 
 
 # ── Seed data (fresh database only) ───────────────────────────────────────────
