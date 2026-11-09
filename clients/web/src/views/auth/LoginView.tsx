@@ -8,7 +8,7 @@ import './login.css';
 
 export default function LoginView() {
   const app = useApp();
-  const { sessionExpired } = useSession();
+  const { sessionExpired, endReason } = useSession();
   const [c, s] = useScreenController(() => new LoginController(app.session));
 
   const submit = (e?: React.FormEvent) => {
@@ -28,7 +28,7 @@ export default function LoginView() {
         {sessionExpired && (
           <div className="alert amber mb-16">
             <Info size={16} />
-            <span>Your session expired. Any in-progress event was saved as a draft.</span>
+            <span>{endReason ?? 'Your session expired.'} Any in-progress event was saved as a draft.</span>
           </div>
         )}
 

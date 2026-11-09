@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, UserMinus, UserPlus } from 'lucide-react';
+import { ChevronDown, ChevronRight, UserMinus, UserPlus } from 'lucide-react';
 import { AssignMoreController, TaskDetailController } from '@shared/controllers/TaskDetailController';
 import { Task, User } from '@shared/models';
 import { useServices, useSession } from '../../app/AppContext';
@@ -10,11 +10,13 @@ import { Avatar, Button, Modal, Spinner } from '../../ui/kit';
 import { Pill, Run } from './TaskDetailParts';
 
 // Assignees with their status, plus adding / removing people.
-export function AssigneesCard({ c, run }: { c: TaskDetailController; run: Run }) {
+export function AssigneesCard({ c, run, onPick }: { c: TaskDetailController; run: Run; onPick?: () => void }) {
   const fb = useFeedback();
   const [assigning, setAssigning] = useState(false);
   const users = c.team;
   const selected = c.selectedReport?.personnelId;
+  // Collapsed when the list is long, so the comments below are one scroll away.
+  const [open, setOpen] = useState(users.length <= 5);
   const remove = async (u: User) => {
     const ok = await fb.confirm({
       title: `Remove ${u.fullName}?`,
@@ -26,18 +28,21 @@ export function AssigneesCard({ c, run }: { c: TaskDetailController; run: Run })
   return (
     <div className="td-card">
       <div className="row gap-8">
-        <span className="td-title">{c.mineOnly ? 'People you assigned' : 'Assigned personnel'}</span>
-        <Pill tone="gray">{users.length}</Pill>
-        <div className="grow" />
+        <button type="button" className="td-reveal grow" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <ChevronDown size={18} className={`td-reveal-icon ${open ? 'on' : ''}`} />
+          <span className="td-title">{c.mineOnly ? 'People you assigned' : 'Assigned personnel'}</span>
+          <Pill tone="gray">{users.length}</Pill>
+          {!open && users.length > 0 && <span className="caption">Show list</span>}
+        </button>
         {c.canAssign && <Button size="sm" icon={<UserPlus size={16} />} onClick={() => setAssigning(true)}>Assign</Button>}
       </div>
-      {users.length === 0 ? <div className="body-md mt-12">No one is assigned yet.</div> : (
+      {!open ? null : users.length === 0 ? <div className="body-md mt-12">No one is assigned yet.</div> : (
         <div className="td-assignees mt-12">
           {users.map((u) => {
             const st = c.statusFor(u);
             const has = !!c.reportOf(u.id);
             return (
-              <div key={u.id} className={`td-assignee ${selected === u.id ? 'on' : ''} ${has ? 'clickable' : ''}`} onClick={() => has && c.selectAssignee(u)}>
+              <div key={u.id} className={`td-assignee ${selected === u.id ? 'on' : ''} ${has ? 'clickable' : ''}`} onClick={() => { if (has) { c.selectAssignee(u); onPick?.(); } }}>
                 <Avatar url={u.avatarUrl} initials={u.initials} size={34} />
                 <div className="grow">
                   <div className="ellipsis" style={{ fontSize: 14, fontWeight: 600 }}>{u.fullName}</div>

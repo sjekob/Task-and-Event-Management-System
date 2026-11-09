@@ -32,7 +32,7 @@ export function ProposalDropArea({ c }: { c: ProposalFormController }) {
           </div>
         ) : (
           <div className="col gap-12" style={{ alignItems: 'center' }}>
-            <span className="att-icon" style={{ width: 52, height: 52, borderRadius: 26, background: '#dbeafe', color: '#1d4ed8' }}><Upload size={26} /></span>
+            <span className="att-icon" style={{ width: 52, height: 52, borderRadius: 26, background: 'var(--accent-bg)', color: 'var(--accent-dark)' }}><Upload size={26} /></span>
             <div style={{ fontSize: 18, fontWeight: 700 }}>Upload your event proposal</div>
             <div className="body-md" style={{ maxWidth: 520, color: 'var(--muted)' }}>
               TaskNet reads the title, date, venue, schedule, budget and working committee from the file and fills in the proposal for you to check.
@@ -50,7 +50,7 @@ export function ProposalDropArea({ c }: { c: ProposalFormController }) {
 }
 
 /** What was read from the file: sections found or missing (click to open that step), things to check, and the committee. */
-export function ReadingPanel({ c }: { c: ProposalFormController }) {
+export function ReadingPanel({ c, onSubmitAsFile }: { c: ProposalFormController; onSubmitAsFile?: () => void }) {
   const [open, setOpen] = useState(true);
   const r = c.readingSummary;
   if (!r) return null;
@@ -94,7 +94,15 @@ export function ReadingPanel({ c }: { c: ProposalFormController }) {
               Choose which members get a special task in the Budget step; the others are credited the top score on approval.
             </div>
           )}
-          <div className="row" style={{ justifyContent: 'flex-end' }}><Button size="sm" onClick={() => jump(0)}>Review the proposal →</Button></div>
+          <div className="row wrap gap-8" style={{ justifyContent: 'flex-end', alignItems: 'center' }}>
+            {onSubmitAsFile && c.canSubmitAsFile && (
+              <>
+                <span className="caption grow">Happy with your file? Submit it as is: you'll only be asked for the time, the venue pin and the special tasks.</span>
+                <Button size="sm" variant="outline" icon={<FileText size={14} />} onClick={onSubmitAsFile}>Submit this file as is</Button>
+              </>
+            )}
+            <Button size="sm" onClick={() => jump(0)}>Review the proposal →</Button>
+          </div>
         </div>
       )}
     </div>

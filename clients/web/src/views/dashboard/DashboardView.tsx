@@ -29,7 +29,7 @@ export default function DashboardView() {
 
       <div className="grid-3">
         <Kpi value={d?.pending ?? 0} label="Pending" caption={approver ? 'Not yet submitted, still on time' : 'Open and still on time'}
-          icon={<Clock size={22} />} tone="blue" onClick={() => navigate(c.tasksRoute)} />
+          icon={<Clock size={22} />} tone="amber" onClick={() => navigate(c.tasksRoute)} />
         <Kpi value={d?.submitted ?? 0} label="Submitted" caption={approver ? 'Turned in by assignees' : 'Turned in by you'}
           icon={<CheckCircle2 size={22} />} tone="green" onClick={() => navigate(c.tasksRoute)} />
         <Kpi value={d?.missing ?? 0} label="Missing" caption="Past deadline, not submitted" icon={<AlertCircle size={22} />} tone="red"
@@ -57,7 +57,7 @@ export default function DashboardView() {
               onAction={() => navigate('/tasks')}
               empty={!d?.taskManagerTasks.length ? { icon: <FilePlus2 size={20} />, text: 'You have no active tasks. Tasks you create appear here.' } : undefined}>
               {d?.taskManagerTasks.map((t) => (
-                <Row key={t.id} leading={<StatusDot tone={t.isOverdue ? 'red' : 'blue'} />} title={t.title}
+                <Row key={t.id} leading={<StatusDot tone={t.isOverdue ? 'red' : 'amber'} />} title={t.title}
                   meta={DashboardController.taskMeta(t, true)}
                   trailing={(t.teamTotal ?? 0) === 0
                     ? <Chip tone="gray">Not assigned</Chip>

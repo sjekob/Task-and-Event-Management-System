@@ -22,7 +22,7 @@ export function EventCard({ e, onTap, onPrint, menu }: {
           <span className="ev-pill" style={{ background: `${e.statusColor}1f`, color: e.statusColor }}>{e.isPending ? 'Pending' : e.statusLabel}</span>
         </div>
         <div className="ev-desc clamp-2">{EventsController.description(e)}</div>
-        {e.creatorName && <div style={{ fontSize: 11, color: '#b0b7c3', marginTop: 4 }}>By {e.creatorName}</div>}
+        {e.creatorName && <div style={{ fontSize: 11, color: 'var(--light)', marginTop: 4 }}>By {e.creatorName}</div>}
       </div>
       <IconButton small title="Print / Save as PDF" onClick={(ev) => { ev.stopPropagation(); onPrint(); }}><FileText size={18} /></IconButton>
       {menu && <ActionMenu icon={<MoreVertical size={20} />} items={menu} />}
@@ -44,7 +44,7 @@ export function SideCalendar({ c }: { c: EventsController }) {
         <IconButton small title="Next month" onClick={() => c.setMonth(new Date(month.next().year, month.next().month, 1))}><ChevronRight size={20} /></IconButton>
       </div>
       <div className="cal-grid" style={{ padding: '0 8px 8px' }}>
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => <div key={d} className="cal-dow" style={{ color: '#718096' }}>{d}</div>)}
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => <div key={d} className="cal-dow" style={{ color: 'var(--muted)' }}>{d}</div>)}
         {month.cells().map((cell, i) => {
           if (!cell) return <div key={`b${i}`} />;
           const evs = byDay.get(cell.key) ?? [];
@@ -53,7 +53,7 @@ export function SideCalendar({ c }: { c: EventsController }) {
           return (
             <Tooltip key={cell.key} text={c.dayTooltip(cell.key)}>
             <button className="ev-day"
-              style={{ background: sel ? '#1e2126' : cell.isToday ? '#acc2df' : 'transparent', color: sel || cell.isToday ? '#fff' : 'var(--text)', fontWeight: sel || cell.isToday ? 600 : 400 }}
+              style={{ background: sel ? '#1e2126' : cell.isToday ? 'var(--border-strong)' : 'transparent', color: sel || cell.isToday ? '#fff' : 'var(--text)', fontWeight: sel || cell.isToday ? 600 : 400 }}
               onClick={() => c.selectDay(cell.key)}>
               {cell.day}
               {(evs.length > 0 || deped) && (

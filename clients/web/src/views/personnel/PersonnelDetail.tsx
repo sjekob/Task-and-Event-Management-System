@@ -13,7 +13,7 @@ export function PersonnelDetail({ c, user: u, onClose }: { c: PersonnelControlle
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal wide" style={{ maxWidth: 700, overflow: 'hidden' }}>
-        <div className="row" style={{ background: '#6b7a92', color: '#fff', padding: '18px 12px 18px 24px' }}>
+        <div className="row" style={{ background: 'var(--muted)', color: '#fff', padding: '18px 12px 18px 24px' }}>
           <span className="grow" style={{ fontSize: 18, fontWeight: 700 }}>User Details</span>
           <button className="icon-btn-plain" style={{ color: '#fff' }} onClick={onClose} aria-label="Close"><X size={22} /></button>
         </div>
@@ -48,7 +48,7 @@ export function PersonnelDetail({ c, user: u, onClose }: { c: PersonnelControlle
           </Sec>
           {c.canViewAudit && <Sec title="Change History"><AuditHistory entityType="user" entityId={u.id} /></Sec>}
         </div>
-        <div style={{ padding: '8px 24px 18px' }}><Button style={{ background: '#6b7a92', padding: '12px 28px' }} onClick={onClose}>Close</Button></div>
+        <div style={{ padding: '8px 24px 18px' }}><Button style={{ background: 'var(--muted)', padding: '12px 28px' }} onClick={onClose}>Close</Button></div>
       </div>
     </div>
   );

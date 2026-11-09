@@ -38,9 +38,9 @@ export default function SchoolYearsView() {
       ) : s.years.map((y) => {
         const st = SchoolYearsController.statusStyle(y.status);
         return (
-          <div key={y.id} className="card flat" style={{ borderColor: '#e3e9f3', padding: 18 }}>
+          <div key={y.id} className="card flat" style={{ borderColor: 'var(--border)', padding: 18 }}>
             <div className="row gap-12">
-              <span className="att-icon" style={{ width: 40, height: 40, borderRadius: 10, background: '#eef2fa', color: 'var(--dark)' }}>
+              <span className="att-icon" style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--tint)', color: 'var(--dark)' }}>
                 {y.status === 'archived' ? <Archive size={20} /> : <GraduationCap size={20} />}
               </span>
               <div className="grow">
@@ -57,7 +57,7 @@ export default function SchoolYearsView() {
                     const ts = SchoolYearsController.statusStyle(t.status);
                     const cur = t.status === 'current';
                     return (
-                      <div key={t.id} style={{ width: 220, padding: 12, borderRadius: 10, background: cur ? '#f0fdf4' : '#f8fafc', border: `1px solid ${cur ? '#86efac' : '#e2e8f0'}` }}>
+                      <div key={t.id} style={{ width: 220, padding: 12, borderRadius: 10, background: cur ? '#f0fdf4' : 'var(--surface-2)', border: `1px solid ${cur ? '#86efac' : 'var(--border)'}` }}>
                         <div className="row gap-8"><span className="grow ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</span><Badge color={ts.tone}>{ts.label}</Badge></div>
                         <div className="caption mt-4">{SchoolYearsController.range(t.startDate, t.endDate)}</div>
                       </div>

@@ -48,13 +48,13 @@ export default function PublicEvaluationView() {
     const monitoring = String(e.monitoring_criteria ?? '').trim();
     body = (
       <div className="col gap-16">
-        <div className="row gap-12" style={{ paddingBottom: 12, borderBottom: '2px solid #0f172a' }}>
-          <span className="avatar" style={{ width: 44, height: 44, background: '#0f2c59' }}><Landmark size={24} /></span>
-          <div><div style={{ fontSize: 15, fontWeight: 800 }}>Kagawaran ng Edukasyon</div><div style={{ fontSize: 11, color: '#475569' }}>Performance Observation Tool</div></div>
+        <div className="row gap-12" style={{ paddingBottom: 12, borderBottom: '2px solid var(--dark)' }}>
+          <span className="avatar" style={{ width: 44, height: 44, background: 'var(--dark)' }}><Landmark size={24} /></span>
+          <div><div style={{ fontSize: 15, fontWeight: 800 }}>Kagawaran ng Edukasyon</div><div style={{ fontSize: 11, color: 'var(--text-2)' }}>Performance Observation Tool</div></div>
         </div>
-        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px' }}>
           <div style={{ fontSize: 16, fontWeight: 700 }}>{String(e.title ?? 'Event Evaluation')}</div>
-          <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>{c.details}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 4 }}>{c.details}</div>
           {s.activity && (
             <div style={{ fontSize: 12.5, fontWeight: 600, marginTop: 8 }}>
               Activity: {s.activity.activity.event?.trim() || `Activity ${s.activity.activity_index + 1}`}
@@ -107,7 +107,7 @@ export default function PublicEvaluationView() {
                 const on = s.marks[i] === v;
                 return (
                   <button key={l} type="button" onClick={() => c.mark(i, v)} className="grow row center gap-6"
-                    style={{ padding: 8, borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600, background: on ? `color-mix(in srgb, ${color} 12%, white)` : '#fff', color: on ? color : 'var(--muted)', border: `${on ? 1.4 : 0.8}px solid ${on ? color : '#cbd5e1'}` }}>
+                    style={{ padding: 8, borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600, background: on ? `color-mix(in srgb, ${color} 12%, white)` : '#fff', color: on ? color : 'var(--muted)', border: `${on ? 1.4 : 0.8}px solid ${on ? color : 'var(--light)'}` }}>
                     {v ? <CheckCircle2 size={15} /> : <XCircle size={15} />}{l}
                   </button>
                 );
@@ -116,7 +116,7 @@ export default function PublicEvaluationView() {
           </div>
         ))}
         <Field label="Overall comments (optional)"><TextArea rows={3} value={s.comments} onChange={(ev) => c.set({ comments: ev.target.value })} /></Field>
-        <Button block size="lg" loading={s.submitting} style={{ background: '#0f2c59' }}
+        <Button block size="lg" loading={s.submitting} style={{ background: 'var(--dark)' }}
           onClick={async () => { const err = await c.submit(); if (err) fb.toast(err, 'error'); }}>
           Submit Evaluation
         </Button>
@@ -125,7 +125,7 @@ export default function PublicEvaluationView() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f1f5f9', padding: '24px 16px', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--surface-3)', padding: '24px 16px', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
       <div style={{ width: '100%', maxWidth: 720, background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}>{body}</div>
     </div>
   );

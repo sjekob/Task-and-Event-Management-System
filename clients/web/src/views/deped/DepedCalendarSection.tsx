@@ -33,7 +33,7 @@ export function DepedCalendarSection() {
         Official memorandum dates shown on every calendar. Mandatory entries warn proponents who pick an overlapping
         event date. Confirm the dates against the DepEd Order for the school year.
       </div>
-      <div className="card flat" style={{ padding: 0, borderColor: '#e3e9f3' }}>
+      <div className="card flat" style={{ padding: 0, borderColor: 'var(--border)' }}>
         {s.loading ? <div className="center-fill" style={{ height: 90 }}><Spinner /></div>
           : s.error ? <div className="field-error" style={{ padding: 16 }}>{s.error}</div>
           : !s.entries.length ? <div className="caption" style={{ padding: 16 }}>No DepEd dates yet.</div>

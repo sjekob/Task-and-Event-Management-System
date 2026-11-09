@@ -38,7 +38,7 @@ export function EventDetail({ event, onBack, onPrint, actions, attendance, top, 
               <span className="ev-step">{i + 1}</span>
               <div>
                 {st.stage && <div style={{ fontSize: 14, fontWeight: 700 }}>{st.stage}</div>}
-                {st.activities.map((a, j) => <div key={j} style={{ fontSize: 13.5, color: '#4a5568', marginTop: 3, lineHeight: 1.4 }}>• {a}</div>)}
+                {st.activities.map((a, j) => <div key={j} style={{ fontSize: 13.5, color: 'var(--text-2)', marginTop: 3, lineHeight: 1.4 }}>• {a}</div>)}
               </div>
             </div>
           ))}
@@ -70,7 +70,7 @@ export function EventDetail({ event, onBack, onPrint, actions, attendance, top, 
           {p.twg && <><div className="ev-sub mt-12">Technical working groups</div>
             {p.twg.map((g, i) => (
               <div key={i}>
-                {g.title && <div style={{ fontSize: 11, fontWeight: 600, color: '#718096', margin: '6px 0 4px', letterSpacing: 0.3 }}>{g.title}</div>}
+                {g.title && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', margin: '6px 0 4px', letterSpacing: 0.3 }}>{g.title}</div>}
                 {g.members.map((m, j) => <div key={j} className="ev-li" style={{ marginLeft: 8 }}>• {String(m.name ?? '')}{m.designation ? ` — ${m.designation}` : ''}</div>)}
               </div>
             ))}</>}
@@ -95,9 +95,9 @@ export function EventDetail({ event, onBack, onPrint, actions, attendance, top, 
         <div className="row wrap gap-12">
           {(sg ?? []).map((x, i) => (
             <div key={i} className="ev-sig">
-              {x.role && <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, color: '#718096' }}>{x.role.toUpperCase()}</div>}
+              {x.role && <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, color: 'var(--muted)' }}>{x.role.toUpperCase()}</div>}
               <div style={{ fontSize: 14, fontWeight: 700, marginTop: 6 }}>{x.name || '—'}</div>
-              {x.title && <div style={{ fontSize: 12.5, color: '#4a5568' }}>{x.title}</div>}
+              {x.title && <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{x.title}</div>}
             </div>
           ))}
         </div>
@@ -114,7 +114,7 @@ export function EventDetail({ event, onBack, onPrint, actions, attendance, top, 
         <div className="row-top gap-12">
           <IconButton title="Back to events" onClick={onBack} className="ev-back"><ArrowLeft size={20} /></IconButton>
           <div className="grow">
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: '#718096' }}>EVENT PROPOSAL</div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: 'var(--muted)' }}>EVENT PROPOSAL</div>
             <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.2, marginTop: 4 }}>{event.title}</div>
           </div>
           <StatusBadge e={event} />
@@ -124,7 +124,7 @@ export function EventDetail({ event, onBack, onPrint, actions, attendance, top, 
           {ProposalView.has(r.target_date) && <Meta icon={<CalendarDays size={16} />} text={String(r.target_date)} />}
           {ProposalView.has(r.venue) && <Meta icon={<MapPin size={16} />} text={String(r.venue)} />}
         </div>
-        <hr className="divider" style={{ margin: '18px 0 14px', background: '#e2e8f0' }} />
+        <hr className="divider" style={{ margin: '18px 0 14px', background: 'var(--border)' }} />
         <div className="row wrap gap-10">
           {actions}
           <Button variant="outline-muted" size="lg" icon={<Printer size={18} />} onClick={onPrint}>Print proposal</Button>
@@ -136,9 +136,9 @@ export function EventDetail({ event, onBack, onPrint, actions, attendance, top, 
       <div className="ev-facts">
         {p.facts.map((f) => (
           <div key={f.label} className="ev-fact">
-            <span className="att-icon" style={{ width: 38, height: 38, borderRadius: 10, background: '#eef2fa', color: 'var(--dark)' }}>{FACT_ICON[f.icon]}</span>
+            <span className="att-icon" style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--tint)', color: 'var(--dark)' }}>{FACT_ICON[f.icon]}</span>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11.5, color: '#718096' }}>{f.label}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{f.label}</div>
               <div className="clamp-2" style={{ fontSize: 14.5, fontWeight: 700 }}>{f.value.trim() || '—'}</div>
             </div>
           </div>
@@ -165,7 +165,7 @@ export function EventDetail({ event, onBack, onPrint, actions, attendance, top, 
         <div key={x.title} className="ev-panel">
           <div className="row gap-8 mb-12">
             <span className="ev-roman">{ROMAN[i + 1] ?? i + 2}</span>
-            <span style={{ color: '#4a5568', display: 'flex' }}>{x.icon}</span>
+            <span style={{ color: 'var(--text-2)', display: 'flex' }}>{x.icon}</span>
             <span style={{ fontSize: 15.5, fontWeight: 700 }}>{x.title}</span>
           </div>
           {x.body}

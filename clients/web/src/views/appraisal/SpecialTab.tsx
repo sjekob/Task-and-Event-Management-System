@@ -63,7 +63,7 @@ export function SpecialTab({ c }: { c: AppraisalController }) {
                 return (
                   <tr key={SpecialTaskStats.code(t)}>
                     <td className="muted">{SpecialTaskStats.code(t)}</td>
-                    <td><span className="row gap-8"><span className="avatar" style={{ width: 28, height: 28, background: '#e2e8f0', color: 'var(--muted)' }}><UserIcon size={14} /></span><b style={{ fontWeight: 600 }}>{t.assigneeName ?? '—'}</b></span></td>
+                    <td><span className="row gap-8"><span className="avatar" style={{ width: 28, height: 28, background: 'var(--border)', color: 'var(--muted)' }}><UserIcon size={14} /></span><b style={{ fontWeight: 600 }}>{t.assigneeName ?? '—'}</b></span></td>
                     <td className="muted">{t.assigneeDepartment ?? '—'}</td>
                     <td>
                       <span className="ellipsis" style={{ display: 'block', maxWidth: 240 }}>{t.title}</span>
@@ -85,10 +85,10 @@ export function SpecialTab({ c }: { c: AppraisalController }) {
           </table>
         </div>
       </div>
-      <div className="row wrap gap-16" style={{ padding: 20, borderRadius: 12, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+      <div className="row wrap gap-16" style={{ padding: 20, borderRadius: 12, background: 'var(--accent-bg)', border: '1px solid var(--accent-border)' }}>
         <div className="grow">
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#1d4ed8' }}>Annual Faculty Performance Summary</div>
-          <div style={{ fontSize: 12, color: '#3b82f6', marginTop: 4 }}>Aggregated from all event and special task appraisals. Ready for DepEd Annual Faculty Performance Evaluation.</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent-dark)' }}>Annual Faculty Performance Summary</div>
+          <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 4 }}>Aggregated from all event and special task appraisals. Ready for DepEd Annual Faculty Performance Evaluation.</div>
         </div>
         <div className="col" style={{ alignItems: 'flex-end', gap: 4 }}>
           <Button icon={<Download size={16} />} loading={exporting} onClick={async () => {
@@ -97,7 +97,7 @@ export function SpecialTab({ c }: { c: AppraisalController }) {
               if (!await printPerformanceSummary(() => c.performanceSummary())) fb.toast('Allow pop-ups for this site to export the summary.', 'error');
             } catch (e) { fb.error(e); } finally { setExporting(false); }
           }}>{exporting ? 'Generating PDF…' : 'Export Performance Summary'}</Button>
-          <span style={{ fontSize: 11, color: '#3b82f6' }}>Exports the selected school year as PDF</span>
+          <span style={{ fontSize: 11, color: 'var(--accent)' }}>Exports the selected school year as PDF</span>
         </div>
       </div>
       {evaluating && <EvaluateSpecialTaskDialog task={evaluating} onClose={(u) => { setEvaluating(null); if (u) c.replaceTask(u); }} />}

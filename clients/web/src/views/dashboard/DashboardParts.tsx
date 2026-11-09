@@ -8,7 +8,7 @@ export const TONES: Record<Tone, { fg: string; bg: string }> = {
   red: { fg: '#b91c1c', bg: 'var(--red-bg)' },
   amber: { fg: '#b45309', bg: 'var(--amber-bg)' },
   blue: { fg: 'var(--accent)', bg: 'var(--blue-bg)' },
-  gray: { fg: 'var(--muted)', bg: '#f1f5f9' },
+  gray: { fg: 'var(--muted)', bg: 'var(--surface-3)' },
   green: { fg: '#16a34a', bg: 'var(--green-bg)' },
 };
 
@@ -45,7 +45,7 @@ export function Section({ icon, title, count, action, onAction, empty, footer, c
           <span className="ellipsis" style={{ fontSize: 15, fontWeight: 700 }}>{title}</span>
           {count > 0 && <span className="dash-count">{count}</span>}
         </div>
-        <button className="btn ghost sm" onClick={onAction}>{action}<ArrowRight size={16} /></button>
+        <button className="btn ghost sm dash-action" onClick={onAction}>{action}<ArrowRight size={16} /></button>
       </div>
       <hr className="divider" style={{ margin: 0 }} />
       {empty ? (
@@ -88,7 +88,7 @@ export function MiniProgress({ done, total }: { done: number; total: number }) {
   return (
     <span style={{ width: 120, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: complete ? '#16a34a' : 'var(--muted)' }}>{done}/{total} submitted</span>
-      <span className="progress" style={{ width: '100%', background: '#eef2fa' }}>
+      <span className="progress" style={{ width: '100%', background: 'var(--tint)' }}>
         <span style={{ display: 'block', height: '100%', borderRadius: 6, width: `${total ? (done / total) * 100 : 0}%`, background: complete ? 'var(--green)' : 'var(--accent)' }} />
       </span>
     </span>

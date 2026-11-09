@@ -6,6 +6,7 @@ import { useServices } from '../../app/AppContext';
 import { useScreenController } from '../../app/hooks';
 import { useFeedback } from '../../ui/feedback';
 import { Button, Modal, Spinner } from '../../ui/kit';
+import { shareOrigin } from '../../app/shareOrigin';
 
 const SHEET_CSS = `
   body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 12mm; color: #111; }
@@ -13,6 +14,7 @@ const SHEET_CSS = `
   .qr-act { break-inside: avoid; border: 1px solid #ccc; border-radius: 3mm; padding: 5mm; margin-bottom: 6mm; }
   .qr-act h2 { font-size: 13pt; margin: 0; } .qr-when { color: #555; font-size: 10pt; margin: 1mm 0 4mm; }
   .qr-pair { display: flex; gap: 10mm; justify-content: center; } .qr-cell { text-align: center; }
+  .qr-link { display: block; margin: 2mm auto 0; max-width: 120mm; font-family: 'Courier New', monospace; font-size: 8pt; color: #333; word-break: break-all; text-decoration: none; }
   .qr-cell b { display: block; margin-top: 2mm; font-size: 12pt; } .qr-warn, .qr-task { font-size: 9pt; color: #555; margin-top: 3mm; }
   .no-print { display: none; }
   @page { size: A4; margin: 0; }
@@ -22,7 +24,7 @@ const SHEET_CSS = `
 export function AttendanceQrDialog({ eventId, onClose }: { eventId: number; onClose: () => void }) {
   const services = useServices();
   const fb = useFeedback();
-  const [c, s] = useScreenController(() => new AttendanceQrController(services, eventId, window.location.origin), [eventId]);
+  const [c, s] = useScreenController(() => new AttendanceQrController(services, eventId, shareOrigin()), [eventId]);
   const sheet = useRef<HTMLDivElement>(null);
   useEffect(() => { void c.load(); }, [c]);
 
@@ -53,9 +55,12 @@ export function AttendanceQrDialog({ eventId, onClose }: { eventId: number; onCl
                   <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{AttendanceQrController.title(a)}</h2>
                   <div className="qr-when caption">{AttendanceQrController.when(a) || 'No schedule'}</div>
                   <div className="qr-pair row wrap gap-24" style={{ justifyContent: 'center', marginTop: 10 }}>
-                    <div className="qr-cell" style={{ textAlign: 'center' }}>
+                    <div className="qr-cell" style={{ textAlign: 'center', maxWidth: '100%' }}>
                       <QRCodeSVG value={c.link(a)} size={200} marginSize={1} />
                       <b style={{ display: 'block', marginTop: 6 }}>{AttendanceQrController.LABEL}</b>
+                      <a className="qr-link" href={c.link(a)} target="_blank" rel="noreferrer"
+                        style={{ display: 'block', marginTop: 6, maxWidth: 460, fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 11.5,
+                          color: 'var(--text-2)', wordBreak: 'break-all' }}>{c.link(a)}</a>
                     </div>
                   </div>
                   {!a.schedule_readable && (

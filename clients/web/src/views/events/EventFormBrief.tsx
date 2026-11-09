@@ -37,12 +37,26 @@ export function BriefStep({ c }: { c: ProposalFormController }) {
           : s.checkingDate ? <div className="field-help mt-4">Checking the calendar...</div>
           : dateOk ? <div className="mt-4" style={{ fontSize: 11.5, color: '#16a34a' }}>No other event is scheduled on this date.</div> : null}
         {s.dateWarning && !s.dateIssue && <div className="mt-4" style={{ fontSize: 11.5, color: '#b45309' }}>{s.dateWarning}</div>}
+        <div className="row gap-8 mt-8" style={{ alignItems: 'flex-end' }}>
+          <label className="grow">
+            <span className="field-help" style={{ display: 'block', marginBottom: 4 }}>Starts at</span>
+            <input className="pf-in" type="time" aria-label="Event start time" value={d.startTime} onChange={(e) => c.set('startTime', e.target.value)} />
+          </label>
+          <span className="muted" style={{ paddingBottom: 10 }}>to</span>
+          <label className="grow">
+            <span className="field-help" style={{ display: 'block', marginBottom: 4 }}>Ends at</span>
+            <input className="pf-in" type="time" aria-label="Event end time" value={d.endTime} onChange={(e) => c.set('endTime', e.target.value)} />
+          </label>
+        </div>
+        {d.startTime && d.endTime && d.endTime <= d.startTime
+          ? <div className="field-error mt-4">The end time must be after the start time.</div>
+          : <div className="field-help mt-4">Attendance opens from these hours: Time In for the first 2 hours, Time Out (the evaluation) from 2 hours before the end until midnight.</div>}
       </L>
       <L t="d. Proposed Venue"><RichText placeholder="e.g. NCS II Pavilion" value={d.venue} onChange={(v) => c.set('venue', v)} /></L>
     </div>
     <VenueMapPicker venue={richToPlain(d.venue)} pin={d.venuePin} radius={d.venueRadius} onPin={(p) => c.setVenuePin(p)} onRadius={(r) => c.setVenueRadius(r)} />
     <L t="e. Target Participants">
-      <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflowX: 'auto' }}>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto' }}>
         <table className="pf-pax">
           <thead><tr><th style={{ width: '45%' }} /><th>MALE</th><th>FEMALE</th><th>TOTAL</th></tr></thead>
           <tbody>

@@ -7,7 +7,7 @@
 .ap-filter { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; height: 34px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; color: var(--muted); }
 .ap-filter select { border: 0; background: transparent; font-size: 13px; font-weight: 500; color: var(--text); outline: none; appearance: none; cursor: pointer; padding-right: 2px; max-width: 200px; }
 .ap-group { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 20px; border: 0; background: transparent; cursor: pointer; }
-.ap-group:hover { background: #f8fafc; }
+.ap-group:hover { background: var(--surface-2); }
 .ap-table th { font-size: 11px; letter-spacing: 0.5px; background: #f9fafb; }
 .ap-table td { font-size: 12.5px; }
 .ap-table td.muted { color: var(--muted); }

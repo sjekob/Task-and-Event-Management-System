@@ -34,10 +34,15 @@ class LocalStorageTokenStore implements TokenStore {
   }
 }
 
-/** API base: VITE_API_BASE, else the gateway on the same host as the page. */
+/**
+ * API base: VITE_API_BASE; else, in the dev server, this page's own address (vite.config.ts
+ * proxies /api and /uploads to the gateway, which also works over https); else the gateway
+ * on port 8000 of the page's host.
+ */
 function apiBase(): string {
   const env = import.meta.env.VITE_API_BASE as string | undefined;
   if (env) return env;
+  if (import.meta.env.DEV) return window.location.origin;
   return `${window.location.protocol}//${window.location.hostname}:8000`;
 }
 

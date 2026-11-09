@@ -79,7 +79,7 @@ function CertTile({ cert, actionLabel, onOpen, onRemove }: { cert: CertificateFi
   const sub = CertificatesController.subtitle(cert);
   return (
     <div className="row-top gap-12" style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 6px 12px 14px', marginBottom: 8, flexWrap: 'wrap' }}>
-      <span className="att-icon" style={{ width: 36, height: 36, background: '#eef2fa', color: 'var(--dark)' }}><FileText size={18} /></span>
+      <span className="att-icon" style={{ width: 36, height: 36, background: 'var(--tint)', color: 'var(--dark)' }}><FileText size={18} /></span>
       <div className="grow" style={{ minWidth: 180 }}>
         <div className="row wrap gap-8">
           <span className="label">{CertificatesController.displayTitle(cert)}</span>

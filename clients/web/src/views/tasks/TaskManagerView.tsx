@@ -133,7 +133,7 @@ function TaskRow({ task, onOpen, menu }: { task: Task; onOpen: () => void; menu:
         {r.total === 0 ? <span className="badge gray">Not assigned</span> : (
           <div className="task-row-progress">
             <span style={{ fontSize: 12.5, fontWeight: 600, color: r.complete ? '#16a34a' : 'var(--muted)' }}>{r.done} of {r.total} submitted</span>
-            <div className="progress" style={{ background: '#eef2fa', width: '100%' }}>
+            <div className="progress" style={{ background: 'var(--tint)', width: '100%' }}>
               <div style={{ width: `${(r.done / r.total) * 100}%`, background: r.complete ? 'var(--green)' : 'var(--accent)' }} />
             </div>
           </div>

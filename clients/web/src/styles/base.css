@@ -1,18 +1,25 @@
 /* Theme tokens, typography and layout helpers. */
-/* TaskNet web theme. Tokens match the Flutter AppTheme. */
+/* TaskNet web theme: cream page, red accents (#D92243), orange highlights (#F69D39). */
 :root {
-  --bg: #dce6f5;
-  --sidebar: #1a1a2e;
-  --sidebar-active: #8faad4;
-  --card: #ffffff;
-  --dark: #1a1a2e;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
+  --bg: #e0dbd2;
+  --sidebar: #252525;
+  --sidebar-active: #D92243;
+  --card: #FFFFFF;
+  --dark: #5a1120;
+  --accent: #D92243;
+  --accent-hover: #B51B37;
+  --accent-dark: #A11A33;
+  --accent-bg: #FCE8EC;
+  --accent-border: #F4C3CD;
+  --orange: #F69D39;
+  --orange-soft: #FEEBD3;
+  --tint: #FDF0DC;
+  --surface-3: #F3EFE9;
   --deped: #7c3aed;
-  --text: #1a1a2e;
-  --text-2: #4b5563;
-  --muted: #6b7280;
-  --light: #9ca3af;
+  --text: #2B2220;
+  --text-2: #5B4E48;
+  --muted: #7D6F68;
+  --light: #A99B92;
   --green: #22c55e;
   --green-dark: #15803d;
   --green-bg: #dcfce7;
@@ -22,15 +29,17 @@
   --amber: #f59e0b;
   --amber-dark: #b45309;
   --amber-bg: #fef3c7;
-  --blue-bg: #dbeafe;
+  --blue-bg: #FCE8EC;
   --blue-dark: #1d4ed8;
   --purple: #7c3aed;
   --purple-bg: #ede9fe;
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --surface-2: #f8fafc;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --border: #E9E3DA;
+  --border-strong: #D5CCBF;
+  --surface-2: #FAF8F5;
+  --shadow: 0 1px 2px rgba(43,34,32,0.06), 0 4px 14px rgba(43,34,32,0.09);
+  --shadow-lg: 0 2px 6px rgba(43,34,32,0.08), 0 12px 32px rgba(43,34,32,0.14);
+  --shadow-xl: 0 8px 20px rgba(43,34,32,0.14), 0 28px 70px rgba(43,34,32,0.30);
+  --edge: 1px solid rgba(43,34,32,0.06);
   --radius: 12px;
   --font: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }

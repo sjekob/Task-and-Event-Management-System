@@ -5,7 +5,11 @@ import { Avatar } from '../../ui/kit';
 import { CommentProps, ReportAttachments, ReportStatusChip, Run, SubmissionType } from './TaskDetailParts';
 
 // Reviewer side panel: one assignee's report, its status and private comments.
-export function ReviewPanel({ c, run, commentProps }: { c: TaskDetailController; run: Run; commentProps: CommentProps }) {
+export function ReviewPanel({ c, run, commentProps, inSheet }: {
+  c: TaskDetailController; run: Run; commentProps: CommentProps;
+  /** Inside the phone sheet, whose bar already shows the person and status. */
+  inSheet?: boolean;
+}) {
   const r = c.selectedReport;
   const t = c.task;
   if (!r) {
@@ -13,7 +17,7 @@ export function ReviewPanel({ c, run, commentProps }: { c: TaskDetailController;
       <div>
         <div className="td-title">Submission</div>
         <div className="empty">
-          <span className="avatar" style={{ width: 56, height: 56, background: '#eef2fa', color: 'var(--muted)' }}><FileText size={22} /></span>
+          <span className="avatar" style={{ width: 56, height: 56, background: 'var(--tint)', color: 'var(--muted)' }}><FileText size={22} /></span>
           <div className="label">{t.reports.length ? 'No submission selected' : 'No submissions yet'}</div>
           <div className="body-sm">{t.reports.length ? 'Choose someone marked "Pending review" or "Completed" to read their report.' : 'Reports appear here once assignees submit.'}</div>
         </div>
@@ -23,16 +27,18 @@ export function ReviewPanel({ c, run, commentProps }: { c: TaskDetailController;
   const comments = c.privateCommentsFor(r);
   return (
     <div>
-      <div className="caption">Submission</div>
-      <div className="row gap-12 mt-8">
-        <Avatar url={r.avatarUrl} initials={(r.fullName ?? '?').charAt(0).toUpperCase()} size={36} />
-        <div className="grow">
-          <div className="td-title ellipsis">{r.fullName}</div>
-          {r.gradeLevel && <div className="body-sm">{r.gradeLevel}</div>}
+      {!inSheet && <>
+        <div className="caption">Submission</div>
+        <div className="row gap-12 mt-8">
+          <Avatar url={r.avatarUrl} initials={(r.fullName ?? '?').charAt(0).toUpperCase()} size={36} />
+          <div className="grow">
+            <div className="td-title ellipsis">{r.fullName}</div>
+            {r.gradeLevel && <div className="body-sm">{r.gradeLevel}</div>}
+          </div>
+          <ReportStatusChip status={r.reportStatus} />
         </div>
-        <ReportStatusChip status={r.reportStatus} />
-      </div>
-      <div className="panel mt-16">
+      </>}
+      <div className={`panel ${inSheet ? 'mt-12' : 'mt-16'}`}>
         <SubmissionType type={r.reportType} />
         <div className="label mt-8">{r.reportTitle}</div>
         {r.reportDescription && <div className="body-md mt-4">{r.reportDescription}</div>}

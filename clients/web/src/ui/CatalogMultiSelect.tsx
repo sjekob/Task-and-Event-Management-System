@@ -31,7 +31,7 @@ export function CatalogMultiSelect({ label, selected, options, onChange }: {
       {selected.length > 0 && (
         <div className="row wrap gap-6 mt-4">
           {selected.map((s) => (
-            <span key={s} className="chip removable" style={{ background: '#eff4fa', borderColor: '#d0dceb', color: 'var(--text)', fontSize: 12 }}>
+            <span key={s} className="chip removable" style={{ background: 'var(--surface-2)', borderColor: 'var(--surface-3)', color: 'var(--text)', fontSize: 12 }}>
               {s}
               <button type="button" aria-label={`Remove ${s}`} onClick={() => onChange(selected.filter((x) => x !== s))}><X size={14} /></button>
             </span>

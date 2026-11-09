@@ -1,15 +1,15 @@
 .scope-tab { padding: 9px 16px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--muted); font-weight: 600; font-size: 13px; cursor: pointer; }
 .scope-tab.on { background: var(--dark); border-color: var(--dark); color: #fff; }
-.search-box { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #e3e9f3; border-radius: 12px; padding: 4px 14px; }
+.search-box { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 4px 14px; }
 .search-box input { flex: 1; border: 0; outline: none; padding: 10px 0; font-size: 14px; background: transparent; min-width: 0; }
 .count-pill { padding: 2px 8px; border-radius: 20px; background: #fff; border: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--muted); }
 
 .task-row {
   display: flex; align-items: center; gap: 16px; padding: 14px 6px 14px 16px; margin-bottom: 10px; background: #fff;
-  border: 1px solid #e3e9f3; border-radius: 12px; cursor: pointer; transition: box-shadow 0.12s;
+  border: 1px solid var(--border); border-radius: 12px; cursor: pointer; transition: box-shadow 0.12s;
 }
 .task-row:hover { box-shadow: var(--shadow); }
-.task-row.disabled { background: #f8fafc; }
+.task-row.disabled { background: var(--surface-2); }
 .task-row .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .task-row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 20px; }
 .task-row-info { flex: 1; min-width: 0; }
@@ -22,9 +22,9 @@
 /* Task form */
 .form-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 20px; align-items: start; }
 @media (max-width: 1099px) { .form-grid { grid-template-columns: minmax(0, 1fr); } }
-.sec-card { background: #fff; border: 1px solid #e3e9f3; border-radius: 14px; padding: 18px 20px 20px; }
+.sec-card { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px 20px; }
 .sec-head { display: flex; align-items: center; gap: 10px; padding-bottom: 14px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
-.sec-icon { width: 30px; height: 30px; border-radius: 8px; background: #eef2fa; color: var(--dark); display: flex; align-items: center; justify-content: center; }
+.sec-icon { width: 30px; height: 30px; border-radius: 8px; background: var(--tint); color: var(--dark); display: flex; align-items: center; justify-content: center; }
 .picker-field { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .picker-field input { border: 0; outline: none; font-size: 13.5px; font-weight: 600; background: transparent; width: 100%; padding: 2px 0; }
 .att-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg); border-radius: 8px; margin-bottom: 8px; }

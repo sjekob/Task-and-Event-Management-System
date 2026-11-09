@@ -4,6 +4,8 @@ import { LibraryBig, Menu } from 'lucide-react';
 import { Navigation } from '@shared/controllers/Navigation';
 import { useApp, useSession } from '../../app/AppContext';
 import { useIsMobile } from '../../app/hooks';
+import { IdleWatch } from '../../app/IdleWatch';
+import { FirstTimeProfile } from '../profile/FirstTimeProfile';
 import { Avatar, Button } from '../../ui/kit';
 import { NotificationBell, NotificationPanel } from './Notifications';
 import { Sidebar } from './Sidebar';
@@ -69,10 +71,12 @@ export default function Shell() {
           </button>
         </header>
         <main className="shell-content">
-          <Outlet />
+          {/* A teacher's first sign-in: personal details come before anything else. */}
+          {user && user.missingProfile.length > 0 ? <FirstTimeProfile /> : <Outlet />}
         </main>
       </div>
       {notifOpen && <NotificationPanel onClose={() => setNotifOpen(false)} />}
+      <IdleWatch />
     </div>
   );
 }

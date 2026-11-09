@@ -96,7 +96,7 @@ export function ReportForm({ taskId, onSubmitted }: { taskId: number; onSubmitte
         </div>
       </div>
       <Button size="lg" block disabled={!c.hasContent} loading={s.submitting} icon={<Send size={16} />} onClick={() => void submit()}
-        style={{ borderRadius: 12, ...(c.hasContent ? {} : { background: '#e2e8f0', color: '#64748b', opacity: 1 }) }}>
+        style={{ borderRadius: 12, ...(c.hasContent ? {} : { background: 'var(--border)', color: 'var(--muted)', opacity: 1 }) }}>
         Submit Report
       </Button>
       {!c.hasContent && <div className="caption" style={{ textAlign: 'center', marginTop: -4 }}>Add a file or a link to submit.</div>}
@@ -127,7 +127,7 @@ export function SubmittedState({ task, r, onUnsubmit }: { task: Task; r: Report;
           </div>
         )}
       </div>
-      <Button size="lg" block style={{ background: '#3d4350', borderRadius: 12 }} onClick={onUnsubmit}>Unsubmit</Button>
+      <Button size="lg" block style={{ background: 'var(--dark)', borderRadius: 12 }} onClick={onUnsubmit}>Unsubmit</Button>
     </div>
   );
 }

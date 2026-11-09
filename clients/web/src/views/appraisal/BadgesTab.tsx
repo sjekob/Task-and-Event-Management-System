@@ -84,8 +84,8 @@ export function BadgeGrid({ badges }: { badges: AppraisalBadge[] }) {
       {sorted.map((b) => {
         const col = BadgesController.color(b);
         return (
-          <div key={b.code} className="row-top gap-12" style={{ padding: 16, borderRadius: 14, background: b.earned ? '#fff' : '#f8fafc', border: `${b.earned ? 1.5 : 1}px solid ${b.earned ? `${col}73` : '#e2e8f0'}` }}>
-            <span className="avatar" style={{ width: 52, height: 52, background: b.earned ? `${col}24` : '#f1f5f9', color: b.earned ? col : '#94a3b8', border: `2px solid ${col}` }}>
+          <div key={b.code} className="row-top gap-12" style={{ padding: 16, borderRadius: 14, background: b.earned ? '#fff' : 'var(--surface-2)', border: `${b.earned ? 1.5 : 1}px solid ${b.earned ? `${col}73` : 'var(--border)'}` }}>
+            <span className="avatar" style={{ width: 52, height: 52, background: b.earned ? `${col}24` : 'var(--surface-3)', color: b.earned ? col : 'var(--light)', border: `2px solid ${col}` }}>
               {b.earned ? badgeIcon(b) : <Lock size={24} />}
             </span>
             <div className="grow">
@@ -93,7 +93,7 @@ export function BadgeGrid({ badges }: { badges: AppraisalBadge[] }) {
               <div className="caption" style={{ marginTop: 3 }}>{b.description}</div>
               {b.earned ? <div className="row gap-4 mt-8" style={{ color: col, fontSize: 12, fontWeight: 700 }}><CheckCircle2 size={15} />Earned</div> : (
                 <div className="mt-8">
-                  <div className="progress" style={{ background: '#e2e8f0' }}><div style={{ width: `${b.fraction * 100}%` }} /></div>
+                  <div className="progress" style={{ background: 'var(--border)' }}><div style={{ width: `${b.fraction * 100}%` }} /></div>
                   <div className="caption mt-4">{b.progress} / {b.target}</div>
                 </div>
               )}

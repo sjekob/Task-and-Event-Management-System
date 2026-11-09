@@ -62,12 +62,12 @@ export function InlineCommentInput({ initials, avatarUrl, onSend, placeholder = 
   return (
     <div className="row gap-12" style={{ padding: '10px 12px 12px' }}>
       <Avatar url={avatarUrl} initials={initials} size={40} />
-      <div className="row grow" style={{ height: 40, background: '#f1f3f7', borderRadius: 20, padding: '0 5px 0 14px' }}>
+      <div className="row grow" style={{ height: 40, background: 'var(--surface-2)', borderRadius: 20, padding: '0 5px 0 14px' }}>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder}
           onKeyDown={(e) => e.key === 'Enter' && void send()}
           style={{ flex: 1, border: 0, background: 'transparent', outline: 'none', fontSize: 12.5, minWidth: 0 }} />
         <button onClick={() => void send()} disabled={!active} aria-label="Send"
-          style={{ width: 30, height: 30, borderRadius: '50%', border: 0, background: active ? 'var(--accent)' : '#d7dbe3', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: active ? 'pointer' : 'default' }}>
+          style={{ width: 30, height: 30, borderRadius: '50%', border: 0, background: active ? 'var(--accent)' : 'var(--border)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: active ? 'pointer' : 'default' }}>
           <ArrowUp size={17} />
         </button>
       </div>

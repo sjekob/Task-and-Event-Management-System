@@ -33,8 +33,8 @@ export function MovList({ task }: { task: SpecialTask }) {
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Attached MOVs:</div>
       {task.movs.length === 0 ? <div className="caption" style={{ fontStyle: 'italic' }}>No MOVs uploaded</div> : task.movs.map((m) => (
         <div key={m.id} className="row gap-8" style={{ marginBottom: 6 }}>
-          {m.type === 'file' ? <FileText size={16} color="#3b82f6" /> : <Link2 size={16} color="#3b82f6" />}
-          <span className="grow ellipsis" style={{ fontSize: 13, color: '#2563eb', textDecoration: 'underline' }}>{m.name}</span>
+          {m.type === 'file' ? <FileText size={16} color="var(--accent)" /> : <Link2 size={16} color="var(--accent)" />}
+          <span className="grow ellipsis" style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'underline' }}>{m.name}</span>
           <Button variant="ghost" size="sm" onClick={() => open(m)}>View MOV</Button>
         </div>
       ))}
@@ -70,7 +70,7 @@ export function EvaluateSpecialTaskDialog({ task, onClose }: { task: SpecialTask
               </Select>
             </div>
           ))}
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1d4ed8' }}>Final IPCRF Score: {c.finalScoreText}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-dark)' }}>Final IPCRF Score: {c.finalScoreText}</div>
           <div><div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Remarks:</div><TextArea rows={3} placeholder="Add performance comments..." value={s.remarks} onChange={(e) => c.set({ remarks: e.target.value })} /></div>
         </div>
       )}
@@ -92,7 +92,7 @@ export function ViewSpecialTaskDialog({ task, onClose }: { task: SpecialTask; on
           ))}
           <div className="row mt-12">
             <span className="grow" style={{ fontSize: 13, fontWeight: 700 }}>Final IPCRF Score</span>
-            <span style={{ padding: '4px 12px', borderRadius: 6, background: '#eff6ff', color: '#1d4ed8', fontWeight: 700 }}>
+            <span style={{ padding: '4px 12px', borderRadius: 6, background: 'var(--accent-bg)', color: 'var(--accent-dark)', fontWeight: 700 }}>
               {(ev.weightedAverage ?? 0).toFixed(2)} / 5.00 ({ipcrfRating(ev.weightedAverage ?? 0)})
             </span>
           </div>

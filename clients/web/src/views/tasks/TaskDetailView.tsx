@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { TaskDetailController } from '@shared/controllers/TaskDetailController';
@@ -6,11 +6,13 @@ import { Comment } from '@shared/models';
 import { useServices, useSession } from '../../app/AppContext';
 import { useIsMobile, useScreenController } from '../../app/hooks';
 import { useFeedback } from '../../ui/feedback';
+import { Avatar } from '../../ui/kit';
 import './taskDetail.css';
 import { MainContent } from './TaskDetailMain';
-import { DetailSkeleton } from './TaskDetailParts';
+import { DetailSkeleton, ReportStatusChip } from './TaskDetailParts';
 import { ReviewPanel } from './TaskReviewPanel';
 import { SubmitPanel } from './TaskSubmitPanel';
+import { WorkSheet } from './WorkSheet';
 
 export default function TaskDetailView({ backTo, ownTaskView }: { backTo: string; ownTaskView?: boolean }) {
   const { id } = useParams();
@@ -21,6 +23,8 @@ export default function TaskDetailView({ backTo, ownTaskView }: { backTo: string
   const isMobile = useIsMobile();
   const [c, s] = useScreenController(() => new TaskDetailController(services, user!, Number(id), !!ownTaskView), [id, ownTaskView]);
   useEffect(() => { void c.load(); }, [c]);
+  // Phones: the submission sheet (collapsed until someone is opened or the bar is tapped).
+  const [sheet, setSheet] = useState(false);
 
   if (s.loading) return <DetailSkeleton />;
   if (!s.task) return <div className="empty">Task not found</div>;
@@ -40,27 +44,45 @@ export default function TaskDetailView({ backTo, ownTaskView }: { backTo: string
   const commentProps = (cm: Comment) => c.isMine(cm) ? { onEdit: () => void editComment(cm), onDelete: () => void deleteComment(cm) } : {};
 
   const side = c.isReviewOnly
-    ? <ReviewPanel c={c} run={run} commentProps={commentProps} />
+    ? <ReviewPanel c={c} run={run} commentProps={commentProps} inSheet={isMobile} />
     : <SubmitPanel c={c} run={run} commentProps={commentProps} showHeader={!isMobile} />;
 
   const main = (
     <div className="col gap-16">
       <button className="td-back" onClick={() => navigate(backTo)} aria-label="Back"><ArrowLeft size={16} /></button>
-      <MainContent c={c} run={run} commentProps={commentProps} backTo={backTo} />
+      <MainContent c={c} run={run} commentProps={commentProps} backTo={backTo} onPickAssignee={isMobile ? () => setSheet(true) : undefined} />
     </div>
   );
 
   if (isMobile) {
-    return (
-      <div>
-        {main}
-        <div className="td-sheet">
-          <div className="row between" style={{ padding: '0 4px 10px' }}>
-            <span className="h3">{c.isReviewOnly ? 'Submission' : 'Your work'}</span>
-            <span className="body-md ellipsis">{c.mobileDeadlineText}</span>
+    const r = c.selectedReport;
+    const own = c.ownStatus;
+    const summary = c.isReviewOnly
+      ? (r ? (
+        <div className="row gap-10">
+          <Avatar url={r.avatarUrl} initials={(r.fullName ?? '?').charAt(0).toUpperCase()} size={34} />
+          <div className="grow" style={{ minWidth: 0 }}>
+            <div className="ellipsis" style={{ fontWeight: 700 }}>{r.fullName}</div>
+            <div className="caption ellipsis">{c.mobileDeadlineText}</div>
           </div>
-          {side}
+          <ReportStatusChip status={r.reportStatus} />
         </div>
+      ) : (
+        <div className="row between gap-8">
+          <span className="h3">Submission</span>
+          <span className="caption">Tap someone above to see their work</span>
+        </div>
+      ))
+      : (
+        <div className="row gap-8">
+          <span className="h3 grow">Your work</span>
+          {own && <span className={`badge ${own.tone}`}>{own.label}</span>}
+        </div>
+      );
+    return (
+      <div className="ws-page">
+        {main}
+        <WorkSheet open={sheet} onOpenChange={setSheet} summary={summary}>{side}</WorkSheet>
       </div>
     );
   }

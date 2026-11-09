@@ -8,7 +8,11 @@ import { AssigneesCard } from './TaskAssignees';
 import { CommentProps, Legend, Meta, Pill, Run } from './TaskDetailParts';
 
 // Task detail: header, progress, instructions and public comments.
-export function MainContent({ c, run, commentProps, backTo }: { c: TaskDetailController; run: Run; commentProps: CommentProps; backTo: string }) {
+export function MainContent({ c, run, commentProps, backTo, onPickAssignee }: {
+  c: TaskDetailController; run: Run; commentProps: CommentProps; backTo: string;
+  /** Someone's submission was opened from the list (phones open the sheet). */
+  onPickAssignee?: () => void;
+}) {
   const navigate = useNavigate();
   const t = c.task;
   const reviewing = c.isReviewOnly;
@@ -49,7 +53,7 @@ export function MainContent({ c, run, commentProps, backTo }: { c: TaskDetailCon
             <span style={{ fontSize: 14, fontWeight: 700, color: p.submitted >= p.total ? '#15803d' : 'var(--text)' }}>{p.submitted} of {p.total} submitted</span>
           </div>
           {c.mineOnly && <div className="caption mt-4">Counting the {Format.plural(p.total, 'person', 'people')} you assigned ({t.assignedUsers.length} on this task in total).</div>}
-          <div className="progress mt-12" style={{ height: 10, background: '#eef2fa' }}>
+          <div className="progress mt-12" style={{ height: 10, background: 'var(--tint)' }}>
             <div style={{ width: `${p.total ? (p.submitted / p.total) * 100 : 0}%`, background: p.submitted >= p.total ? 'var(--green)' : 'var(--accent)' }} />
           </div>
           <div className="row wrap gap-20 mt-12">
@@ -67,7 +71,7 @@ export function MainContent({ c, run, commentProps, backTo }: { c: TaskDetailCon
         </div>
       </div>
 
-      {reviewing && <AssigneesCard c={c} run={run} />}
+      {reviewing && <AssigneesCard c={c} run={run} onPick={onPickAssignee} />}
 
       <div className="td-card">
         <div className="row gap-8">

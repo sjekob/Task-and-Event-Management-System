@@ -7,6 +7,7 @@ import { Task, TaskCategory } from '@shared/models';
 import { Format } from '@shared/utils/format';
 import { useServices, useSession } from '../../app/AppContext';
 import { useScreenController } from '../../app/hooks';
+import { useDirty, useUnsavedGuard } from '../../app/unsaved';
 import { useFeedback } from '../../ui/feedback';
 import { AssignPickerDialog, AssignRoleSelector } from '../../ui/AssignPickerDialog';
 import { AttachmentDialog } from '../../ui/AttachmentDialog';
@@ -55,11 +56,17 @@ function TaskForm({ backTo, mode }: { backTo: string; mode: TaskFormMode }) {
     try { await c.uploadAttachment({ name: file.name, type: file.type, blob: file }); } catch (e) { fb.error(e); }
   };
 
+  // Leaving with unsaved changes asks first (tasks have no drafts: stay or discard).
+  const dirty = useDirty({ t: s.title, i: s.instructions, sd: s.startDate, ed: s.endDate, dt: s.dueTime, cat: s.category,
+    who: s.selectedIds, files: s.attachments.length });
+  const guard = useUnsavedGuard(dirty, { what: mode.kind === 'template' ? 'template' : 'task' });
+
   const submit = async () => {
     try {
       const warning = await c.submit();
       if (warning) fb.toast(warning, 'error');
       else if (c.isEdit) fb.toast('Task updated');
+      guard.release();
       navigate(backTo);
     } catch (e) {
       fb.error(e);
@@ -90,10 +97,10 @@ function TaskForm({ backTo, mode }: { backTo: string; mode: TaskFormMode }) {
           {s.attachments.length > 0 && (
             <div className="mt-12">
               {s.attachments.map((a, i) => {
-                const color = ATTACHMENT_KINDS.find((k) => k.kind === a.attachment_type)?.color ?? '#4a90e2';
+                const color = ATTACHMENT_KINDS.find((k) => k.kind === a.attachment_type)?.color ?? 'var(--accent)';
                 return (
                   <div key={i} className="att-row">
-                    <span className="att-icon" style={{ background: `${color}1f`, color }}>{ATT_ICON[a.attachment_type] ?? ATT_ICON.link}</span>
+                    <span className="att-icon" style={{ background: `color-mix(in srgb, ${color} 12%, transparent)`, color }}>{ATT_ICON[a.attachment_type] ?? ATT_ICON.link}</span>
                     <div className="grow">
                       <div className="ellipsis" style={{ fontSize: 12.5, fontWeight: 600 }}>{a.name}</div>
                       {a.url && <div className="ellipsis body-sm" style={{ color: 'var(--accent)' }}>{a.url}</div>}
@@ -160,12 +167,13 @@ function TaskForm({ backTo, mode }: { backTo: string; mode: TaskFormMode }) {
 
   return (
     <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+      {guard.dialog}
       <div className="row-top wrap gap-12 mb-16" style={{ marginTop: 4 }}>
         <div className="grow">
           <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0 }}>{c.pageTitle}</h1>
           <div className="body-md mt-4">{c.subtitle}</div>
         </div>
-        {mode.kind !== 'edit' && <ScanFileButton scan={scan} onTemplatesMade={() => navigate(backTo)} />}
+        {mode.kind !== 'edit' && <ScanFileButton scan={scan} onTemplatesMade={() => { guard.release(); navigate(backTo); }} />}
         {mode.kind === 'create' && (
           <Button variant="outline" icon={<Library size={16} />} onClick={() => setTemplates(true)}>Use template</Button>
         )}

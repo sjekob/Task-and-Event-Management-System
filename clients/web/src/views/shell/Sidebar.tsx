@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Calendar, CalendarDays, CalendarRange, CheckSquare, ChevronLeft, ChevronRight, ClipboardList, GraduationCap, History, LayoutDashboard, LogOut, Star, Users, Award, ListChecks, X } from 'lucide-react';
 import { IconName, Navigation } from '@shared/controllers/Navigation';
 import { useSession } from '../../app/AppContext';
+import { useSignOut } from '../../app/signOut';
 import { Avatar } from '../../ui/kit';
 import { NotificationBell } from './Notifications';
 
@@ -24,7 +25,8 @@ export const NAV_ICONS: Record<IconName, React.ComponentType<{ size?: number }>>
 export function Sidebar({ collapsed, onToggle, mobile, onNotifications }: {
   collapsed: boolean; onToggle: () => void; mobile: boolean; onNotifications: () => void;
 }) {
-  const { user, session } = useSession();
+  const { user } = useSession();
+  const [signOut, signOutDialog] = useSignOut();
   const loc = useLocation();
   const navigate = useNavigate();
   const items = Navigation.itemsFor(user);
@@ -38,7 +40,7 @@ export function Sidebar({ collapsed, onToggle, mobile, onNotifications }: {
       <button key={i.page} className={`nav-item ${current === i.page ? 'active' : ''}`} title={collapsed ? i.label : undefined}
         onClick={() => navigate(i.path)}>
         <span className="nav-bar" />
-        <Icon size={17} />
+        <Icon size={19} />
         <span className="nav-label ellipsis">{i.label}</span>
       </button>
     );
@@ -51,7 +53,7 @@ export function Sidebar({ collapsed, onToggle, mobile, onNotifications }: {
           <button className="icon-btn-plain" onClick={onToggle} aria-label="Expand sidebar"><ChevronRight size={18} /></button>
         ) : (
           <>
-            <img src="/images/tasknet-logo.png" alt="" width={30} height={30} />
+            <img src="/images/tasknet-logo.png" alt="" style={{ height: 38, width: "auto", objectFit: "contain", flexShrink: 0 }} />
             <div className="grow">
               <div className="sidebar-brand">TaskNet</div>
               <div className="sidebar-sub">Management System</div>
@@ -70,27 +72,28 @@ export function Sidebar({ collapsed, onToggle, mobile, onNotifications }: {
       </nav>
       <div className="sidebar-footer">
         {collapsed ? (
-          <button className="icon-btn-plain" style={{ width: '100%', justifyContent: 'center' }} onClick={() => void session.logout()} title="Logout">
+          <button className="icon-btn-plain" style={{ width: '100%', justifyContent: 'center' }} onClick={signOut} title="Logout">
             <LogOut size={18} />
           </button>
         ) : (
           <>
             <div className="row gap-12">
-              <Avatar url={user?.avatarUrl} initials={name.charAt(0).toUpperCase() || 'U'} size={34} bg="rgba(255,255,255,0.15)" />
+              <Avatar url={user?.avatarUrl} initials={name.charAt(0).toUpperCase() || 'U'} size={34} bg="rgba(255,255,255,0.2)" />
               <div className="grow">
                 <div className="ellipsis" style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>{Navigation.roleTitle(user?.role ?? '')}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>{Navigation.roleTitle(user?.role ?? '')}</div>
               </div>
             </div>
             <div className="row mt-12">
               {!mobile && <NotificationBell onClick={onNotifications} light />}
-              <button className="sidebar-btn grow" onClick={() => void session.logout()}>
+              <button className="sidebar-btn grow" onClick={signOut}>
                 <LogOut size={15} /> Logout
               </button>
             </div>
           </>
         )}
       </div>
+      {signOutDialog}
     </aside>
   );
 }

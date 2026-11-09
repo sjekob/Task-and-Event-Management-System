@@ -43,7 +43,7 @@ export function TimingTab({ c }: { c: AppraisalController }) {
           return (
             <div key={g.key} style={{ borderBottom: '1px solid var(--border)' }}>
               <button className="ap-group" onClick={() => toggle(g.key)}>
-                <span className="avatar" style={{ width: 32, height: 32, background: '#eff6ff', color: '#3b82f6', fontSize: 13 }}>{g.key.charAt(0).toUpperCase() || '?'}</span>
+                <span className="avatar" style={{ width: 32, height: 32, background: 'var(--accent-bg)', color: 'var(--accent)', fontSize: 13 }}>{g.key.charAt(0).toUpperCase() || '?'}</span>
                 <span className="grow" style={{ textAlign: 'left' }}>
                   <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>{g.key}</span>
                   {mode !== 'task' && g.dept && <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)' }}>{g.dept}</span>}

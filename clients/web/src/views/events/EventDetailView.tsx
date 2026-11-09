@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Ban, CheckCircle2, CircleX, History, MapPin, PenLine, Undo2, UserCheck } from 'lucide-react';
+import { Ban, CheckCircle2, CircleX, Eye, FileText, History, MapPin, PenLine, Undo2, UserCheck } from 'lucide-react';
 import { EventDetailController, SendBack } from '@shared/controllers/EventControllers';
 import { EventItem } from '@shared/models';
-import { useServices, useSession } from '../../app/AppContext';
+import { useMediaUrl, useServices, useSession } from '../../app/AppContext';
 import { useLiveRefresh, useScreenController } from '../../app/hooks';
 import { useFeedback } from '../../ui/feedback';
 import { Button } from '../../ui/kit';
+import { FileViewerDialog } from '../../ui/FileViewerDialog';
 import { EventDetail } from './EventDetail';
 import { Card } from './EventDetailParts';
 import { AttendanceTable, ReturnedBanner, ReviewHistory, SendBackDialog } from './EventReview';
@@ -26,6 +27,8 @@ export function EventDetailView({ id, initial, onBack, onPrint, onChanged }: {
   const fb = useFeedback();
   const [c, s] = useScreenController(() => new EventDetailController(services, user, id, initial), [id, user?.id]);
   const [review, setReview] = useState<SendBack | null>(null);
+  const [viewing, setViewing] = useState(false);
+  const media = useMediaUrl();
   useEffect(() => { void c.load(); }, [c]);
   useLiveRefresh(() => void c.load());
 
@@ -44,16 +47,32 @@ export function EventDetailView({ id, initial, onBack, onPrint, onChanged }: {
   return (
     <>
       <EventDetail event={e} onBack={onBack} onPrint={() => onPrint(e)} attendance={a.qr}
-        top={e.isReturned ? (
-          <ReturnedBanner event={e} action={a.edit && (
-            <Button variant={e.status === 'rejected' ? 'danger' : undefined} icon={<PenLine size={16} />} onClick={edit}>Revise &amp; resubmit</Button>
-          )} />
+        top={(e.isReturned || e.proposalFile) ? (
+          <div className="col gap-12">
+            {e.isReturned && (
+              <ReturnedBanner event={e} action={a.edit && (
+                <Button variant={e.status === 'rejected' ? 'danger' : undefined} icon={<PenLine size={16} />} onClick={edit}>Revise &amp; resubmit</Button>
+              )} />
+            )}
+            {e.proposalFile && (
+              <div className={`ev-file ${e.submittedAsFile ? 'main' : ''}`}>
+                <FileText size={22} />
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <div className="ellipsis" style={{ fontWeight: 700 }}>{e.proposalFile.name}</div>
+                  <div className="caption">{e.submittedAsFile
+                    ? 'Submitted as the original file: read it for the full proposal. The details below were read from it automatically; the time, venue pin and special tasks were set by the proponent.'
+                    : 'The proposal file this event was filled in from.'}</div>
+                </div>
+                <Button size="sm" icon={<Eye size={15} />} onClick={() => setViewing(true)}>View file</Button>
+              </div>
+            )}
+          </div>
         ) : undefined}
         actions={<>
           {a.approve && <Button variant="success" size="lg" icon={<CheckCircle2 size={18} />} onClick={() => void run(() => c.approve())}>Approve event</Button>}
           {a.sendBack && <Button variant="outline-muted" size="lg" icon={<Undo2 size={18} />} style={{ color: '#c2410c', borderColor: '#fdba74' }} onClick={() => setReview('revisions_requested')}>Request revisions</Button>}
           {a.sendBack && <Button variant="outline-muted" size="lg" icon={<CircleX size={18} />} style={{ color: '#dc2626', borderColor: '#fca5a5' }} onClick={() => setReview('rejected')}>Reject</Button>}
-          {a.disable && <Button variant="outline-muted" size="lg" icon={<Ban size={18} />} style={{ color: '#64748b' }} onClick={() => void disable()}>Disable event</Button>}
+          {a.disable && <Button variant="outline-muted" size="lg" icon={<Ban size={18} />} style={{ color: 'var(--muted)' }} onClick={() => void disable()}>Disable event</Button>}
           {a.edit && <Button variant="outline-muted" size="lg" icon={<PenLine size={18} />} onClick={edit}>{e.isReturned ? 'Revise proposal' : 'Edit proposal'}</Button>}
         </>}
         bottom={<>
@@ -73,6 +92,9 @@ export function EventDetailView({ id, initial, onBack, onPrint, onChanged }: {
           )}
           {e.reviews.length > 0 && <Card icon={<History size={18} />} title="Review history"><ReviewHistory reviews={e.reviews} /></Card>}
         </>} />
+      {viewing && e.proposalFile && (
+        <FileViewerDialog filename={e.proposalFile.name} url={media(e.proposalFile.url) ?? e.proposalFile.url} onClose={() => setViewing(false)} />
+      )}
       {review && (
         <SendBackDialog event={e} decision={review} onClose={() => setReview(null)}
           send={async (comment) => {

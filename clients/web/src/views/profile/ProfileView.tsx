@@ -89,7 +89,7 @@ export default function ProfileView() {
         {ProfileController.sections(p).map((sec) => (
           <div key={sec.key}>
             <SectionHeader icon={SECTION_ICON[sec.key]} title={sec.title} />
-            <div className="pf-grid">
+            <div className="pf-info-grid">
               {sec.fields.map((f) => (
                 <div key={f.label} style={{ gridColumn: f.span ? `span ${f.span}` : undefined }}>
                   <div className="pf-label">{f.label}</div>
@@ -104,7 +104,7 @@ export default function ProfileView() {
         <SectionHeader icon={<Brain size={16} />} title="Skills" />
         {p.skills.length === 0 ? <div className="body-md">None added yet</div> : (
           <div className="row wrap gap-10" style={{ gap: 10 }}>
-            {p.skills.map((sk) => <span key={sk} className="pf-skill"><CheckCircle2 size={16} color="#1e3a8a" />{sk}</span>)}
+            {p.skills.map((sk) => <span key={sk} className="pf-skill"><CheckCircle2 size={16} color="var(--accent-dark)" />{sk}</span>)}
           </div>
         )}
       </div>
@@ -115,7 +115,7 @@ export default function ProfileView() {
           <div className="row wrap gap-12">
             {p.subjects.map((sj, i) => (
               <div key={i} className="pf-subject">
-                <span className="att-icon" style={{ width: 34, height: 34, background: '#eef2fa', color: 'var(--dark)' }}><BookOpen size={18} /></span>
+                <span className="att-icon" style={{ width: 34, height: 34, background: 'var(--tint)', color: 'var(--dark)' }}><BookOpen size={18} /></span>
                 <div className="grow">
                   <div className="ellipsis" style={{ fontSize: 14.5, fontWeight: 700 }}>{sj.subject}</div>
                   {sj.gradeLevel && <div className="body-sm">{sj.gradeLevel}</div>}

@@ -9,7 +9,7 @@ import { Bone } from '../../ui/kit';
 // Small pieces of the task detail page.
 export const TONE: Record<StatusTone, [string, string]> = {
   green: ['#15803d', 'var(--green-bg)'], red: ['#b91c1c', 'var(--red-bg)'], blue: ['var(--accent)', 'var(--blue-bg)'],
-  amber: ['#92400e', 'var(--amber-bg)'], gray: ['var(--muted)', '#f1f5f9'],
+  amber: ['#92400e', 'var(--amber-bg)'], gray: ['var(--muted)', 'var(--surface-3)'],
 };
 
 export function Pill({ tone, children }: { tone: StatusTone; children: ReactNode }) {

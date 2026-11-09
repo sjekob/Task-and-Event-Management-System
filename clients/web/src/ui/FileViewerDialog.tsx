@@ -22,7 +22,7 @@ export function FileViewerDialog({ filename, url, onClose }: { filename: string;
   if (available === null) body = <div className="center-fill" style={{ height: 300 }}><Spinner /></div>;
   else if (!available) body = <Notice icon={<FileWarning size={48} color="var(--red)" />} text="This file is no longer on the server." />;
   else if (kind === 'image') body = <img src={url} alt={filename} style={{ display: 'block', maxWidth: '100%', maxHeight: '70vh', margin: '0 auto', objectFit: 'contain' }} />;
-  else if (kind === 'frame') body = <iframe src={url} title={filename} style={{ width: '100%', height: '70vh', border: 0, borderRadius: 8, background: '#f8fafc' }} />;
+  else if (kind === 'frame') body = <iframe src={url} title={filename} style={{ width: '100%', height: '70vh', border: 0, borderRadius: 8, background: 'var(--surface-2)' }} />;
   else body = <Notice icon={<FileQuestion size={48} color="var(--muted)" />} text="This type of file can't be previewed here. Download it to open it." />;
 
   return (

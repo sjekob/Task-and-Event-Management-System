@@ -1,29 +1,56 @@
-import { Eye, EyeOff, Lock, Pencil, Plus, X } from 'lucide-react';
-import { ASSIGNABLE_ROLES, AddUserController, COORDINATOR_TYPE_GROUPS, EditRoleController } from '@shared/controllers/PersonnelControllers';
+import { CheckCircle2, Copy, KeyRound, Lock, Pencil, Plus, X } from 'lucide-react';
+import { ASSIGNABLE_ROLES, AddUserController, COORDINATOR_TYPE_GROUPS, CreatedAccount, EditRoleController } from '@shared/controllers/PersonnelControllers';
 import { User } from '@shared/models';
 import { useServices } from '../../app/AppContext';
 import { useScreenController } from '../../app/hooks';
+import { useFeedback } from '../../ui/feedback';
 import { Button, Field, Modal, Select, Spinner, Switch, TextInput } from '../../ui/kit';
 
 // Add a user / edit role and assignment (principal, admin).
 export function AddUserDialog({ onClose }: { onClose: (ok: boolean) => void }) {
   const services = useServices();
   const [c, s] = useScreenController(() => new AddUserController(services), []);
+  if (s.created) return <AccountCreated a={s.created} onDone={() => onClose(true)} />;
   return (
     <Modal title="Add New User" onClose={() => onClose(false)}
-      footer={<><Button variant="ghost" onClick={() => onClose(false)}>Cancel</Button><Button disabled={!c.canSubmit} loading={s.saving} onClick={async () => { if (await c.submit()) onClose(true); }}>Create User</Button></>}>
+      footer={<><Button variant="ghost" onClick={() => onClose(false)}>Cancel</Button><Button disabled={!c.canSubmit} loading={s.saving} onClick={() => void c.submit()}>Create User</Button></>}>
       <div className="col gap-16">
         <Field label="Email" required><TextInput type="email" placeholder="Email" value={s.email} onChange={(e) => c.set({ email: e.target.value })} autoFocus /></Field>
         <Field label="Username" required><TextInput placeholder="Username" value={s.username} onChange={(e) => c.set({ username: e.target.value })} /></Field>
-        <Field label="Password" required help="Min. 6 characters" error={c.passwordError}>
-          <div style={{ position: 'relative' }}>
-            <TextInput type={s.show ? 'text' : 'password'} placeholder="Password" value={s.password} onChange={(e) => c.set({ password: e.target.value })} style={{ paddingRight: 40 }} />
-            <button type="button" className="icon-btn sm" style={{ position: 'absolute', right: 6, top: 7 }} onClick={() => c.toggleShow()} aria-label="Show password">
-              {s.show ? <Eye size={18} /> : <EyeOff size={18} />}
-            </button>
-          </div>
-        </Field>
+        <div className="row-top gap-8 caption" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+          <KeyRound size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>A password is generated automatically and emailed to this address with the username.</span>
+        </div>
         {s.error && <div className="alert red">Error: {s.error}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+/** The new account's sign-in details, shown once (the password is stored only as a hash). */
+function AccountCreated({ a, onDone }: { a: CreatedAccount; onDone: () => void }) {
+  const fb = useFeedback();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(`Username: ${a.username}
+Password: ${a.password}`);
+      fb.toast('Sign-in details copied');
+    } catch { fb.toast('Copy failed: select the text instead'); }
+  };
+  return (
+    <Modal title="Account created" icon={<CheckCircle2 size={20} color="var(--green)" />} onClose={onDone}
+      footer={<><Button variant="outline-muted" icon={<Copy size={16} />} onClick={() => void copy()}>Copy details</Button><Button onClick={onDone}>Done</Button></>}>
+      <div className="col gap-12">
+        <div style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.55 }}>
+          {a.emailed
+            ? <>The sign-in details were emailed to <b style={{ color: 'var(--text)' }}>{a.email}</b>.</>
+            : <>Email isn't set up, so nothing was sent. Give these sign-in details to the user.</>}
+        </div>
+        <div className="pm-cred">
+          <span>Username</span><b>{a.username}</b>
+          <span>Password</span><b className="mono">{a.password}</b>
+        </div>
+        <div className="caption">This password won't be shown again, so copy it now if you need to hand it over.</div>
       </div>
     </Modal>
   );
@@ -42,7 +69,7 @@ export function EditRoleDialog({ user, onClose }: { user: User; onClose: (ok: bo
   );
   return (
     <Modal title="Edit Role & Assignment" subtitle={user.fullName} size="wide" icon={<Pencil size={20} style={{ marginTop: 2 }} />} onClose={() => onClose(false)}
-      footer={<><Button variant="outline-muted" onClick={() => onClose(false)}>Cancel</Button><Button style={{ background: '#2d3748' }} loading={s.saving} onClick={async () => { if (await c.submit()) onClose(true); }}>Save Changes</Button></>}>
+      footer={<><Button variant="outline-muted" onClick={() => onClose(false)}>Cancel</Button><Button style={{ background: 'var(--dark)' }} loading={s.saving} onClick={async () => { if (await c.submit()) onClose(true); }}>Save Changes</Button></>}>
       <div className="col" style={{ gap: 24 }}>
         <section className="col gap-12">
           <div className="pm-label">Role Assignment</div>
@@ -135,9 +162,9 @@ export function EditRoleDialog({ user, onClose }: { user: User; onClose: (ok: bo
           <div><Button variant="outline-muted" size="sm" icon={<Plus size={16} />} onClick={() => c.addRow()}>Add Subject</Button></div>
         </section>
 
-        <div className="row-top gap-8" style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
+        <div className="row-top gap-8" style={{ background: 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
           <Lock size={16} color="var(--muted)" style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: '#374151' }}>Personal information — education, skills, certifications and family details — can only be edited by {user.fullName} in their own profile.</span>
+          <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Personal information — education, skills, certifications and family details — can only be edited by {user.fullName} in their own profile.</span>
         </div>
         {s.error && <div className="alert red">Error: {s.error}</div>}
       </div>

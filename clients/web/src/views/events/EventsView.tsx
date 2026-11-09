@@ -108,13 +108,13 @@ export default function EventsView() {
                 <div className="ev-card off" onClick={() => open(e)}>
                   <div className="grow">
                     <div className="row gap-8"><span className="ev-title" style={{ color: 'var(--light)', textDecoration: 'line-through' }}>{e.title}</span><span className="ev-pill red">Disabled</span></div>
-                    <div className="ev-desc" style={{ color: '#b0b7c3' }}>{EventsController.description(e)}</div>
+                    <div className="ev-desc" style={{ color: 'var(--light)' }}>{EventsController.description(e)}</div>
                   </div>
                   <IconButton small title="Print / Save as PDF" onClick={(ev) => { ev.stopPropagation(); void print(e); }}><FileText size={18} /></IconButton>
                   {c.canManage && <Button variant="ghost" size="sm" style={{ color: '#48bb78' }} onClick={(ev) => { ev.stopPropagation(); void run(() => c.enable(e), 'Event enabled'); }}>Enable</Button>}
                 </div>))}</Section>}
               {c.drafts.length > 0 && <Section label="Drafts">{c.drafts.map((e) => (
-                <div key={e.id} className="ev-card" style={{ border: '1px solid #dde3ed', cursor: 'default' }}>
+                <div key={e.id} className="ev-card" style={{ border: '1px solid var(--border)', cursor: 'default' }}>
                   <div className="grow">
                     <div className="row gap-8"><span className="ev-title">{e.title.trim() || 'Untitled Draft'}</span><span className="ev-pill gray">Draft</span></div>
                     <div className="ev-desc">Continue where you left off.</div>

@@ -156,7 +156,7 @@ function Scan({ guest }: { guest: boolean }) {
         <div style={{ fontSize: 17, fontWeight: 700 }}>{label} {ok ? 'recorded' : 'not recorded'}</div>
         <div className="caption">{s.message}</div>
         {pin && s.fix && map}
-        {ok && <div className="caption mt-4">After the activity ends, scan this same QR again and answer the evaluation: it records your Time Out (until midnight).{guest && ' Your details are remembered on this phone.'}</div>}
+        {ok && <div className="caption mt-4">In the last 2 hours of the event, scan this same QR again and answer the evaluation: it records your Time Out (until midnight).{guest && ' Your details are remembered on this phone.'}</div>}
         {ok ? (!guest && <Button variant="ghost" className="mt-12" onClick={() => navigate('/dashboard')}>Go to dashboard</Button>) : retry}
         {!ok && guest && <Button variant="ghost" onClick={() => c.editGuest()}>Edit my details</Button>}
       </>
@@ -174,7 +174,7 @@ function Scan({ guest }: { guest: boolean }) {
           <div className="caption mt-4">{[info.activity.time, info.venue].filter(Boolean).join('  ·  ')}</div>
           {c.window && <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4 }}>Time In: {c.window}</div>}
           {c.evaluationWindow && <div style={{ fontSize: 12, fontWeight: 600 }}>Time Out (evaluation): {c.evaluationWindow}</div>}
-          {pin && <div className="caption" style={{ color: '#1d4ed8', marginTop: 2 }}>Must be within {pin.radius_m} m of the venue</div>}
+          {pin && <div className="caption" style={{ color: 'var(--accent-dark)', marginTop: 2 }}>Must be within {pin.radius_m} m of the venue</div>}
         </>
       )}
       <div className="col" style={{ alignItems: 'center', gap: 8, marginTop: 22 }}>{body}</div>
@@ -184,7 +184,7 @@ function Scan({ guest }: { guest: boolean }) {
 
 function Page({ children }: { children: ReactNode }) {
   return (
-    <div style={{ minHeight: '100vh', background: '#f1f5f9', padding: 16, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--surface-3)', padding: 16, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
       <div style={{ width: '100%', maxWidth: 480, background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 4px 16px rgba(0,0,0,0.08)', textAlign: 'center' }}>
         {children}
       </div>

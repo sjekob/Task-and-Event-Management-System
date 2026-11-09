@@ -1,6 +1,6 @@
 .login-bg {
   min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
-  background: linear-gradient(135deg, #c8d5ea, #a8bcd6, #d4e0f0);
+  background: linear-gradient(135deg, #FFF5E5 0%, #FDDDB5 60%, #F69D39 100%);
 }
 .login-card {
   width: 400px; max-width: 100%; padding: 36px; background: var(--bg); border-radius: 20px; box-shadow: var(--shadow-lg);

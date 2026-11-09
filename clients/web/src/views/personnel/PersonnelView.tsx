@@ -61,7 +61,7 @@ export default function PersonnelView() {
       <div className="row gap-12">
         <div className="input-icon grow"><Search size={18} /><input className="input" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
         {c.canWrite && <Button variant="outline-muted" icon={<School size={18} />} style={{ height: 44 }} onClick={() => setSections(true)}>Sections</Button>}
-        {c.canWrite && <Button icon={<Plus size={18} />} style={{ height: 44, background: '#2d3748' }} onClick={() => setAdding(true)}>Add User</Button>}
+        {c.canWrite && <Button icon={<Plus size={18} />} style={{ height: 44, background: 'var(--dark)' }} onClick={() => setAdding(true)}>Add User</Button>}
       </div>
       {s.loading ? (
         <div className="col gap-8"><Bone h={44} />{[0, 1, 2, 3, 4, 5].map((i) => <Bone key={i} h={52} />)}</div>
