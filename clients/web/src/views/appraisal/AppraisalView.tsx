@@ -1,5 +1,5 @@
 import { ReactNode, useEffect } from 'react';
-import { Award, BarChart3, CalendarDays, ClipboardList, Timer } from 'lucide-react';
+import { BarChart3, CalendarDays, ClipboardList, Timer } from 'lucide-react';
 import { APPRAISAL_TAB_LABELS, AppraisalController, AppraisalTab } from '@shared/controllers/AppraisalControllers';
 import { useServices, useSession } from '../../app/AppContext';
 import { useScreenController } from '../../app/hooks';
@@ -7,13 +7,12 @@ import { Banner } from '../../ui/kit';
 import { SchoolYearPicker } from '../../ui/SchoolYearPicker';
 import './appraisal.css';
 import { AnalyticsTab } from './AnalyticsTab';
-import { BadgesTab } from './BadgesTab';
 import { EventsTab } from './EventsTab';
 import { SpecialTab } from './SpecialTab';
 import { TimingTab } from './TimingTab';
 
 const TAB_ICON: Record<AppraisalTab, ReactNode> = {
-  timing: <Timer size={15} />, special: <ClipboardList size={15} />, events: <CalendarDays size={15} />, badges: <Award size={15} />, analytics: <BarChart3 size={15} />,
+  timing: <Timer size={15} />, special: <ClipboardList size={15} />, events: <CalendarDays size={15} />, analytics: <BarChart3 size={15} />,
 };
 
 export default function AppraisalView() {
@@ -27,7 +26,6 @@ export default function AppraisalView() {
     case 'timing': body = <TimingTab c={c} />; break;
     case 'special': body = <SpecialTab c={c} />; break;
     case 'events': body = <EventsTab c={c} />; break;
-    case 'badges': body = <BadgesTab showOwn={c.showOwnBadges} showBoard={c.showLeaderboard} filter={s.filter} />; break;
     default: body = <AnalyticsTab c={c} />;
   }
 

@@ -11,10 +11,6 @@
 .ap-table th { font-size: 11px; letter-spacing: 0.5px; background: #f9fafb; }
 .ap-table td { font-size: 12.5px; }
 .ap-table td.muted { color: var(--muted); }
-.ap-badges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-@media (max-width: 1100px) { .ap-badges { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 700px) { .ap-badges { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 440px) { .ap-badges { grid-template-columns: minmax(0, 1fr); } }
 
 /* Department / Individual slide toggle (Analytics). */
 .ap-slide { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--border); }
