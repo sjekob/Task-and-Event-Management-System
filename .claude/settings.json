@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {
-    "vectorlab-ui-ux-skills@anthropic-plugin-directory": true
+    "vectorlab-ui-ux-skills@anthropic-plugin-directory": true,
+    "claude-security@anthropic-plugin-directory": true
   }
 }

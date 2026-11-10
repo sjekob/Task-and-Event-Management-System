@@ -1,5 +1,5 @@
 import { ApiClient, FilePart } from './ApiClient';
-import { AppraisalBadge, BadgeLeader, EventForAppraisal, Json, PerformanceSummary, SchoolYearFilter, SpecialTask } from '../models';
+import { EventForAppraisal, Json, PerformanceSummary, SchoolYearFilter, SpecialTask } from '../models';
 
 export class AppraisalService {
   constructor(private readonly api: ApiClient) {}
@@ -40,19 +40,6 @@ export class AppraisalService {
     return EventForAppraisal.fromJson(
       await this.api.post(`/api/appraisal/events/${eventId}/evaluate`, { body, ok: [201, 200], fallback: 'Failed to submit evaluation' }),
     );
-  }
-
-  async badges(opts: { userId?: number; filter?: SchoolYearFilter } = {}): Promise<AppraisalBadge[]> {
-    const d = await this.api.get('/api/appraisal/badges', {
-      query: { ...(opts.filter ?? SchoolYearFilter.current).query, user_id: opts.userId },
-      fallback: 'Failed to load badges',
-    });
-    return (d?.badges ?? []).map(AppraisalBadge.fromJson);
-  }
-
-  async leaderboard(filter = SchoolYearFilter.current): Promise<BadgeLeader[]> {
-    const rows = await this.api.get<Json[]>('/api/appraisal/badges/leaderboard', { query: filter.query, fallback: 'Failed to load badges' });
-    return rows.map(BadgeLeader.fromJson);
   }
 
   // ── Public evaluation (QR code, no login) ──

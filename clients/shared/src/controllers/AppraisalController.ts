@@ -2,10 +2,10 @@ import { BaseController } from './BaseController';
 import { Services } from '../services';
 import { EventForAppraisal, Json, SchoolYearFilter, SpecialTask, User } from '../models';
 
-export type AppraisalTab = 'timing' | 'special' | 'events' | 'badges' | 'analytics';
+export type AppraisalTab = 'timing' | 'special' | 'events' | 'analytics';
 
 export const APPRAISAL_TAB_LABELS: Record<AppraisalTab, string> = {
-  timing: 'Timing Points', special: 'Special Tasks', events: 'Events', badges: 'Badges', analytics: 'Analytics',
+  timing: 'Timing Points', special: 'Special Tasks', events: 'Events', analytics: 'Analytics',
 };
 
 export interface Slice<T> { items: T[]; loading: boolean; error: string | null }
@@ -20,7 +20,7 @@ export interface AppraisalState {
 
 export const empty = <T>(): Slice<T> => ({ items: [], loading: true, error: null });
 
-/** Performance Appraisal: timing points, special-task ratings, event evaluations, badges and analytics. */
+/** Performance Appraisal: timing points, special-task ratings, event evaluations and analytics. */
 export class AppraisalController extends BaseController<AppraisalState> {
   readonly tabs: AppraisalTab[];
 
@@ -28,13 +28,11 @@ export class AppraisalController extends BaseController<AppraisalState> {
     super({ tab: 'timing', filter: SchoolYearFilter.current, submissions: empty(), tasks: empty(), events: empty() });
     // Without school-wide access people see their own / grade-level records and no Analytics.
     this.tabs = user?.can('view_all_appraisals')
-      ? ['timing', 'special', 'events', 'badges', 'analytics']
-      : ['timing', 'special', 'events', 'badges'];
+      ? ['timing', 'special', 'events', 'analytics']
+      : ['timing', 'special', 'events'];
   }
 
   /** Principal/admin aren't appraised themselves. */
-  get showOwnBadges() { return this.user?.can('receive_tasks') ?? false; }
-  get showLeaderboard() { return this.user?.can('evaluate_appraisal') ?? false; }
   /** May rate events and record paper evaluations (the server checks the same permission). */
   get canEvaluate() { return this.user?.can('evaluate_appraisal') ?? false; }
 

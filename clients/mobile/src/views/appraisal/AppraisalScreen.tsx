@@ -5,12 +5,11 @@ import { useScreenController } from '../../core/hooks';
 import { Banner, Screen, Tabs } from '../../ui/kit';
 import { SchoolYearPicker } from '../common/SchoolYearPicker';
 import { AnalyticsTab } from './AnalyticsTab';
-import { BadgesTab } from './BadgesTab';
 import { EventsTab } from './EventsTab';
 import { SpecialTab } from './SpecialTab';
 import { TimingTab } from './TimingTab';
 
-/** /appraisal: timing points, special-task ratings, event evaluations, badges and analytics. */
+/** /appraisal: timing points, special-task ratings, event evaluations and analytics. */
 export default function AppraisalScreen() {
   const services = useServices();
   const { user } = useSession();
@@ -22,7 +21,6 @@ export default function AppraisalScreen() {
     case 'timing': body = <TimingTab c={c} />; break;
     case 'special': body = <SpecialTab c={c} />; break;
     case 'events': body = <EventsTab c={c} />; break;
-    case 'badges': body = <BadgesTab showOwn={c.showOwnBadges} showBoard={c.showLeaderboard} filter={s.filter} />; break;
     default: body = <AnalyticsTab c={c} />;
   }
   return (
